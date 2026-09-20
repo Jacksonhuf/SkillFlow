@@ -1,0 +1,4 @@
+interface:
+  display_name: "Universal Browser"
+  short_description: "Run validated tasks through your platform and Chrome"
+  default_prompt: "Use $universal-browser with this platform's chrome-use tool to select, teach, run, test, or repair a browser task template in my current Chrome session."

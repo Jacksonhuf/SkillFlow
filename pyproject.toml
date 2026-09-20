@@ -1,0 +1,59 @@
+[build-system]
+requires = ["hatchling>=1.27"]
+build-backend = "hatchling.build"
+
+[project]
+name = "universal-browser-skill"
+version = "0.1.0"
+description = "A template-driven, validation-first browser skill for a user's real Chrome session"
+readme = "README.md"
+requires-python = ">=3.12"
+license = { text = "MIT" }
+dependencies = [
+  "pydantic>=2.10,<3",
+  "PyYAML>=6.0.2,<7",
+]
+
+[project.optional-dependencies]
+dev = [
+  "mypy>=1.14,<2",
+  "pytest>=8.3,<10",
+  "pytest-asyncio>=0.25,<2",
+  "ruff>=0.9,<1",
+]
+cli = [
+  "rich>=13.9,<15",
+  "typer>=0.15,<1",
+]
+
+[project.scripts]
+browser-skill = "browser_skill.cli:app"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/browser_skill"]
+
+[tool.pytest.ini_options]
+addopts = "-q --strict-markers"
+testpaths = ["tests"]
+markers = ["integration: requires a real chrome-use installation and Chrome extension"]
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM", "RUF"]
+ignore = ["RUF001"]
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+packages = ["browser_skill"]
+
+[[tool.mypy.overrides]]
+module = ["yaml"]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = ["browser_skill.cli"]
+ignore_errors = true

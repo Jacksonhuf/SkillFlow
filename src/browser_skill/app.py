@@ -1,0 +1,392 @@
+from __future__ import annotations
+
+from dataclasses import asdict
+from pathlib import Path
+from typing import Any
+
+from browser_skill.browser.base import BrowserAdapter
+from browser_skill.errors import ErrorCode, SkillError
+from browser_skill.interaction.contracts import (
+    auth_required_interaction,
+    error_interaction,
+    mapping_review_interaction,
+    metrics_interaction,
+    run_result_interaction,
+    run_status_interaction,
+    sample_review_interaction,
+    template_menu_interaction,
+    template_review_interaction,
+    variable_form_interaction,
+)
+from browser_skill.interaction.template_menu import TemplateMenu
+from browser_skill.interaction.variables import VariableResolver
+from browser_skill.models import AuthState, RunState, SkillRequest, SkillResponse, TemplateStatus
+from browser_skill.outputs.paths import contained_path
+from browser_skill.runtime.auto_repair import AutoRepairService
+from browser_skill.runtime.lifecycle import TemplateLifecycleService
+from browser_skill.runtime.recovery import RunRecoveryService
+from browser_skill.runtime.repair import RepairService
+from browser_skill.runtime.run_store import RunStore
+from browser_skill.runtime.runner import Runner
+from browser_skill.runtime.sample_analyzer import SampleAnalyzer
+from browser_skill.runtime.teach import TeachCompiler
+from browser_skill.runtime.teach_explorer import TeachExplorer
+from browser_skill.telemetry.metrics import RunMetricsAggregator
+from browser_skill.templates.store import TemplateStore
+
+
+class BrowserSkillApp:
+    def __init__(
+        self,
+        templates_root: Path,
+        runs_root: Path,
+        adapter: BrowserAdapter,
+        samples_root: Path | None = None,
+    ) -> None:
+        self.store = TemplateStore(templates_root)
+        self.adapter = adapter
+        self.runs_root = runs_root.resolve()
+        self.samples_root = (samples_root or runs_root / "uploads").resolve()
+        self.samples_root.mkdir(parents=True, exist_ok=True)
+        self.runner = Runner(adapter, runs_root)
+        self.lifecycle = TemplateLifecycleService(self.store, runs_root)
+        self.run_store = RunStore(runs_root)
+
+    async def handle(self, request: SkillRequest) -> SkillResponse:
+        try:
+            return await self._handle(request)
+        except SkillError as exc:
+            interaction = error_interaction(
+                exc.message,
+                code=exc.code.value,
+                details=exc.details,
+            )
+            return SkillResponse(
+                ok=False,
+                message=exc.message,
+                data={
+                    "error": exc.as_dict(),
+                    "interaction": interaction.model_dump(mode="json"),
+                },
+            )
+
+    async def _handle(self, request: SkillRequest) -> SkillResponse:
+        if request.action == "start":
+            templates = self.store.list()
+            interaction = template_menu_interaction(templates)
+            return SkillResponse(
+                ok=True,
+                message="可用模板",
+                data={
+                    "interaction": interaction.model_dump(mode="json"),
+                    "templates": [
+                        {"display_index": index, **asdict(item)}
+                        for index, item in enumerate(templates, 1)
+                    ],
+                },
+            )
+        if request.action == "resume":
+            if not request.run_id:
+                return SkillResponse(ok=False, message="恢复任务需要 run_id")
+            workspace = (self.runs_root / request.run_id).resolve()
+            if self.runs_root not in workspace.parents:
+                return SkillResponse(ok=False, message="run_id 无效")
+            response = await self.runner.resume(workspace, request.variables)
+            if response.run_id and response.state == RunState.WAIT_USER_AUTH:
+                interaction = auth_required_interaction(
+                    response.run_id,
+                    str(response.data.get("auth_state", "unknown")),
+                )
+            elif response.run_id and response.state:
+                interaction = run_result_interaction(
+                    run_id=response.run_id,
+                    state=response.state,
+                    message=response.message,
+                    data=response.data,
+                )
+            else:
+                return response
+            response.data["interaction"] = interaction.model_dump(mode="json")
+            return response
+        if request.action in {"status", "cancel"}:
+            if not request.run_id:
+                return SkillResponse(ok=False, message="操作需要 run_id")
+            context = (
+                self.run_store.cancel(request.run_id)
+                if request.action == "cancel"
+                else self.run_store.load(request.run_id)
+            )
+            interaction = run_status_interaction(context)
+            return SkillResponse(
+                ok=True,
+                message="已提交取消请求" if request.action == "cancel" else "任务状态已读取",
+                run_id=context.run_id,
+                state=context.state,
+                data={"interaction": interaction.model_dump(mode="json")},
+            )
+        if request.action == "metrics":
+            metrics_report = RunMetricsAggregator(self.runs_root).aggregate(
+                template_id=request.template_id
+            )
+            interaction = metrics_interaction(metrics_report)
+            return SkillResponse(
+                ok=True,
+                message="运行指标已汇总",
+                data={
+                    "metrics": metrics_report.model_dump(mode="json"),
+                    "interaction": interaction.model_dump(mode="json"),
+                },
+            )
+        if request.action == "recover":
+            if not request.run_id:
+                return SkillResponse(ok=False, message="恢复中断任务需要 run_id")
+            recovered = await RunRecoveryService(self.adapter, self.runs_root).recover(
+                request.run_id,
+                confirmed=request.confirmed,
+            )
+            child = recovered.child
+            if child.run_id and child.state == RunState.WAIT_USER_AUTH:
+                interaction = auth_required_interaction(
+                    child.run_id,
+                    str(child.data.get("auth_state", "unknown")),
+                )
+            elif child.run_id and child.state:
+                interaction = run_result_interaction(
+                    run_id=child.run_id,
+                    state=child.state,
+                    message=child.message,
+                    data=child.data,
+                )
+            else:
+                return child
+            child.data.update(
+                {
+                    "interrupted_run_id": recovered.interrupted.run_id,
+                    "interaction": interaction.model_dump(mode="json"),
+                }
+            )
+            return child
+        if request.action == "analyze_sample":
+            if request.sample_path is None:
+                return SkillResponse(ok=False, message="分析样例需要 sample_path")
+            path = contained_path(self.samples_root, *request.sample_path.parts)
+            inference = SampleAnalyzer().analyze(path)
+            interaction = sample_review_interaction(inference)
+            return SkillResponse(
+                ok=True,
+                message="样例分析完成，请确认推导结果",
+                data={
+                    "inference": inference.model_dump(mode="json"),
+                    "interaction": interaction.model_dump(mode="json"),
+                },
+            )
+        if request.action == "create":
+            if request.draft is None:
+                return SkillResponse(ok=False, message="创建模板需要 draft 定义")
+            draft_input = request.draft
+            draft = TeachCompiler().compile_draft(
+                template_id=draft_input.template_id,
+                name=draft_input.name,
+                entry_url=str(draft_input.entry_url),
+                description=draft_input.description,
+                fields=draft_input.fields,
+                attachments=draft_input.attachments,
+                variables=draft_input.variables,
+                record_key=draft_input.record_key,
+                page_hints=draft_input.page_hints,
+                version=self.store.next_version(draft_input.template_id),
+            )
+            path = self.store.save(draft)
+            interaction = template_review_interaction(draft, mode="teach")
+            return SkillResponse(
+                ok=True,
+                message="模板草稿已创建",
+                data={
+                    "template_id": draft.template_id,
+                    "version": draft.version,
+                    "relative_path": path.relative_to(self.store.root).as_posix(),
+                    "interaction": interaction.model_dump(mode="json"),
+                },
+            )
+        if request.action == "discover":
+            if not request.template_id or request.version is None:
+                return SkillResponse(ok=False, message="Mapping 发现需要 template_id 和 version")
+            template = self.store.load(
+                request.template_id,
+                request.version,
+                require_published=False,
+            )
+            status = await self.adapter.status()
+            capabilities = await self.adapter.capabilities()
+            if not status.ok or not capabilities.snapshot:
+                raise SkillError(
+                    ErrorCode.CHROME_USE_UNAVAILABLE,
+                    "平台 chrome-use 工具或 snapshot 能力不可用",
+                    stage="discovery",
+                )
+            self.runner.policy.require_url_allowed(str(template.system.entry_url), template)
+            opened = await self.adapter.open(str(template.system.entry_url))
+            if not opened.ok:
+                raise SkillError(ErrorCode.PAGE_NOT_FOUND, "无法打开模板入口页面")
+            snapshot = await self.adapter.snapshot(interactive=True)
+            auth_state = self.runner.auth.classify(template.auth, snapshot)
+            if auth_state != AuthState.AUTHENTICATED:
+                raise SkillError(
+                    ErrorCode.AUTH_REQUIRED,
+                    "请先在 Chrome 中完成登录，再继续 Mapping 发现",
+                    stage="discovery",
+                    details={"auth_state": auth_state.value},
+                )
+            exploration = await TeachExplorer().explore(self.adapter, template, snapshot)
+            report = exploration.report
+            candidate_version: int | None = None
+            if report.publishable_candidate:
+                candidate_version = self.store.next_version(template.template_id)
+                candidate = template.model_copy(
+                    update={
+                        "version": candidate_version,
+                        "status": TemplateStatus.TESTING,
+                        "learned": report.learned,
+                    },
+                    deep=True,
+                )
+                self.store.save(candidate)
+            interaction = mapping_review_interaction(
+                report,
+                candidate_version=candidate_version,
+            )
+            return SkillResponse(
+                ok=report.publishable_candidate,
+                message=(
+                    "Mapping 候选版本已创建"
+                    if candidate_version is not None
+                    else "必填目标尚未全部找到"
+                ),
+                data={
+                    "report": report.model_dump(mode="json"),
+                    "candidate_version": candidate_version,
+                    "exploration": {
+                        "visited_urls": exploration.visited_urls,
+                        "attempted_hints": exploration.attempted_hints,
+                        "steps": exploration.steps,
+                        "budget_exhausted": exploration.budget_exhausted,
+                    },
+                    "interaction": interaction.model_dump(mode="json"),
+                },
+            )
+        if request.action == "publish":
+            if not request.template_id or request.version is None or not request.run_id:
+                return SkillResponse(
+                    ok=False,
+                    message="发布需要 template_id、version 和通过测试的 run_id",
+                )
+            published = self.lifecycle.publish(
+                request.template_id,
+                request.version,
+                test_run_id=request.run_id,
+                confirmed=request.confirmed,
+            )
+            interaction = template_review_interaction(published, mode="published")
+            interaction.title = "模板已发布"
+            interaction.actions = ["run_template"]
+            return SkillResponse(
+                ok=True,
+                message="模板已发布",
+                data={
+                    "template_id": published.template_id,
+                    "version": published.version,
+                    "interaction": interaction.model_dump(mode="json"),
+                },
+            )
+        if request.action == "repair":
+            if request.run_id:
+                repaired = await AutoRepairService(
+                    self.adapter,
+                    self.store,
+                    self.runs_root,
+                ).repair(request.run_id)
+                interaction = run_status_interaction(repaired)
+                return SkillResponse(
+                    ok=True,
+                    message="Repair 测试通过，新版本已发布并恢复原任务",
+                    run_id=repaired.run_id,
+                    state=repaired.state,
+                    data={
+                        "recovery_run_id": repaired.recovery_run_id,
+                        "repaired_template_version": repaired.repaired_template_version,
+                        "interaction": interaction.model_dump(mode="json"),
+                    },
+                )
+            if not request.template_id or request.learned is None:
+                return SkillResponse(ok=False, message="Repair 需要 template_id 和 learned 数据")
+            original = self.store.load(request.template_id)
+            candidate = RepairService().candidate(
+                original,
+                request.learned,
+                version=self.store.next_version(request.template_id),
+            )
+            if not RepairService().contract_unchanged(original, candidate):
+                return SkillResponse(ok=False, message="Repair 不得修改业务契约")
+            path = self.store.save(candidate)
+            interaction = template_review_interaction(candidate, mode="repair")
+            return SkillResponse(
+                ok=True,
+                message="Repair 候选版本已创建",
+                data={
+                    "template_id": candidate.template_id,
+                    "version": candidate.version,
+                    "relative_path": path.relative_to(self.store.root).as_posix(),
+                    "interaction": interaction.model_dump(mode="json"),
+                },
+            )
+        selector: str | int | None = request.template_id or request.selector
+        if selector is None:
+            return SkillResponse(ok=False, message="请选择模板")
+        template_id = TemplateMenu(
+            self.store.list(include_unpublished=request.action == "test")
+        ).resolve(selector)
+        if template_id is None:
+            return SkillResponse(ok=False, message="请使用 Teach 模式创建模板")
+        template = self.store.load(
+            template_id,
+            require_published=request.action != "test",
+        )
+        if request.action in {"run", "test"}:
+            missing = VariableResolver().missing(template, request.variables)
+            if missing:
+                interaction = variable_form_interaction(template, missing)
+                return SkillResponse(
+                    ok=False,
+                    message="缺少必填变量",
+                    data={"interaction": interaction.model_dump(mode="json")},
+                )
+            response = await self.runner.run(template, request.variables)
+            if response.run_id and response.state == RunState.WAIT_USER_AUTH:
+                interaction = auth_required_interaction(
+                    response.run_id,
+                    str(response.data.get("auth_state", "unknown")),
+                )
+            elif response.run_id and response.state:
+                interaction = run_result_interaction(
+                    run_id=response.run_id,
+                    state=response.state,
+                    message=response.message,
+                    data=response.data,
+                )
+            else:
+                return response
+            response.data["interaction"] = interaction.model_dump(mode="json")
+            return response
+        return SkillResponse(ok=False, message=f"动作尚需交互流程：{request.action}")
+
+
+def parse_variables(items: list[str]) -> dict[str, Any]:
+    values: dict[str, Any] = {}
+    for item in items:
+        if "=" not in item:
+            raise ValueError(f"变量必须使用 name=value 格式：{item}")
+        key, value = item.split("=", 1)
+        if not key:
+            raise ValueError("变量名称不能为空")
+        values[key] = value
+    return values
