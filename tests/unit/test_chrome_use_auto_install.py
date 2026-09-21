@@ -24,7 +24,7 @@ def test_ensure_respects_disable_flag(tmp_path: Path, monkeypatch: pytest.Monkey
     monkeypatch.delenv("CHROME_USE_BIN", raising=False)
     monkeypatch.setattr(paths.shutil, "which", lambda _name: None)
 
-    with pytest.raises(SkillError, match="install.sh"):
+    with pytest.raises(SkillError, match=r"install\.sh"):
         paths.ensure_chrome_use_executable(skill_root=tmp_path, auto_install=False)
 
 

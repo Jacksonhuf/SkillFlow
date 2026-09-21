@@ -83,7 +83,8 @@ def _register_extension_if_possible(binary: str) -> str | None:
     if completed.returncode == 0:
         return "Registered chrome-use native bridge: chrome-use extension install"
     detail = (completed.stderr or completed.stdout or "").strip()[:200]
-    return f"chrome-use extension install exited {completed.returncode}: {detail or 'see chrome-use doctor'}"
+    fallback = detail or "see chrome-use doctor"
+    return f"chrome-use extension install exited {completed.returncode}: {fallback}"
 
 
 def resolve_chrome_use_executable(name: str = "chrome-use") -> str:
@@ -144,8 +145,11 @@ def ensure_chrome_use_executable(
         except SkillError as exc:
             raise SkillError(
                 exc.code,
-                "Automatic install already ran for this skill copy but chrome-use is still missing.\n\n"
-                + CHROME_USE_INSTALL_HINT,
+                (
+                    "Automatic install already ran for this skill copy "
+                    "but chrome-use is still missing.\n\n"
+                    + CHROME_USE_INSTALL_HINT
+                ),
                 stage=exc.stage,
             ) from exc
 
