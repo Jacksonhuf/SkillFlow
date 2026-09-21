@@ -25,19 +25,39 @@ Skill Hub 会把标准 Skill 目录（`SKILL.md` + `references/`）同步到 Age
 ./scripts/build-skill-package.sh
 ```
 
-产物：
+产物（维护者本地执行 `./scripts/build-skill-package.sh`）：
+
+| 文件 | 内容 |
+|------|------|
+| `dist/universal-browser-0.1.0.zip` | **标准 Skill**：仅 `SKILL.md` + `references/` |
+| `dist/universal-browser-full-0.1.0.zip` | **完整包**：+ `templates/` + `runtime/`（`pip install ./runtime`） |
+
+```bash
+./scripts/build-skill-package.sh          # 标准包
+./scripts/build-skill-package.sh --full   # 完整包
+# 或: browser-skill package --full
+```
+
+标准包上传：
 
 ```text
 dist/universal-browser-0.1.0.zip
-  ├── hub.manifest.json
+  └── universal-browser/
+        ├── SKILL.md
+        └── references/
+```
+
+完整包上传（运行时与模板与 Skill 同目录）：
+
+```text
+dist/universal-browser-full-0.1.0.zip
   └── universal-browser/
         ├── SKILL.md
         ├── references/
-        ├── QUICKSTART.zh.md
-        └── SKILL-HUB.zh.md
+        ├── templates/
+        ├── runtime/          → 服务端 pip install ./runtime
+        └── RUNTIME.zh.md
 ```
-
-把 **`dist/universal-browser-0.1.0.zip`** 上传到内部 Skill Hub（或按 Hub 要求的字段填写 `hub.manifest.json` 中的 id / version / package_dir）。
 
 ### 方式 B：Hub 直接拉 Git 目录
 

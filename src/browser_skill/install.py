@@ -56,6 +56,62 @@ def sync_skill_tree(
     return dest
 
 
+def _runtime_ignore(_directory: str, names: list[str]) -> set[str]:
+    return {name for name in names if name in {"__pycache__", ".mypy_cache", "tests"}}
+
+
+def sync_full_skill_tree(
+    destination: Path,
+    *,
+    root: Path | None = None,
+) -> Path:
+    """Standard skill tree plus bundled templates/ and runtime/ Python source."""
+    base = repo_root(root)
+    skill_dir = sync_skill_tree(destination, root=base)
+
+    templates_src = base / "templates"
+    templates_dest = skill_dir / "templates"
+    if templates_src.is_dir():
+        if templates_dest.exists():
+            shutil.rmtree(templates_dest)
+        shutil.copytree(templates_src, templates_dest)
+
+    runtime_dest = skill_dir / "runtime"
+    if runtime_dest.exists():
+        shutil.rmtree(runtime_dest)
+    runtime_dest.mkdir(parents=True)
+    shutil.copy2(base / "pyproject.toml", runtime_dest / "pyproject.toml")
+    shutil.copytree(
+        base / "src" / "browser_skill",
+        runtime_dest / "src" / "browser_skill",
+        ignore=_runtime_ignore,
+    )
+
+    runtime_doc = base / "docs" / "RUNTIME.zh.md"
+    if runtime_doc.exists():
+        shutil.copy2(runtime_doc, skill_dir / "RUNTIME.zh.md")
+
+    return skill_dir
+
+
+def _write_skill_zip(
+    package_root: Path,
+    skill_dir: Path,
+    zip_path: Path,
+    *,
+    include_hub_manifest: bool,
+    manifest_path: Path,
+) -> None:
+    if zip_path.exists():
+        zip_path.unlink()
+    with zipfile.ZipFile(zip_path, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+        for path in skill_dir.rglob("*"):
+            if path.is_file():
+                archive.write(path, path.relative_to(package_root).as_posix())
+        if include_hub_manifest and manifest_path.exists():
+            archive.write(manifest_path, "hub.manifest.json")
+
+
 def build_skill_package(
     *,
     root: Path | None = None,
@@ -98,6 +154,30 @@ def build_skill_package(
     install_skill_paths([base / ".opencode" / "skills"], root=base)
     install_skill_paths([base / ".agents" / "skills"], root=base)
 
+    return skill_dir, zip_path
+
+
+def build_full_skill_package(
+    *,
+    root: Path | None = None,
+    output_dir: Path | None = None,
+) -> tuple[Path, Path]:
+    """Build zip with SKILL.md, references/, templates/, and installable runtime/ source."""
+    base = repo_root(root)
+    package_root = base / "skill-package"
+    skill_dir = sync_full_skill_tree(package_root, root=base)
+
+    dist = output_dir or (base / "dist")
+    dist.mkdir(parents=True, exist_ok=True)
+    zip_path = dist / f"{_SKILL_ID}-full-{_PACKAGE_VERSION}.zip"
+    manifest_path = package_root / "hub.manifest.json"
+    _write_skill_zip(
+        package_root,
+        skill_dir,
+        zip_path,
+        include_hub_manifest=False,
+        manifest_path=manifest_path,
+    )
     return skill_dir, zip_path
 
 

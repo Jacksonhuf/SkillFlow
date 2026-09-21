@@ -414,18 +414,31 @@ def resume(
 
 
 @app.command("package")
-def build_package() -> None:
-    """Build dist/universal-browser-*.zip for internal Skill Hub upload (maintainers only)."""
-    from browser_skill.install import build_skill_package
+def build_package(
+    full: Annotated[
+        bool,
+        typer.Option("--full", help="Include templates/ and runtime/ Python source in the zip"),
+    ] = False,
+) -> None:
+    """Build dist/universal-browser-*.zip for Skill Hub upload (maintainers only)."""
+    from browser_skill.install import build_full_skill_package, build_skill_package
 
-    skill_dir, zip_path = build_skill_package()
+    if full:
+        skill_dir, zip_path = build_full_skill_package()
+        note = (
+            "完整包含 templates/ + runtime/（服务端 pip install ./runtime）。"
+            "仍需要平台 chrome-use。"
+        )
+    else:
+        skill_dir, zip_path = build_skill_package()
+        note = "标准包仅含 SKILL.md + references/。执行层需平台单独部署。"
     console.print(
         Panel(
-            f"[bold green]Skill Hub 包已生成[/bold green]\n\n"
+            f"[bold green]已生成[/bold green]\n\n"
             f"目录: [cyan]{skill_dir}[/cyan]\n"
             f"ZIP:  [cyan]{zip_path}[/cyan]\n\n"
-            "请上传 ZIP 到内部 Skill Hub。用户无需 clone 或 install.sh。\n"
-            "说明: docs/SKILL-HUB.zh.md",
+            f"{note}\n"
+            "说明: docs/RUNTIME.zh.md",
             title="Universal Browser",
             border_style="green",
         )
