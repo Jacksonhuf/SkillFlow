@@ -111,6 +111,9 @@ class ChromeUseAdapter:
             dialogs="dialog" in help_text,
         )
 
+    async def capabilities_payload(self) -> dict[str, Any]:
+        return (await self.capabilities()).model_dump(mode="json")
+
     async def open(self, url: str) -> CommandResult:
         return await self._run(["open", url])
 
@@ -233,6 +236,12 @@ class ChromeUseToolAdapter:
         return BrowserCapabilities.model_validate(
             {key: bool(value) for key, value in result.data.items() if key in allowed}
         )
+
+    async def capabilities_payload(self) -> dict[str, Any]:
+        result = await self._call("capabilities")
+        if isinstance(result.data, dict):
+            return result.data
+        return {}
 
     async def open(self, url: str) -> CommandResult:
         return await self._call("open", url=url)

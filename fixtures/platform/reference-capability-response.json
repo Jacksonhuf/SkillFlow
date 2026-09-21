@@ -1,0 +1,28 @@
+{
+  "ok": true,
+  "data": {
+    "snapshot": true,
+    "snapshot_diff": true,
+    "find": true,
+    "download": true,
+    "downloads": true,
+    "tabs": true,
+    "sessions": false,
+    "dialogs": true,
+    "platform_version": "internal-agent-platform-example",
+    "plugin_version": "chrome-use-plugin-example",
+    "operations": {
+      "status": true,
+      "capabilities": true,
+      "open": true,
+      "snapshot": true,
+      "find": true,
+      "click": true,
+      "fill": true,
+      "download": true,
+      "downloads": true,
+      "tab.list": true,
+      "dialog.status": true
+    }
+  }
+}

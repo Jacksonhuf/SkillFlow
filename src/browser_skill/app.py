@@ -11,6 +11,7 @@ from browser_skill.interaction.contracts import (
     error_interaction,
     mapping_review_interaction,
     metrics_interaction,
+    platform_probe_interaction,
     run_result_interaction,
     run_status_interaction,
     sample_review_interaction,
@@ -22,6 +23,8 @@ from browser_skill.interaction.template_menu import TemplateMenu
 from browser_skill.interaction.variables import VariableResolver
 from browser_skill.models import AuthState, RunState, SkillRequest, SkillResponse, TemplateStatus
 from browser_skill.outputs.paths import contained_path
+from browser_skill.platform.acceptance import validate_acceptance_bundle
+from browser_skill.platform.probe import probe_adapter
 from browser_skill.runtime.auto_repair import AutoRepairService
 from browser_skill.runtime.lifecycle import TemplateLifecycleService
 from browser_skill.runtime.recovery import RunRecoveryService
@@ -123,6 +126,32 @@ class BrowserSkillApp:
                 run_id=context.run_id,
                 state=context.state,
                 data={"interaction": interaction.model_dump(mode="json")},
+            )
+        if request.action == "probe":
+            probe_report = await probe_adapter(self.adapter, mode=request.probe_mode)
+            interaction = platform_probe_interaction(probe_report)
+            return SkillResponse(
+                ok=probe_report.ready,
+                message="平台能力探针已完成" if probe_report.ready else "平台能力探针未通过",
+                data={
+                    "probe": probe_report.model_dump(mode="json"),
+                    "interaction": interaction.model_dump(mode="json"),
+                },
+            )
+        if request.action == "validate_acceptance":
+            if request.acceptance_bundle_path is None:
+                return SkillResponse(ok=False, message="验收证据包需要 acceptance_bundle_path")
+            bundle_path = request.acceptance_bundle_path.resolve()
+            if not bundle_path.is_file():
+                return SkillResponse(ok=False, message="验收证据包路径无效")
+            result = validate_acceptance_bundle(
+                bundle_path,
+                require_sign_off=request.confirmed,
+            )
+            return SkillResponse(
+                ok=result.ok,
+                message="验收证据包校验通过" if result.ok else "验收证据包校验失败",
+                data=result.model_dump(mode="json"),
             )
         if request.action == "metrics":
             metrics_report = RunMetricsAggregator(self.runs_root).aggregate(

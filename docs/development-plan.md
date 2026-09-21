@@ -18,7 +18,7 @@ developer diagnostics; no requirement may depend exclusively on it.
 
 | Slice | Requirements | Deliverable |
 |---|---|---|
-| 0 | external dependency | internal platform tool fixture and capability report |
+| 0 | external dependency | platform contract fixture, probe CLI/app action, capability report |
 | 1 | FR-01–04, 09, 15 | models/store/menu/variables/auth/workspace/events |
 | 2 | FR-05–09, 12 | bounded Runner, extraction/download/validation/outputs |
 | 3 | FR-10–11, 14 | draft compiler, test/publish gate |
@@ -29,6 +29,7 @@ error messages, Fake Adapter acceptance, and real integration evidence before pr
 
 ## Current implementation cycle
 
+- Delivery slice 0 (platform contract fixture, structured probe, acceptance bundle validator): complete in-repo.
 - Platform-hosted product boundary and structured interaction contract: complete.
 - Structured chrome-use tool adapter and Fake Adapter contract tests: complete.
 - Teach draft creation, immutable next-version allocation, exact-version Test evidence, explicit
@@ -57,4 +58,6 @@ error messages, Fake Adapter acceptance, and real integration evidence before pr
   before reading, publishing, or writing template content: complete.
 - Internal-platform real-browser acceptance remains the only environment-bound release gate; it
   requires the platform's actual chrome-use fixture and authorized enterprise account and follows
-  `docs/internal-platform-acceptance.md`.
+  `docs/internal-platform-acceptance.md`. Use `browser-skill probe-platform`, Skill action `probe`,
+  and `browser-skill validate-acceptance` to prepare and verify the evidence bundle structure after
+  authorized manual scenarios complete.
