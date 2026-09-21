@@ -6,7 +6,7 @@
 
 下载 **完整包**（不要下 slim 包）：
 
-https://github.com/Jacksonhuf/SkillFlow/releases/download/v0.1.0-full/universal-browser-full-0.1.0.zip
+https://github.com/Jacksonhuf/SkillFlow/releases/download/v0.1.1-full/universal-browser-full-0.1.1.zip
 
 解压后得到 `universal-browser/`，上传到 Skill Hub 或放到 OpenCode 技能目录。
 

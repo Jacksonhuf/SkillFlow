@@ -29,8 +29,8 @@ Skill Hub 会把标准 Skill 目录（`SKILL.md` + `references/`）同步到 Age
 
 | 文件 | 内容 |
 |------|------|
-| `dist/universal-browser-0.1.0.zip` | **标准 Skill**：仅 `SKILL.md` + `references/` |
-| `dist/universal-browser-full-0.1.0.zip` | **完整包**：+ `templates/` + `runtime/`（`pip install ./runtime`） |
+| `dist/universal-browser-0.1.1.zip` | **标准 Skill**：仅 `SKILL.md` + `references/` |
+| `dist/universal-browser-full-0.1.1.zip` | **完整包**：+ `templates/` + `runtime/` + `scripts/`（独立 Windows 模式） |
 
 ```bash
 ./scripts/build-skill-package.sh          # 标准包
@@ -41,7 +41,7 @@ Skill Hub 会把标准 Skill 目录（`SKILL.md` + `references/`）同步到 Age
 标准包上传：
 
 ```text
-dist/universal-browser-0.1.0.zip
+dist/universal-browser-0.1.1.zip
   └── universal-browser/
         ├── SKILL.md
         └── references/
@@ -50,7 +50,7 @@ dist/universal-browser-0.1.0.zip
 完整包上传（运行时与模板与 Skill 同目录）：
 
 ```text
-dist/universal-browser-full-0.1.0.zip
+dist/universal-browser-full-0.1.1.zip
   └── universal-browser/
         ├── SKILL.md
         ├── references/

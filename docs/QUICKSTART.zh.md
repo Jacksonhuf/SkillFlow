@@ -23,7 +23,7 @@ git clone https://github.com/Jacksonhuf/SkillFlow.git && cd SkillFlow
 
 ## 平台同事
 
-- **上架 Skill：** `./scripts/build-skill-package.sh` → 上传 `dist/universal-browser-0.1.0.zip` 到 Hub  
+- **上架 Skill：** `./scripts/build-skill-package.sh` → 上传 `dist/universal-browser-0.1.1.zip` 到 Hub  
 - **接执行层：** `examples/opencode_minimal_tool.py` + 服务端 `pip install` SkillFlow  
 
 用户永远不需要执行 pip 或 install.sh。

@@ -32,7 +32,7 @@ def test_build_skill_package_produces_zip() -> None:
     with tempfile.TemporaryDirectory() as tmp:
         _, zip_path = build_skill_package(root=root, output_dir=Path(tmp))
         assert zip_path.exists()
-        assert zip_path.name == "universal-browser-0.1.0.zip"
+        assert zip_path.name == "universal-browser-0.1.1.zip"
 
 
 def test_build_full_skill_package_includes_runtime_and_templates() -> None:
