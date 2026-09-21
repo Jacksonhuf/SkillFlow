@@ -13,7 +13,7 @@ Operate browser tasks from versioned templates and judge success from validated 
 
 When no host platform injects chrome-use, **you must run the bundled script** instead of imagining browser results:
 
-1. `python3 scripts/invoke.py doctor` — verify chrome-use CLI + extension readiness.
+1. `python3 scripts/invoke.py doctor` — verify chrome-use CLI + extension readiness. On Linux/macOS, first run may auto-install the official chrome-use CLI if missing (`UNIVERSAL_BROWSER_SKIP_CHROME_USE_INSTALL=1` or `--no-auto-install-chrome-use` to disable).
 2. `python3 scripts/invoke.py templates` — list published templates.
 3. `python3 scripts/invoke.py run <template_id> --var name=value` — execute; output is JSON under `runs/`.
 4. If state is `WAIT_USER_AUTH`, user logs in in Chrome, then `python3 scripts/invoke.py resume <run_id>`.

@@ -26,7 +26,8 @@ def _bootstrap() -> None:
     runtime_src = root / "runtime" / "src"
     if not runtime_src.is_dir():
         print(
-            "ERROR: missing bundled runtime/. Use universal-browser-full-*.zip from SkillFlow releases.",
+            "ERROR: missing bundled runtime/. "
+            "Use universal-browser-full-*.zip from SkillFlow releases.",
             file=sys.stderr,
         )
         raise SystemExit(2)
@@ -48,6 +49,14 @@ def main(argv: list[str] | None = None) -> int:
         default=os.environ.get("CHROME_USE_BIN", "chrome-use"),
         help="chrome-use CLI name or path (or set CHROME_USE_BIN)",
     )
+    parser.add_argument(
+        "--no-auto-install-chrome-use",
+        action="store_true",
+        help=(
+            "Do not run official install.sh on first use "
+            "(or set UNIVERSAL_BROWSER_SKIP_CHROME_USE_INSTALL=1)"
+        ),
+    )
     sub = parser.add_subparsers(dest="command", required=True)
 
     sub.add_parser("templates", help="List published templates")
@@ -63,7 +72,15 @@ def main(argv: list[str] | None = None) -> int:
     resume_p.add_argument("--var", action="append", default=[])
 
     args = parser.parse_args(argv)
-    app = make_standalone_app(_skill_root(), chrome_use_executable=args.chrome_use)
+    try:
+        app = make_standalone_app(
+            _skill_root(),
+            chrome_use_executable=args.chrome_use,
+            auto_install_chrome_use=not args.no_auto_install_chrome_use,
+        )
+    except Exception as exc:
+        print(str(exc), file=sys.stderr)
+        return 1
 
     async def dispatch() -> int:
         if args.command == "doctor":
