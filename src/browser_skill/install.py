@@ -36,6 +36,8 @@ def sync_skill_tree(
     """Copy universal-browser skill (SKILL.md + references) into an OpenCode-style directory."""
     base = repo_root(root)
     dest = destination / _SKILL_ID
+    if dest.exists():
+        shutil.rmtree(dest)
     dest.mkdir(parents=True, exist_ok=True)
 
     skill_md = base / "SKILL.md"
@@ -51,14 +53,6 @@ def sync_skill_tree(
             shutil.rmtree(references_dest)
         shutil.copytree(references_src, references_dest)
 
-    quickstart_src = base / "docs" / "QUICKSTART.zh.md"
-    if quickstart_src.exists():
-        shutil.copy2(quickstart_src, dest / "QUICKSTART.zh.md")
-
-    hub_doc = base / "docs" / "SKILL-HUB.zh.md"
-    if hub_doc.exists():
-        shutil.copy2(hub_doc, dest / "SKILL-HUB.zh.md")
-
     return dest
 
 
@@ -66,14 +60,20 @@ def build_skill_package(
     *,
     root: Path | None = None,
     output_dir: Path | None = None,
+    include_hub_manifest: bool = False,
 ) -> tuple[Path, Path]:
-    """Build skill-package/universal-browser and dist/universal-browser-<version>.zip for Skill Hub."""
+    """Build ``skill-package/universal-browser`` and ``dist/universal-browser-<version>.zip``.
+
+    The zip contains only the standard skill tree (``universal-browser/SKILL.md`` and optional
+    ``references/``). ``hub.manifest.json`` is optional SkillFlow publish metadata, not part of
+    OpenCode / Open Agent Skills.
+    """
     base = repo_root(root)
     package_root = base / "skill-package"
     skill_dir = sync_skill_tree(package_root, root=base)
 
     manifest_path = package_root / "hub.manifest.json"
-    if manifest_path.exists():
+    if include_hub_manifest and manifest_path.exists():
         manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
         manifest["version"] = _PACKAGE_VERSION
         manifest_path.write_text(
@@ -92,7 +92,7 @@ def build_skill_package(
         for path in skill_dir.rglob("*"):
             if path.is_file():
                 archive.write(path, path.relative_to(package_root).as_posix())
-        if manifest_path.exists():
+        if include_hub_manifest and manifest_path.exists():
             archive.write(manifest_path, "hub.manifest.json")
 
     install_skill_paths([base / ".opencode" / "skills"], root=base)
