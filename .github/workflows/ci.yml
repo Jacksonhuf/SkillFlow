@@ -1,0 +1,23 @@
+name: CI
+
+on:
+  push:
+    branches: [main, codex, "cursor/**"]
+  pull_request:
+
+jobs:
+  quality-gate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install package
+        run: pip install -e '.[dev,cli]'
+      - name: Ruff
+        run: ruff check .
+      - name: Mypy
+        run: mypy src/browser_skill
+      - name: Pytest
+        run: pytest

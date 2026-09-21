@@ -52,6 +52,15 @@ Store only redacted evidence approved by the test owner:
 - auth pause/resume and Repair/recovery linkage;
 - reviewer names, date, defects, retest results, and final sign-off.
 
+Validate bundle structure before sign-off:
+
+```bash
+browser-skill validate-acceptance path/to/evidence.json --require-sign-off
+```
+
+Use `fixtures/platform/sample-acceptance-bundle.json` as a non-secret shape reference. The Skill
+action `validate_acceptance` performs the same checks for platform-hosted workflows.
+
 The release gate passes only when every required scenario has explicit evidence and no unresolved
 high-severity security or correctness defect. This repository intentionally does not provide a way
 to mark that external gate as passed from local tests.

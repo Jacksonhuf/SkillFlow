@@ -104,8 +104,10 @@ progress, and results remain UI-framework-neutral and include accessible text fa
 pytest
 ruff check .
 mypy src/browser_skill
-python /opt/codex/skills/.system/skill-creator/scripts/quick_validate.py .
+python scripts/quick_validate.py
 browser-skill doctor                # optional local diagnostic, not a user workflow
+browser-skill probe-platform --fixture fixtures/platform/reference-capability-response.json
+browser-skill validate-acceptance fixtures/platform/sample-acceptance-bundle.json --require-sign-off
 pytest -m integration               # internal platform release environment only
 ```
 

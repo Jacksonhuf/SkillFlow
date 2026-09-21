@@ -34,6 +34,27 @@ class FakeBrowserAdapter:
             BrowserCapabilities(snapshot=True, find=True, download=True, downloads=True, tabs=True),
         )
 
+    async def capabilities_payload(self) -> dict[str, Any]:
+        if self.script["capabilities_payload"]:
+            raw = self.script["capabilities_payload"].popleft()
+            return raw if isinstance(raw, dict) else {}
+        caps = await self.capabilities()
+        payload = caps.model_dump(mode="json")
+        payload["operations"] = {
+            "status": True,
+            "capabilities": True,
+            "open": True,
+            "snapshot": True,
+            "find": True,
+            "click": True,
+            "fill": True,
+            "download": True,
+            "downloads": True,
+            "tab.list": True,
+            "dialog.status": True,
+        }
+        return payload
+
     async def open(self, url: str) -> CommandResult:
         self.calls.append(("open", (url,), {}))
         return self._take("open_result", CommandResult(ok=True, operation="open", data=url))

@@ -445,6 +445,8 @@ class SkillRequest(StrictModel):
         "test",
         "publish",
         "repair",
+        "probe",
+        "validate_acceptance",
     ] = "start"
     selector: str | int | None = None
     template_id: str | None = None
@@ -456,6 +458,8 @@ class SkillRequest(StrictModel):
     draft: TemplateDraftInput | None = None
     learned: LearnedSpec | None = None
     confirmed: bool = False
+    acceptance_bundle_path: Path | None = None
+    probe_mode: Literal["platform_tool", "local_cli"] = "platform_tool"
 
 
 class SkillResponse(StrictModel):

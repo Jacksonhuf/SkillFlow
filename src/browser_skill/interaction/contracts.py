@@ -19,6 +19,7 @@ class InteractionKind(StrEnum):
     TARGET_REVIEW = "target_review"
     MAPPING_REVIEW = "mapping_review"
     METRICS = "metrics"
+    PLATFORM_PROBE = "platform_probe"
     ERROR = "error"
 
 
@@ -247,6 +248,16 @@ def run_status_interaction(context: Any) -> SkillInteraction:
             "download_count": len(context.downloaded_files),
             "repair_attempts": context.repair_attempts,
         },
+    )
+
+
+def platform_probe_interaction(report: Any) -> SkillInteraction:
+    return SkillInteraction(
+        kind=InteractionKind.PLATFORM_PROBE,
+        title="平台 chrome-use 能力探针",
+        text=report.text,
+        actions=["retry_probe", "open_acceptance_guide"],
+        data=report.model_dump(mode="json"),
     )
 
 

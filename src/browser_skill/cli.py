@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, Any
 
 import typer
 import yaml
@@ -14,11 +14,13 @@ from rich.table import Table
 from rich.text import Text
 
 from browser_skill.app import parse_variables
-from browser_skill.browser.chrome_use import ChromeUseAdapter
+from browser_skill.browser.chrome_use import ChromeUseAdapter, ChromeUseToolAdapter
 from browser_skill.errors import SkillError
 from browser_skill.interaction.template_menu import TemplateMenu
 from browser_skill.interaction.variables import VariableResolver
 from browser_skill.models import BrowserTemplate, RunState
+from browser_skill.platform.acceptance import validate_acceptance_bundle
+from browser_skill.platform.probe import probe_adapter
 from browser_skill.runtime.repair import RepairService
 from browser_skill.runtime.runner import Runner
 from browser_skill.runtime.teach import TeachCompiler
@@ -144,35 +146,90 @@ def create_template(
         raise typer.Exit(2) from exc
 
 
-@app.command()
+@app.command("doctor")
 def doctor(
     executable: Annotated[str, typer.Option(help="chrome-use executable")] = "chrome-use",
 ) -> None:
     """Probe the installed browser bridge before a real run."""
 
-    async def check() -> tuple[object, object | None]:
+    async def check() -> object:
         adapter = ChromeUseAdapter(executable=executable)
-        capabilities = await adapter.capabilities()
-        try:
-            status = await adapter.status()
-        except SkillError as exc:
-            return capabilities, exc
-        return capabilities, status
+        return await probe_adapter(adapter, mode="local_cli")
 
-    capabilities, status = asyncio.run(check())
+    report = asyncio.run(check())
     table = Table(box=box.ROUNDED, title="环境诊断", border_style="#6366f1")
-    table.add_column("能力")
-    table.add_column("状态", justify="center")
-    for name, enabled in capabilities.model_dump().items():  # type: ignore[union-attr]
+    table.add_column("检查项")
+    table.add_column("结果", justify="center")
+    table.add_row("status", "[green]✓[/green]" if report.status_ok else "[red]✗[/red]")
+    for name, enabled in report.capabilities.model_dump().items():
         table.add_row(name, "[green]✓[/green]" if enabled else "[yellow]—[/yellow]")
     console.print(table)
-    if isinstance(status, SkillError):
-        console.print(Panel(str(status), title="[yellow]需要处理[/yellow]", border_style="yellow"))
-        raise typer.Exit(1)
-    if not status.ok:  # type: ignore[union-attr]
-        console.print("[red]chrome-use 已安装，但扩展或 Chrome Session 不可用。[/red]")
+    console.print(Panel(report.text, title="诊断摘要", border_style="#6366f1"))
+    if not report.ready:
         raise typer.Exit(1)
     console.print("[bold green]环境已就绪。[/bold green]")
+
+
+@app.command("probe-platform")
+def probe_platform(
+    report_out: Annotated[
+        Path | None, typer.Option("--report-out", help="Write JSON probe report")
+    ] = None,
+    fixture: Annotated[
+        Path | None,
+        typer.Option(
+            help="Replay a recorded platform capabilities payload instead of a live invoker"
+        ),
+    ] = None,
+) -> None:
+    """Verify the injected platform chrome-use tool against the release contract."""
+
+    async def run_probe() -> object:
+        if fixture is not None:
+            payload = json.loads(fixture.read_text(encoding="utf-8"))
+
+            async def invoke(_tool: str, arguments: dict[str, Any]) -> dict[str, Any]:
+                if arguments.get("operation") == "status":
+                    return {"ok": True, "data": {"ready": True}}
+                if arguments.get("operation") == "capabilities":
+                    return payload
+                return {"ok": True, "data": {"operation": arguments.get("operation")}}
+
+            adapter = ChromeUseToolAdapter(invoke)
+        else:
+            raise typer.BadParameter(
+                "Provide --fixture with a recorded capabilities response, "
+                "or invoke probe through the Agent platform app action against a live invoker."
+            )
+        return await probe_adapter(adapter, mode="platform_tool")
+
+    report = asyncio.run(run_probe())
+    console.print(Panel(report.text, title="平台能力探针", border_style="#6366f1"))
+    if report_out is not None:
+        report_out.write_text(
+            json.dumps(report.model_dump(mode="json"), indent=2, ensure_ascii=False) + "\n",
+            encoding="utf-8",
+        )
+        console.print(f"[dim]Report written to {report_out}[/dim]")
+    if not report.ready:
+        raise typer.Exit(1)
+
+
+@app.command("validate-acceptance")
+def validate_acceptance(
+    bundle: Annotated[Path, typer.Argument(help="Acceptance evidence bundle JSON")],
+    require_sign_off: Annotated[
+        bool, typer.Option(help="Require approved sign_off block")
+    ] = False,
+) -> None:
+    """Validate the structure of an internal-platform acceptance evidence bundle."""
+    result = validate_acceptance_bundle(bundle, require_sign_off=require_sign_off)
+    color = "green" if result.ok else "red"
+    console.print(Panel(result.text, title="验收证据校验", border_style=color))
+    for warning in result.warnings:
+        console.print(f"[yellow]{warning}[/yellow]")
+    if not result.ok:
+        raise typer.Exit(2)
 
 
 @app.command()

@@ -1,0 +1,75 @@
+{
+  "schema_version": "1.0",
+  "recorded_at": "2026-09-21T00:00:00Z",
+  "environment": {
+    "platform_version": "internal-agent-platform-example",
+    "plugin_version": "chrome-use-plugin-example",
+    "chrome_extension_version": "example-extension"
+  },
+  "capability_probe": {
+    "ready": true,
+    "status_ok": true,
+    "missing_capability_flags": [],
+    "missing_operations": [],
+    "missing_recommended_flags": [],
+    "platform_version": "internal-agent-platform-example",
+    "plugin_version": "chrome-use-plugin-example",
+    "text": "Platform chrome-use contract probe passed."
+  },
+  "scenarios": [
+    {
+      "id": "menu_and_variables",
+      "passed": true,
+      "run_ids": [],
+      "notes": "Cards and variable form rendered with text fallback."
+    },
+    {
+      "id": "authenticated_extraction",
+      "passed": true,
+      "run_ids": ["run-example-1"],
+      "notes": "Two list records and one detail field merged."
+    },
+    {
+      "id": "attachment",
+      "passed": true,
+      "run_ids": ["run-example-1"],
+      "notes": "Attachment stored under run workspace."
+    },
+    {
+      "id": "human_authentication",
+      "passed": true,
+      "run_ids": ["run-example-auth"],
+      "notes": "WAIT_USER_AUTH resumed on same run_id."
+    },
+    {
+      "id": "pagination",
+      "passed": true,
+      "run_ids": ["run-example-1"],
+      "notes": "Two pages without duplicate business keys."
+    },
+    {
+      "id": "repair",
+      "passed": true,
+      "run_ids": ["run-failed", "run-repair-test"],
+      "notes": "Immutable version published and linked."
+    },
+    {
+      "id": "cancellation_and_recovery",
+      "passed": true,
+      "run_ids": ["run-cancelled", "run-recovered-child"],
+      "notes": "Cancel durable; recovery replayed as child run."
+    },
+    {
+      "id": "security_review",
+      "passed": true,
+      "run_ids": [],
+      "notes": "No credentials or snapshot refs persisted."
+    }
+  ],
+  "defects": [],
+  "sign_off": {
+    "approved": true,
+    "reviewer": "example.reviewer",
+    "date": "2026-09-21"
+  }
+}
