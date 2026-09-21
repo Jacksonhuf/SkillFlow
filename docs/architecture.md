@@ -91,6 +91,8 @@ templates/<template_id>/metadata.json
 
 The YAML contains immutable version content. Metadata points to the current published/latest
 versions. Writes use a temporary sibling and `os.replace`. Directory scanning can rebuild metadata.
+Template directories, version files, and metadata files must be regular contained paths; symlinked
+entries and malformed version pointers fail closed rather than being followed or silently trusted.
 
 ### Run workspace
 

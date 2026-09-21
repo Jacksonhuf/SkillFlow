@@ -1,3 +1,4 @@
+import json
 from copy import deepcopy
 from pathlib import Path
 
@@ -48,3 +49,58 @@ def test_unpublished_listing_uses_latest_while_normal_listing_uses_published(
     store.save(draft)
     assert store.list()[0].version == 1
     assert store.list(include_unpublished=True)[0].version == 2
+
+
+def test_store_rejects_symlinked_template_directory(tmp_path: Path, template_data) -> None:
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    store_root = tmp_path / "templates"
+    store_root.mkdir()
+    template_id = str(template_data["template_id"])
+    (store_root / template_id).symlink_to(outside, target_is_directory=True)
+    store = TemplateStore(store_root)
+
+    with pytest.raises(SkillError, match="symlink"):
+        store.load(template_id)
+
+
+@pytest.mark.parametrize("filename", ["metadata.json", "1.yaml"])
+def test_store_rejects_symlinked_template_files(
+    tmp_path: Path, template_data, filename: str
+) -> None:
+    store_root = tmp_path / "templates"
+    template_id = str(template_data["template_id"])
+    template_dir = store_root / template_id
+    template_dir.mkdir(parents=True)
+    outside = tmp_path / f"outside-{filename.replace('.', '-')}"
+    outside.write_text("{}", encoding="utf-8")
+    (template_dir / filename).symlink_to(outside)
+    store = TemplateStore(store_root)
+
+    with pytest.raises(SkillError, match="symlink"):
+        store.load(template_id, 1, require_published=False)
+
+
+@pytest.mark.parametrize(
+    "metadata",
+    [
+        [],
+        {"latest_version": "not-a-version"},
+        {"latest_version": True},
+        {"latest_version": 0},
+        {"published_version": "not-a-version"},
+        {"template_id": "different-template", "latest_version": 1},
+    ],
+)
+def test_store_rejects_malformed_metadata_versions(
+    tmp_path: Path, template_data, metadata: object
+) -> None:
+    store_root = tmp_path / "templates"
+    template_id = str(template_data["template_id"])
+    template_dir = store_root / template_id
+    template_dir.mkdir(parents=True)
+    (template_dir / "metadata.json").write_text(json.dumps(metadata), encoding="utf-8")
+    store = TemplateStore(store_root)
+
+    with pytest.raises(SkillError, match="Invalid metadata"):
+        store.next_version(template_id)

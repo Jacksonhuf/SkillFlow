@@ -81,11 +81,13 @@ progress, and results remain UI-framework-neutral and include accessible text fa
     post-click browser dialog is dismissed and fails safely rather than being implicitly accepted.
 28. **XLSX output:** the OOXML ZIP parses, strings remain inline non-formulas, XML controls are
     removed, numeric/boolean types remain native, names stay contained, and sheet bounds fail safely.
+29. **Template-store containment:** symlinked template directories/version/metadata files and malformed
+    metadata pointers fail closed; store discovery never follows such entries outside its root.
 
 ## 4. Non-functional tests
 
-- **Security:** path traversal, symlink escape, argv metacharacters, secret redaction, unknown YAML,
-  undeclared action and host escape.
+- **Security:** path traversal, template/run symlink escape, malformed template metadata, argv
+  metacharacters, secret redaction, unknown YAML, undeclared action and host escape.
 - **Reliability:** subprocess timeout/kill, malformed output, interrupted atomic write cleanup,
   duplicate run workspace, confirmed interrupted replay, and bounded polling while a download is
   still in progress.

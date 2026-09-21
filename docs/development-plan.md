@@ -53,6 +53,8 @@ error messages, Fake Adapter acceptance, and real integration evidence before pr
 - Resume readiness revalidation and safe rejection/dismissal of unexpected browser dialogs: complete.
 - Dependency-free atomic XLSX output with native number/boolean types, formula-injection resistance,
   XML sanitization, spreadsheet bounds, and archive validation: complete.
+- Template Store directory, version, and metadata paths reject symlinks and malformed version pointers
+  before reading, publishing, or writing template content: complete.
 - Internal-platform real-browser acceptance remains the only environment-bound release gate; it
   requires the platform's actual chrome-use fixture and authorized enterprise account and follows
   `docs/internal-platform-acceptance.md`.
