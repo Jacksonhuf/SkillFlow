@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any
 
 from browser_skill.browser.base import BrowserAdapter
+from browser_skill.execution_contract import contract_payload
 from browser_skill.errors import ErrorCode, SkillError
 from browser_skill.interaction.variables import VariableResolver
 from browser_skill.models import (
@@ -22,6 +23,7 @@ from browser_skill.models import (
 )
 from browser_skill.outputs.writer import OutputWriter, RunWorkspace
 from browser_skill.runtime.auth import AuthClassifier
+from browser_skill.runtime.capability_requirements import ensure_template_runtime_capabilities
 from browser_skill.runtime.detail import DetailCollector
 from browser_skill.runtime.downloader import AttachmentDownloader
 from browser_skill.runtime.extractor import RecordExtractor
@@ -106,6 +108,7 @@ class Runner:
                 )
             self._transition(workspace, context, RunState.AUTH_CHECK)
             capabilities = await self._ensure_browser_ready()
+            ensure_template_runtime_capabilities(capabilities, template)
             self.policy.require_url_allowed(str(template.system.entry_url), template)
             if template.system.preferred_tab_url_contains and capabilities.tabs:
                 adopted = await self.adapter.adopt_tab(template.system.preferred_tab_url_contains)
@@ -198,7 +201,11 @@ class Runner:
                 message="任务完成" if final_state == RunState.COMPLETED else "任务产生部分结果",
                 run_id=run_id,
                 state=final_state,
-                data={"artifacts": artifacts, "validation": report.model_dump(mode="json")},
+                data={
+                    "artifacts": artifacts,
+                    "validation": report.model_dump(mode="json"),
+                    "execution_contract": contract_payload(),
+                },
             )
         except SkillError as exc:
             context.state = (
@@ -245,6 +252,7 @@ class Runner:
         try:
             self._transition(workspace, context, RunState.AUTH_CHECK)
             capabilities = await self._ensure_browser_ready()
+            ensure_template_runtime_capabilities(capabilities, context.template_snapshot)
             snapshot = await self.adapter.snapshot(interactive=True)
             auth_state = self.auth.classify(context.template_snapshot.auth, snapshot)
             if auth_state != AuthState.AUTHENTICATED:

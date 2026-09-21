@@ -14,6 +14,15 @@ description: Template-driven browser tasks via bundled runtime and templates; on
 - **Never** show `probe` / platform capability interactions to business users during normal tasks.
 - The **only** routine user browser action: log in in Chrome when the run state is `WAIT_USER_AUTH`, then `resume`.
 
+## Mandatory agent execution (OpenCode / Hub)
+
+Read **`references/agent-execution.zh.md`** and obey it in every turn:
+
+- **Template runner only:** use `py scripts\invoke.py start` then `run <template_id> --var ...`. Never improvise scraping, JS injection, or alternate browser tools.
+- **Evidence:** no `run_id` and no `runs/<run_id>/` artifacts ⇒ do not claim extraction or attachment success.
+- **`start` JSON includes `execution_contract`:** treat it as binding machine-readable rules alongside this file.
+- On attachment templates, rely on the engine (`AttachmentDownloader` + detail flow); if `error.details.missing_capabilities` is present, retry once then escalate to operators—not end users.
+
 Operate browser tasks from versioned templates and judge success from validated business outputs.
 
 ## Standalone execution (no platform tool)
@@ -87,6 +96,7 @@ Skill root must contain `templates/` and `runtime/src/`. Set `UNIVERSAL_BROWSER_
 
 ## References
 
+- Read `references/agent-execution.zh.md` before any browser task in standalone mode.
 - Read `references/template-schema.md` when creating or repairing templates.
 - Read `references/runbook.md` when diagnosing auth, extraction, download, or validation failures.
 - Consult `docs/requirements.md`, `docs/architecture.md`, and `docs/test-plan.md` for the normative

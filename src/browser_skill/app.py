@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Any
 
 from browser_skill.browser.base import BrowserAdapter
+from browser_skill.execution_contract import contract_payload
 from browser_skill.errors import ErrorCode, SkillError
 from browser_skill.interaction.contracts import (
     auth_required_interaction,
@@ -81,6 +82,7 @@ class BrowserSkillApp:
                 ok=True,
                 message="可用模板",
                 data={
+                    "execution_contract": contract_payload(),
                     "interaction": interaction.model_dump(mode="json"),
                     "templates": [
                         {"display_index": index, **asdict(item)}

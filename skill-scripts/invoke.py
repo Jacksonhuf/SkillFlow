@@ -63,7 +63,8 @@ def main(argv: list[str] | None = None) -> int:
 
     sub.add_parser("templates", help="List published templates")
     sub.add_parser("start", help="Show template menu JSON")
-    sub.add_parser("doctor", help="Check chrome-use CLI and extension readiness")
+    sub.add_parser("capabilities", help="JSON browser capabilities (operator / agent preflight)")
+    sub.add_parser("doctor", help="Check chrome-use CLI and extension readiness (operator only)")
 
     run_p = sub.add_parser("run", help="Run a published template")
     run_p.add_argument("selector", help="Template id, menu index, or name")
@@ -90,6 +91,20 @@ def main(argv: list[str] | None = None) -> int:
         return 1
 
     async def dispatch() -> int:
+        if args.command == "capabilities":
+            caps = await app.adapter.capabilities()
+            status = await app.adapter.status()
+            payload = {
+                "status_ok": status.ok,
+                "capabilities": caps.model_dump(mode="json"),
+            }
+            payload_fn = getattr(app.adapter, "capabilities_payload", None)
+            if callable(payload_fn):
+                extra = await payload_fn()
+                if isinstance(extra, dict):
+                    payload["capabilities_payload"] = extra
+            print(json.dumps(payload, ensure_ascii=False, indent=2))
+            return 0 if status.ok else 1
         if args.command == "doctor":
             from browser_skill.platform.probe import probe_adapter
 
