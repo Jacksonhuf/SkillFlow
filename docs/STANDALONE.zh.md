@@ -24,7 +24,32 @@ universal-browser/
 └── RUNTIME.zh.md
 ```
 
-**唯一外部依赖**：本机 [chrome-use 扩展](https://chromewebstore.google.com/detail/chrome-use/knfcmbamhjmaonkfnjhldjedeobeafmk) + 对应的 **chrome-use CLI** 在 PATH 里，且 Chrome 已登录业务系统。
+**唯一外部依赖**：本机 [chrome-use 扩展](https://chromewebstore.google.com/detail/chrome-use/knfcmbamhjmaonkfnjhldjedeobeafmk) **和配套的 CLI**（扩展 alone 不够）。
+
+### 安装 CLI（与扩展同一项目）
+
+**Linux / macOS（推荐）：**
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/leeguooooo/chrome-use/main/install.sh | sh
+echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.bashrc   # 或 ~/.zshrc
+source ~/.bashrc
+chrome-use extension install   # 注册与扩展的本地桥，一次性
+chrome-use doctor
+```
+
+**Windows：** 从 [chrome-use Releases](https://github.com/leeguooooo/chrome-use/releases) 下载 `chrome-use-win32-x64.tar.gz`，把 `chrome-use.exe` 加到 PATH。
+
+**已安装但 Skill 仍报找不到：** 指定绝对路径：
+
+```bash
+export CHROME_USE_BIN="$HOME/.local/bin/chrome-use"
+python3 scripts/invoke.py doctor
+# 或
+python3 scripts/invoke.py --chrome-use "$HOME/.local/bin/chrome-use" doctor
+```
+
+官方文档：https://chrome-use.leeguoo.com/en/install.html
 
 ## Agent 怎么执行（OpenCode）
 

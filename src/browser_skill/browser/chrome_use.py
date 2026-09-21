@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Any
 
 from browser_skill.browser.base import snapshot_from_data
+from browser_skill.browser.chrome_use_paths import resolve_chrome_use_executable
 from browser_skill.errors import ErrorCode, SkillError
 from browser_skill.models import BrowserCapabilities, BrowserSnapshot, CommandResult
 
@@ -34,13 +35,7 @@ class ChromeUseAdapter:
         timeout: float | None = None,
         sensitive_indexes: set[int] | None = None,
     ) -> CommandResult:
-        binary = shutil.which(self.executable)
-        if binary is None:
-            raise SkillError(
-                ErrorCode.CHROME_USE_UNAVAILABLE,
-                f"'{self.executable}' was not found on PATH",
-                stage="adapter",
-            )
+        binary = resolve_chrome_use_executable(self.executable)
         argv = [binary, *args]
         safe = list(argv)
         for index in sensitive_indexes or set():

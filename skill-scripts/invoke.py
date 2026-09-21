@@ -45,8 +45,8 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Universal Browser standalone skill runner")
     parser.add_argument(
         "--chrome-use",
-        default="chrome-use",
-        help="chrome-use CLI executable (must match your installed bridge)",
+        default=os.environ.get("CHROME_USE_BIN", "chrome-use"),
+        help="chrome-use CLI name or path (or set CHROME_USE_BIN)",
     )
     sub = parser.add_subparsers(dest="command", required=True)
 
@@ -73,8 +73,6 @@ def main(argv: list[str] | None = None) -> int:
             print(report.text)
             return 0 if report.ready else 1
         if args.command == "templates":
-            from browser_skill.interaction.template_menu import TemplateMenu
-
             items = app.store.list()
             for index, item in enumerate(items, 1):
                 print(f"{index}. {item.name} ({item.template_id} v{item.version})")
