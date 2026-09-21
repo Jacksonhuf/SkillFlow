@@ -5,8 +5,6 @@ description: Template-driven browser task execution through an Agent platform's 
 
 # Universal Browser
 
-> **OpenCode 用户**：若已 clone 本仓库，可直接 `/universal-browser`；否则在仓库根目录执行 `./scripts/install.sh`。详见 `QUICKSTART.zh.md`。
-
 Operate browser tasks from versioned templates and judge success from validated business outputs.
 
 ## Workflow

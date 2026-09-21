@@ -414,6 +414,36 @@ def resume(
 
 
 @app.command()
+def setup(
+    global_install: Annotated[
+        bool, typer.Option("--global", help="Install to ~/.config/opencode/skills")
+    ] = False,
+    skills_root: Annotated[
+        list[Path] | None,
+        typer.Option("--skills-root", help="Custom skills root; repeatable"),
+    ] = None,
+) -> None:
+    """Install the universal-browser Skill into OpenCode / standard skills directories."""
+    from browser_skill.install import default_skill_targets, install_skill_paths, repo_root
+
+    root = repo_root()
+    targets = list(skills_root or []) or default_skill_targets(global_install=global_install)
+    installed = install_skill_paths(targets, root=root)
+    lines = [f"• {path / 'SKILL.md'}" for path in installed]
+    console.print(
+        Panel(
+            "[bold green]Skill 已安装[/bold green]\n\n"
+            + "\n".join(lines)
+            + "\n\n在 Agent 对话输入: [cyan]/universal-browser[/cyan]\n"
+            "或说: 「列出浏览器任务」\n\n"
+            "详细说明: docs/QUICKSTART.zh.md",
+            title="Universal Browser",
+            border_style="green",
+        )
+    )
+
+
+@app.command()
 def schema() -> None:
     """Print the machine-readable Template 1.0 JSON Schema."""
     console.print_json(json.dumps(BrowserTemplate.model_json_schema()))
