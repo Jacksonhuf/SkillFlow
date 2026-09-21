@@ -1,14 +1,24 @@
 ---
 name: universal-browser
-description: Template-driven browser task execution through an Agent platform's existing chrome-use tool/plugin and the user's signed-in Chrome. Use when an Agent must list or select reusable browser templates, collect run variables, extract structured web content, download related attachments, create a template in Teach mode, test a draft, resume after interactive login, or repair learned page mappings after a site change.
+description: Template-driven browser tasks via bundled runtime and templates; only chrome-use (CLI + Chrome extension) is external. Use for listing/running templates, extraction, downloads, Teach/Repair, and login resume. In standalone mode run scripts/invoke.py from this skill directory.
 ---
 
 # Universal Browser
 
-> **Skill Hub 用户**：在公司技能市场安装 `universal-browser` 即可，**无需** clone 或 `install.sh`。对话中使用 **`/universal-browser`**。  
-> **Hub 管理员**：运行 `./scripts/build-skill-package.sh` 上传 `dist/universal-browser-0.1.0.zip`，见 `SKILL-HUB.zh.md`。
+> **独立模式（无其它平台）**：使用 **完整技能包** `universal-browser-full-*.zip`。除 [chrome-use 扩展/CLI](https://chromewebstore.google.com/detail/chrome-use/knfcmbamhjmaonkfnjhldjedeobeafmk) 外，**templates、Python 运行时、脚本** 都在本目录。执行：`python3 scripts/invoke.py doctor|templates|run|resume`。详见 `STANDALONE.zh.md` 或 `docs/STANDALONE.zh.md`。
 
 Operate browser tasks from versioned templates and judge success from validated business outputs.
+
+## Standalone execution (no platform tool)
+
+When no host platform injects chrome-use, **you must run the bundled script** instead of imagining browser results:
+
+1. `python3 scripts/invoke.py doctor` — verify chrome-use CLI + extension readiness.
+2. `python3 scripts/invoke.py templates` — list published templates.
+3. `python3 scripts/invoke.py run <template_id> --var name=value` — execute; output is JSON under `runs/`.
+4. If state is `WAIT_USER_AUTH`, user logs in in Chrome, then `python3 scripts/invoke.py resume <run_id>`.
+
+Skill root must contain `templates/` and `runtime/src/`. Set `UNIVERSAL_BROWSER_SKILL_ROOT` if the working directory is elsewhere.
 
 ## Workflow
 

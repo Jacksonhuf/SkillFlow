@@ -91,6 +91,19 @@ def sync_full_skill_tree(
     if runtime_doc.exists():
         shutil.copy2(runtime_doc, skill_dir / "RUNTIME.zh.md")
 
+    hub_doc = base / "docs" / "STANDALONE.zh.md"
+    if hub_doc.exists():
+        shutil.copy2(hub_doc, skill_dir / "STANDALONE.zh.md")
+
+    scripts_src = base / "skill-scripts"
+    scripts_dest = skill_dir / "scripts"
+    if scripts_src.is_dir():
+        if scripts_dest.exists():
+            shutil.rmtree(scripts_dest)
+        shutil.copytree(scripts_src, scripts_dest)
+        (scripts_dest / "invoke.py").chmod(0o755)
+        (scripts_dest / "setup.sh").chmod(0o755)
+
     return skill_dir
 
 
