@@ -14,11 +14,18 @@ from browser_skill.models import (
 )
 from browser_skill.outputs.paths import safe_filename, safe_relative_subdir
 from browser_skill.outputs.writer import file_sha256
+from browser_skill.runtime.locator import LocatorService
 
 
 class AttachmentDownloader:
-    def __init__(self, *, completion_polls: int = 3) -> None:
+    def __init__(
+        self,
+        *,
+        completion_polls: int = 6,
+        locator: LocatorService | None = None,
+    ) -> None:
         self.completion_polls = max(1, completion_polls)
+        self.locator = locator or LocatorService()
 
     async def collect(
         self,
@@ -39,8 +46,13 @@ class AttachmentDownloader:
             if spec.max_count is not None:
                 expected = expected[: spec.max_count]
             for record_key, record in expected:
-                element = self._find_element(snapshot, spec.semantic, record_key)
-                if element is None:
+                target = await self._resolve_download_target(
+                    adapter,
+                    snapshot,
+                    spec,
+                    record_key,
+                )
+                if target is None:
                     downloaded.append(
                         DownloadedFile(
                             record_key=record_key,
@@ -50,8 +62,10 @@ class AttachmentDownloader:
                         )
                     )
                     continue
-                target = str(element.get("target") or element.get("ref") or element.get("text"))
-                original = safe_filename(str(element.get("filename") or f"{spec.key}.bin"))
+                original = safe_filename(f"{spec.key}.bin")
+                element = self._find_element(snapshot, spec.semantic, record_key)
+                if element and element.get("filename"):
+                    original = safe_filename(str(element["filename"]))
                 values = {**(record or {}), "original_name": original}
                 name = spec.filename_pattern
                 for key, value in values.items():
@@ -83,12 +97,32 @@ class AttachmentDownloader:
                 )
         return downloaded
 
+    async def _resolve_download_target(
+        self,
+        adapter: BrowserAdapter,
+        snapshot: BrowserSnapshot,
+        spec: AttachmentSpec,
+        record_key: str | None,
+    ) -> str | None:
+        element = self._find_element(snapshot, spec.semantic, record_key)
+        if element is not None:
+            value = element.get("target") or element.get("ref") or element.get("text")
+            return str(value) if value else None
+        located = await self.locator.locate(
+            adapter,
+            snapshot,
+            list(spec.semantic),
+            record_key=record_key,
+            required=False,
+        )
+        return located.target if located else None
+
     async def _wait_for_file(self, adapter: BrowserAdapter, path: Path) -> bool:
         for _ in range(self.completion_polls):
             if path.is_file() and path.stat().st_size > 0:
                 return True
             await adapter.list_downloads()
-            await asyncio.sleep(0)
+            await asyncio.sleep(0.15)
         return path.is_file() and path.stat().st_size > 0
 
     @staticmethod

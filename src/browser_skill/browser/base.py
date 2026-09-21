@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any, Protocol
 
+from browser_skill.browser.snapshot_normalize import coerce_snapshot_elements
 from browser_skill.models import BrowserCapabilities, BrowserSnapshot, CommandResult
 
 
@@ -50,12 +51,15 @@ def snapshot_from_data(data: Any) -> BrowserSnapshot:
     if isinstance(data, BrowserSnapshot):
         return data
     if isinstance(data, dict):
+        elements = coerce_snapshot_elements(data)
         aliases = {
-            "url": data.get("url", ""),
-            "title": data.get("title", ""),
-            "text": data.get("text", data.get("snapshot", "")),
-            "elements": data.get("elements", []),
+            "url": str(data.get("url", data.get("page_url", ""))),
+            "title": str(data.get("title", "")),
+            "text": str(data.get("text", data.get("snapshot", data.get("content", "")))),
+            "elements": elements,
             "records": data.get("records", []),
         }
+        if not aliases["text"] and isinstance(data.get("snapshot"), str):
+            aliases["text"] = data["snapshot"]
         return BrowserSnapshot.model_validate(aliases)
     return BrowserSnapshot(text=str(data))

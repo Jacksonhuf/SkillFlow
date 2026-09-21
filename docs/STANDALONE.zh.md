@@ -4,7 +4,7 @@
 
 ## 用哪个包
 
-https://github.com/Jacksonhuf/SkillFlow/releases/download/v0.1.2-full/universal-browser-full-0.1.2.zip
+https://github.com/Jacksonhuf/SkillFlow/releases/download/v0.1.3-full/universal-browser-full-0.1.3.zip
 
 解压得到 `universal-browser/`，上传到 Skill Hub。
 

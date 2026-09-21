@@ -270,7 +270,7 @@ def test_unexpected_browser_dialog_is_dismissed_and_run_stops(
     template = BrowserTemplate.model_validate(data)
     adapter = FakeBrowserAdapter(
         {
-            "capabilities": [BrowserCapabilities(snapshot=True, dialogs=True)],
+            "capabilities": [BrowserCapabilities(snapshot=True, find=True, dialogs=True)],
             "snapshot": [
                 BrowserSnapshot(
                     url="https://example.internal/home",
