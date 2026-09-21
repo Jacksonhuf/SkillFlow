@@ -1,7 +1,13 @@
 import tempfile
 from pathlib import Path
 
-from browser_skill.install import build_skill_package, install_skill_paths, repo_root, sync_skill_tree
+from browser_skill.install import (
+    build_full_skill_package,
+    build_skill_package,
+    install_skill_paths,
+    repo_root,
+    sync_skill_tree,
+)
 
 
 def test_sync_skill_tree_copies_skill_and_references() -> None:
@@ -26,5 +32,14 @@ def test_build_skill_package_produces_zip() -> None:
     with tempfile.TemporaryDirectory() as tmp:
         _, zip_path = build_skill_package(root=root, output_dir=Path(tmp))
         assert zip_path.exists()
-        assert zip_path.name.startswith("universal-browser-")
-        assert zip_path.suffix == ".zip"
+        assert zip_path.name == "universal-browser-0.1.0.zip"
+
+
+def test_build_full_skill_package_includes_runtime_and_templates() -> None:
+    root = repo_root()
+    with tempfile.TemporaryDirectory() as tmp:
+        skill_dir, zip_path = build_full_skill_package(root=root, output_dir=Path(tmp))
+        assert (skill_dir / "templates" / "inventory_feedback" / "1.yaml").exists()
+        assert (skill_dir / "runtime" / "src" / "browser_skill" / "app.py").exists()
+        assert zip_path.name.endswith(".zip")
+        assert "full" in zip_path.name
