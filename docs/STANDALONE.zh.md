@@ -26,9 +26,23 @@ universal-browser/
 
 **唯一外部依赖**：本机 [chrome-use 扩展](https://chromewebstore.google.com/detail/chrome-use/knfcmbamhjmaonkfnjhldjedeobeafmk) **和配套的 CLI**（扩展 alone 不够）。
 
-### 安装 CLI（与扩展同一项目）
+### 首次自动安装 CLI（Linux / macOS）
 
-**Linux / macOS（推荐）：**
+第一次执行 `python3 scripts/invoke.py doctor`（或 `run` / `resume`）时，若 PATH 上没有 `chrome-use`，技能会**自动**拉取官方 `install.sh` 安装 CLI，并尝试执行一次 `chrome-use extension install`（与已安装的扩展桥接）。需要 **网络、bash、curl**；每个技能副本只尝试一次（标记文件 `.universal-browser/chrome-use-auto-install.done`）。
+
+关闭自动安装：
+
+```bash
+export UNIVERSAL_BROWSER_SKIP_CHROME_USE_INSTALL=1
+# 或
+python3 scripts/invoke.py --no-auto-install-chrome-use doctor
+```
+
+**Windows** 不支持自动安装，请手动下载 CLI 并设置 `CHROME_USE_BIN`。
+
+### 手动安装 CLI（与扩展同一项目）
+
+**Linux / macOS：**
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/leeguooooo/chrome-use/main/install.sh | sh
@@ -72,9 +86,9 @@ python3 scripts/invoke.py resume <run_id>
 export UNIVERSAL_BROWSER_SKILL_ROOT=/path/to/universal-browser
 ```
 
-## 用户只做两件事
+## 用户只需
 
 1. 安装 chrome-use 扩展并保持 Chrome 登录。  
-2. 在 Agent 里启用本技能，按提示让 Agent 调用 `scripts/invoke.py` 或自行在终端运行上述命令。
+2. 在 Agent 里启用本技能；首次在技能目录运行 `python3 scripts/invoke.py doctor`（Linux/macOS 可自动装 CLI，见上）。
 
 不需要：单独平台、SkillFlow git clone、`install.sh`（除非本地开发仓库本身）。

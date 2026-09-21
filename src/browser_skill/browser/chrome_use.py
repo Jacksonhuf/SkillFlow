@@ -4,7 +4,6 @@ import asyncio
 import contextlib
 import json
 import os
-import shutil
 import time
 from collections.abc import Awaitable, Callable
 from pathlib import Path
@@ -90,7 +89,9 @@ class ChromeUseAdapter:
         return await self._run(["status"], timeout=10)
 
     async def capabilities(self) -> BrowserCapabilities:
-        if shutil.which(self.executable) is None:
+        try:
+            resolve_chrome_use_executable(self.executable)
+        except SkillError:
             return BrowserCapabilities()
         result = await self._run(["--help"], timeout=10)
         help_text = f"{result.data}\n{result.safe_stderr}".casefold()
