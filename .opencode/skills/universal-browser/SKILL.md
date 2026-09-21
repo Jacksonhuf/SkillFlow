@@ -5,6 +5,9 @@ description: Template-driven browser task execution through an Agent platform's 
 
 # Universal Browser
 
+> **Skill Hub 用户**：在公司技能市场安装 `universal-browser` 即可，**无需** clone 或 `install.sh`。对话中使用 **`/universal-browser`**。  
+> **Hub 管理员**：运行 `./scripts/build-skill-package.sh` 上传 `dist/universal-browser-0.1.0.zip`，见 `SKILL-HUB.zh.md`。
+
 Operate browser tasks from versioned templates and judge success from validated business outputs.
 
 ## Workflow
