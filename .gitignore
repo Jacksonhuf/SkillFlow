@@ -7,6 +7,9 @@ __pycache__/
 dist/
 build/
 *.egg-info/
+skill-package/universal-browser/runtime/
+skill-package/universal-browser/templates/
+skill-package/universal-browser/RUNTIME.zh.md
 runs/*
 !runs/.gitkeep
 

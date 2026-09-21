@@ -1,0 +1,113 @@
+#!/usr/bin/env python3
+"""Standalone entrypoint for the bundled universal-browser skill (OpenCode / Skill Hub).
+
+Requires only:
+  - This full skill directory (SKILL.md + templates/ + runtime/)
+  - chrome-use CLI on PATH and the Chrome extension enabled in the user's browser
+
+No separate Agent platform or pip install to site-packages is required.
+"""
+from __future__ import annotations
+
+import argparse
+import asyncio
+import json
+import os
+import sys
+from pathlib import Path
+
+
+def _skill_root() -> Path:
+    return Path(__file__).resolve().parent.parent
+
+
+def _bootstrap() -> None:
+    root = _skill_root()
+    runtime_src = root / "runtime" / "src"
+    if not runtime_src.is_dir():
+        print(
+            "ERROR: missing bundled runtime/. Use universal-browser-full-*.zip from SkillFlow releases.",
+            file=sys.stderr,
+        )
+        raise SystemExit(2)
+    path = str(runtime_src)
+    if path not in sys.path:
+        sys.path.insert(0, path)
+    os.environ.setdefault("UNIVERSAL_BROWSER_SKILL_ROOT", str(root))
+
+
+def main(argv: list[str] | None = None) -> int:
+    _bootstrap()
+    from browser_skill.app import parse_variables
+    from browser_skill.models import SkillRequest
+    from browser_skill.standalone import make_standalone_app
+
+    parser = argparse.ArgumentParser(description="Universal Browser standalone skill runner")
+    parser.add_argument(
+        "--chrome-use",
+        default="chrome-use",
+        help="chrome-use CLI executable (must match your installed bridge)",
+    )
+    sub = parser.add_subparsers(dest="command", required=True)
+
+    sub.add_parser("templates", help="List published templates")
+    sub.add_parser("start", help="Show template menu JSON")
+    sub.add_parser("doctor", help="Check chrome-use CLI and extension readiness")
+
+    run_p = sub.add_parser("run", help="Run a published template")
+    run_p.add_argument("selector", help="Template id, menu index, or name")
+    run_p.add_argument("--var", action="append", default=[], help="name=value")
+
+    resume_p = sub.add_parser("resume", help="Resume after Chrome login")
+    resume_p.add_argument("run_id")
+    resume_p.add_argument("--var", action="append", default=[])
+
+    args = parser.parse_args(argv)
+    app = make_standalone_app(_skill_root(), chrome_use_executable=args.chrome_use)
+
+    async def dispatch() -> int:
+        if args.command == "doctor":
+            from browser_skill.platform.probe import probe_adapter
+
+            report = await probe_adapter(app.adapter, mode="local_cli")
+            print(report.text)
+            return 0 if report.ready else 1
+        if args.command == "templates":
+            from browser_skill.interaction.template_menu import TemplateMenu
+
+            items = app.store.list()
+            for index, item in enumerate(items, 1):
+                print(f"{index}. {item.name} ({item.template_id} v{item.version})")
+            return 0
+        if args.command == "start":
+            response = await app.handle(SkillRequest(action="start"))
+            print(json.dumps(response.model_dump(mode="json"), ensure_ascii=False, indent=2))
+            return 0 if response.ok else 1
+        if args.command == "run":
+            variables = parse_variables(args.var)
+            response = await app.handle(
+                SkillRequest(
+                    action="run",
+                    selector=args.selector,
+                    variables=variables,
+                )
+            )
+            print(json.dumps(response.model_dump(mode="json"), ensure_ascii=False, indent=2))
+            return 0 if response.ok else 1
+        if args.command == "resume":
+            response = await app.handle(
+                SkillRequest(
+                    action="resume",
+                    run_id=args.run_id,
+                    variables=parse_variables(args.var),
+                )
+            )
+            print(json.dumps(response.model_dump(mode="json"), ensure_ascii=False, indent=2))
+            return 0 if response.ok else 1
+        return 2
+
+    return asyncio.run(dispatch())
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

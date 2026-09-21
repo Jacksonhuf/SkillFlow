@@ -1,16 +1,10 @@
 # Universal Browser Skill — 快速开始
 
-**有内部 Skill Hub：在市场里安装「Universal Browser」，对话里用 `/universal-browser`，无需 clone 或 install。**  
-上架包：`./scripts/build-skill-package.sh` → 见 **[docs/SKILL-HUB.zh.md](docs/SKILL-HUB.zh.md)**。
+**没有其它平台、只有 OpenCode + chrome-use 扩展时**：下载 **[完整包](https://github.com/Jacksonhuf/SkillFlow/releases/download/v0.1.0-full/universal-browser-full-0.1.0.zip)**，上传到 Skill Hub。除 chrome-use 外全在包内；执行 `python3 scripts/invoke.py doctor`。说明见 **`docs/STANDALONE.zh.md`**。
 
-**无 Hub（仅本地开发）：**
+**有 Skill Hub + 服务端平台工具时**：可用 slim 包或完整包，见 `docs/SKILL-HUB.zh.md`。
 
-```bash
-git clone https://github.com/Jacksonhuf/SkillFlow.git && cd SkillFlow
-./scripts/install.sh
-```
-
-中文说明：**[docs/QUICKSTART.zh.md](docs/QUICKSTART.zh.md)**。
+**本地开发（可选）：** `./scripts/install.sh`
 
 ---
 
