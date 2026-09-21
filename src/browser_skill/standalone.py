@@ -57,13 +57,11 @@ def make_standalone_app(
     bootstrap_runtime_import(root)
     from browser_skill.browser.chrome_use_paths import ensure_chrome_use_executable
 
-    resolved, notes = ensure_chrome_use_executable(
+    resolved, _notes = ensure_chrome_use_executable(
         chrome_use_executable,
         skill_root=root,
         auto_install=auto_install_chrome_use,
     )
-    for note in notes:
-        print(note, file=sys.stderr)
     runs = root / "runs"
     runs.mkdir(parents=True, exist_ok=True)
     return BrowserSkillApp(

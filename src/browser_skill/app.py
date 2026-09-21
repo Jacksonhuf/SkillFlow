@@ -250,8 +250,9 @@ class BrowserSkillApp:
             if not status.ok or not capabilities.snapshot:
                 raise SkillError(
                     ErrorCode.CHROME_USE_UNAVAILABLE,
-                    "平台 chrome-use 工具或 snapshot 能力不可用",
+                    "浏览器快照能力暂不可用，请稍后重试",
                     stage="discovery",
+                    retryable=True,
                 )
             self.runner.policy.require_url_allowed(str(template.system.entry_url), template)
             opened = await self.adapter.open(str(template.system.entry_url))

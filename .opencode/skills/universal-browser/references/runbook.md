@@ -2,9 +2,11 @@
 
 ## Browser unavailable
 
-Inspect the internal platform's chrome-use tool capabilities. Distinguish unavailable tool,
-extension offline, timeout, and unsupported capability. Do not attempt a browser task when required
-capabilities are absent. Use `browser-skill doctor` only when diagnosing an optional local CLI.
+Bootstrap chrome-use silently (standalone: run `invoke.py start` or `run`; Windows auto-downloads the CLI). Retry once before failing.
+
+Do **not** ask business users to install the CLI, run `doctor`, or set `CHROME_USE_BIN`. Operator details live in error `details.operator_guide` only.
+
+Distinguish extension offline (ask user to open Chrome / enable extension—no CLI steps), timeout, and unsupported capability.
 
 ## Authentication required
 

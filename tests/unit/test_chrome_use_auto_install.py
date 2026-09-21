@@ -23,7 +23,7 @@ def test_ensure_respects_disable_flag(tmp_path: Path, monkeypatch: pytest.Monkey
     monkeypatch.delenv("CHROME_USE_BIN", raising=False)
     monkeypatch.setattr(paths.shutil, "which", lambda _name: None)
 
-    with pytest.raises(SkillError, match=r"Chrome Web Store"):
+    with pytest.raises(SkillError, match="浏览器"):
         paths.ensure_chrome_use_executable(skill_root=tmp_path, auto_install=False)
 
 
@@ -71,7 +71,7 @@ def test_ensure_runs_windows_installer_once(
     resolved, notes = paths.ensure_chrome_use_executable(skill_root=tmp_path)
     assert resolved == str(binary.resolve())
     assert (tmp_path / ".universal-browser" / "chrome-use-auto-install.done").is_file()
-    assert any("Windows bundle" in n for n in notes)
+    assert notes == []
 
 
 def test_find_windows_exe_prefers_direct_child(tmp_path: Path) -> None:

@@ -40,6 +40,31 @@ Disable skill auto-install:
 Docs: https://chrome-use.leeguoo.com/en/install.html
 """.strip()
 
+_USER_BROWSER_ENV_MESSAGE = "浏览器自动化环境尚未就绪，请稍后重试。"
+_USER_BROWSER_INIT_FAILED = "浏览器自动化环境初始化失败，请稍后重试或联系管理员。"
+
+
+def _operator_details(**extra: object) -> dict[str, object]:
+    details: dict[str, object] = {"operator_guide": CHROME_USE_INSTALL_HINT}
+    details.update(extra)
+    return details
+
+
+def _chrome_use_unavailable(
+    user_message: str = _USER_BROWSER_ENV_MESSAGE,
+    *,
+    stage: str = "adapter",
+    retryable: bool = True,
+    **details: object,
+) -> SkillError:
+    return SkillError(
+        ErrorCode.CHROME_USE_UNAVAILABLE,
+        user_message,
+        stage=stage,
+        retryable=retryable,
+        details=_operator_details(**details),
+    )
+
 
 def _skill_root_from_env() -> Path | None:
     env = os.environ.get("UNIVERSAL_BROWSER_SKILL_ROOT", "").strip()
@@ -88,12 +113,7 @@ def _windows_download_url() -> str:
 
 def _run_windows_installer(skill_root: Path) -> Path:
     if sys.platform != "win32":
-        raise SkillError(
-            ErrorCode.CHROME_USE_UNAVAILABLE,
-            "Automatic chrome-use CLI install is supported on Windows only.\n\n"
-            + CHROME_USE_INSTALL_HINT,
-            stage="adapter",
-        )
+        raise _chrome_use_unavailable(stage="adapter")
 
     dest_dir = _windows_bundle_dir(skill_root)
     dest_dir.mkdir(parents=True, exist_ok=True)
@@ -104,29 +124,28 @@ def _run_windows_installer(skill_root: Path) -> Path:
         with urllib.request.urlopen(url, timeout=300) as response:
             archive.write_bytes(response.read())
     except (urllib.error.URLError, TimeoutError) as exc:
-        raise SkillError(
-            ErrorCode.CHROME_USE_UNAVAILABLE,
-            f"Failed to download chrome-use Windows bundle from {url}\n\n{CHROME_USE_INSTALL_HINT}",
+        raise _chrome_use_unavailable(
+            _USER_BROWSER_INIT_FAILED,
             stage="adapter",
+            download_url=url,
         ) from exc
 
     try:
         with tarfile.open(archive, "r:gz") as archive_file:
             archive_file.extractall(dest_dir, filter="data")
     except (tarfile.TarError, OSError) as exc:
-        raise SkillError(
-            ErrorCode.CHROME_USE_UNAVAILABLE,
-            f"Failed to extract {archive.name}\n\n{CHROME_USE_INSTALL_HINT}",
+        raise _chrome_use_unavailable(
+            _USER_BROWSER_INIT_FAILED,
             stage="adapter",
+            archive=str(archive),
         ) from exc
 
     exe = _find_windows_exe(dest_dir)
     if exe is None:
-        raise SkillError(
-            ErrorCode.CHROME_USE_UNAVAILABLE,
-            f"Extracted bundle did not contain chrome-use.exe under {dest_dir}\n\n"
-            + CHROME_USE_INSTALL_HINT,
+        raise _chrome_use_unavailable(
+            _USER_BROWSER_INIT_FAILED,
             stage="adapter",
+            extract_dir=str(dest_dir),
         )
 
     os.environ["CHROME_USE_BIN"] = str(exe.resolve())
@@ -170,10 +189,10 @@ def resolve_chrome_use_executable(name: str = "chrome-use") -> str:
         path = Path(override).expanduser()
         if _is_executable_file(path):
             return str(path.resolve())
-        raise SkillError(
-            ErrorCode.CHROME_USE_UNAVAILABLE,
-            f"CHROME_USE_BIN is not a usable file: {path}\n\n{CHROME_USE_INSTALL_HINT}",
+        raise _chrome_use_unavailable(
+            _USER_BROWSER_ENV_MESSAGE,
             stage="adapter",
+            chrome_use_bin=str(path),
         )
 
     direct = Path(name).expanduser()
@@ -189,11 +208,7 @@ def resolve_chrome_use_executable(name: str = "chrome-use") -> str:
         if found:
             return found
 
-    raise SkillError(
-        ErrorCode.CHROME_USE_UNAVAILABLE,
-        f"'{name}' was not found on PATH.\n\n{CHROME_USE_INSTALL_HINT}",
-        stage="adapter",
-    )
+    raise _chrome_use_unavailable(stage="adapter", executable=name)
 
 
 def ensure_chrome_use_executable(
@@ -208,16 +223,11 @@ def ensure_chrome_use_executable(
 
     try:
         return resolve_chrome_use_executable(name), notes
-    except SkillError:
+    except SkillError as exc:
         if not auto_install or os.environ.get("UNIVERSAL_BROWSER_SKIP_CHROME_USE_INSTALL") == "1":
-            raise
+            raise _chrome_use_unavailable(stage=exc.stage or "adapter") from exc
         if sys.platform != "win32":
-            raise SkillError(
-                ErrorCode.CHROME_USE_UNAVAILABLE,
-                "Automatic chrome-use install is Windows-only. Set CHROME_USE_BIN manually.\n\n"
-                + CHROME_USE_INSTALL_HINT,
-                stage="adapter",
-            ) from None
+            raise _chrome_use_unavailable(_USER_BROWSER_INIT_FAILED, stage="adapter") from None
 
     marker = _bootstrap_marker(root)
     if marker.exists():
@@ -227,38 +237,26 @@ def ensure_chrome_use_executable(
         try:
             return resolve_chrome_use_executable(name), notes
         except SkillError as exc:
-            raise SkillError(
-                exc.code,
-                (
-                    "Automatic install already ran for this skill copy "
-                    "but chrome-use is still missing.\n\n"
-                    + CHROME_USE_INSTALL_HINT
-                ),
-                stage=exc.stage,
+            raise _chrome_use_unavailable(
+                _USER_BROWSER_INIT_FAILED,
+                stage=exc.stage or "adapter",
             ) from exc
 
-    notes.append(
-        "First run: downloading chrome-use Windows bundle "
-        f"({CHROME_USE_WINDOWS_ASSET}, {CHROME_USE_WINDOWS_RELEASE})…"
-    )
     try:
         exe = _run_windows_installer(root)
     except SkillError:
         raise
     except Exception as exc:
-        raise SkillError(
-            ErrorCode.CHROME_USE_UNAVAILABLE,
-            f"chrome-use auto-install failed: {exc}\n\n{CHROME_USE_INSTALL_HINT}",
+        raise _chrome_use_unavailable(
+            _USER_BROWSER_INIT_FAILED,
             stage="adapter",
+            reason=str(exc),
         ) from exc
 
     marker.parent.mkdir(parents=True, exist_ok=True)
     marker.write_text(f"installed:{exe}\n", encoding="utf-8")
-    notes.append(f"chrome-use CLI installed at {exe}")
 
     binary = str(exe.resolve())
-    extension_note = _register_extension_if_possible(binary)
-    if extension_note:
-        notes.append(extension_note)
+    _register_extension_if_possible(binary)
 
     return binary, notes

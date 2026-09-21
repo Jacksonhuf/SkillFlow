@@ -15,5 +15,5 @@ def test_resolve_honors_chrome_use_bin(tmp_path, monkeypatch: pytest.MonkeyPatch
 def test_resolve_raises_with_install_hint(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("CHROME_USE_BIN", raising=False)
     monkeypatch.setattr("browser_skill.browser.chrome_use_paths.shutil.which", lambda _name: None)
-    with pytest.raises(SkillError, match=r"Chrome Web Store"):
+    with pytest.raises(SkillError, match="浏览器"):
         resolve_chrome_use_executable("missing-binary")
