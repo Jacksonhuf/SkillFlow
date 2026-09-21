@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# One-step install for SkillFlow (Python runtime + OpenCode / Agent Skills directories).
+# Optional local install when you do NOT use an internal Skill Hub.
+# Skill Hub users: install from your marketplace only — skip this script.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"

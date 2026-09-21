@@ -1,13 +1,16 @@
 # Universal Browser Skill — 快速开始
 
-**一条命令安装** → 在 Agent 里 **`/universal-browser`** 使用。
+**有内部 Skill Hub：在市场里安装「Universal Browser」，对话里用 `/universal-browser`，无需 clone 或 install。**  
+上架包：`./scripts/build-skill-package.sh` → 见 **[docs/SKILL-HUB.zh.md](docs/SKILL-HUB.zh.md)**。
+
+**无 Hub（仅本地开发）：**
 
 ```bash
 git clone https://github.com/Jacksonhuf/SkillFlow.git && cd SkillFlow
 ./scripts/install.sh
 ```
 
-中文步骤见 **[docs/QUICKSTART.zh.md](docs/QUICKSTART.zh.md)**。
+中文说明：**[docs/QUICKSTART.zh.md](docs/QUICKSTART.zh.md)**。
 
 ---
 

@@ -413,6 +413,25 @@ def resume(
         raise typer.Exit(2) from exc
 
 
+@app.command("package")
+def build_package() -> None:
+    """Build dist/universal-browser-*.zip for internal Skill Hub upload (maintainers only)."""
+    from browser_skill.install import build_skill_package
+
+    skill_dir, zip_path = build_skill_package()
+    console.print(
+        Panel(
+            f"[bold green]Skill Hub 包已生成[/bold green]\n\n"
+            f"目录: [cyan]{skill_dir}[/cyan]\n"
+            f"ZIP:  [cyan]{zip_path}[/cyan]\n\n"
+            "请上传 ZIP 到内部 Skill Hub。用户无需 clone 或 install.sh。\n"
+            "说明: docs/SKILL-HUB.zh.md",
+            title="Universal Browser",
+            border_style="green",
+        )
+    )
+
+
 @app.command()
 def setup(
     global_install: Annotated[
