@@ -23,6 +23,7 @@
   },
   "publish": {
     "artifact": "dist/universal-browser-0.1.0.zip",
-    "build": "./scripts/build-skill-package.sh"
+    "build": "./scripts/build-skill-package.sh",
+    "note": "Optional SkillFlow metadata only. Standard skill content is universal-browser/SKILL.md."
   }
 }

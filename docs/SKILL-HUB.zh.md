@@ -72,6 +72,8 @@ pip install /path/to/SkillFlow   # 或内部 PyPI 镜像
 
 文件：`skill-package/hub.manifest.json`
 
+**这不是 OpenCode / Open Agent Skills 标准的一部分。** 只是 SkillFlow 仓库里给内部市场上架用的可选说明文件；**标准 Skill 包只需要目录 `universal-browser/SKILL.md`（+ 可选 `references/` 等）**。
+
 | 字段 | 含义 |
 |------|------|
 | `id` | `universal-browser`，与 SKILL.md frontmatter `name` 一致 |
