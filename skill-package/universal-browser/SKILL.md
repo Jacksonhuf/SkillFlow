@@ -5,7 +5,7 @@ description: Template-driven browser tasks via bundled runtime and templates; on
 
 # Universal Browser
 
-> **独立模式（无其它平台）**：使用 **完整技能包** `universal-browser-full-*.zip`。除 [chrome-use 扩展/CLI](https://chromewebstore.google.com/detail/chrome-use/knfcmbamhjmaonkfnjhldjedeobeafmk) 外，**templates、Python 运行时、脚本** 都在本目录。执行：`python3 scripts/invoke.py doctor|templates|run|resume`。详见 `STANDALONE.zh.md` 或 `docs/STANDALONE.zh.md`。
+> **独立模式（Windows）**：使用 **完整技能包** `universal-browser-full-*.zip`。除 [chrome-use 扩展/CLI](https://chromewebstore.google.com/detail/chrome-use/knfcmbamhjmaonkfnjhldjedeobeafmk) 外，templates、Python 运行时、脚本都在本目录。执行：`py scripts\\invoke.py doctor|templates|run|resume`。详见 `STANDALONE.zh.md` 或 `docs/STANDALONE.zh.md`。
 
 Operate browser tasks from versioned templates and judge success from validated business outputs.
 
@@ -13,7 +13,7 @@ Operate browser tasks from versioned templates and judge success from validated 
 
 When no host platform injects chrome-use, **you must run the bundled script** instead of imagining browser results:
 
-1. `python3 scripts/invoke.py doctor` — verify chrome-use CLI + extension readiness. On Linux/macOS, first run may auto-install the official chrome-use CLI if missing (`UNIVERSAL_BROWSER_SKIP_CHROME_USE_INSTALL=1` or `--no-auto-install-chrome-use` to disable).
+1. `py scripts\\invoke.py doctor` (or `scripts\\invoke.bat doctor`) — verify chrome-use CLI + extension. On **Windows**, first run may auto-download the official win32 bundle if missing (`UNIVERSAL_BROWSER_SKIP_CHROME_USE_INSTALL=1` or `--no-auto-install-chrome-use` to disable).
 2. `python3 scripts/invoke.py templates` — list published templates.
 3. `python3 scripts/invoke.py run <template_id> --var name=value` — execute; output is JSON under `runs/`.
 4. If state is `WAIT_USER_AUTH`, user logs in in Chrome, then `python3 scripts/invoke.py resume <run_id>`.

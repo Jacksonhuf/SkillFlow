@@ -3,9 +3,12 @@
 
 Requires only:
   - This full skill directory (SKILL.md + templates/ + runtime/)
-  - chrome-use CLI on PATH and the Chrome extension enabled in the user's browser
+  - chrome-use CLI and the Chrome extension enabled in the user's browser
 
 No separate Agent platform or pip install to site-packages is required.
+
+Windows: first run can auto-download chrome-use.exe into .universal-browser\\chrome-use\\
+  py scripts\\invoke.py doctor
 """
 from __future__ import annotations
 
@@ -53,7 +56,7 @@ def main(argv: list[str] | None = None) -> int:
         "--no-auto-install-chrome-use",
         action="store_true",
         help=(
-            "Do not run official install.sh on first use "
+            "Do not download chrome-use on first use "
             "(or set UNIVERSAL_BROWSER_SKIP_CHROME_USE_INSTALL=1)"
         ),
     )
