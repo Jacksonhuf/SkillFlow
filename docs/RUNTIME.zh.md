@@ -39,7 +39,7 @@ app = BrowserSkillApp(
 
 ## 与「仅 SKILL.md 的包」对比
 
-- **标准小包**（`universal-browser-0.1.1.zip`）：只有 `SKILL.md` + `references/`，适合 Hub 只分发指令、运行时由平台统一部署。
-- **完整包**（`universal-browser-full-0.1.1.zip`）：本说明 + `templates/` + `runtime/` + `scripts/`，适合 Hub **一个 ZIP 搞定** 指令与执行层（含 Windows 首次自动下载 chrome-use CLI）。
+- **标准小包**（`universal-browser-0.1.2.zip`）：只有 `SKILL.md` + `references/`，适合 Hub 只分发指令、运行时由平台统一部署。
+- **完整包**（`universal-browser-full-0.1.2.zip`）：本说明 + `templates/` + `runtime/` + `scripts/`，适合 Hub **一个 ZIP 搞定** 指令与执行层（含 Windows 首次自动下载 chrome-use CLI）。
 
 chrome-use 仍在用户 Chrome / 平台插件侧，无法打入 ZIP。

@@ -1,6 +1,6 @@
 # Universal Browser Skill — 快速开始
 
-**没有其它平台、只有 OpenCode + chrome-use 扩展时**：下载 **[完整包 v0.1.1](https://github.com/Jacksonhuf/SkillFlow/releases/download/v0.1.1-full/universal-browser-full-0.1.1.zip)**，上传到 Skill Hub。除 chrome-use 外全在包内；Windows 下执行 `py scripts\invoke.py doctor`（首次可自动下载 CLI）。说明见 **`docs/STANDALONE.zh.md`**。
+**没有其它平台、只有 OpenCode + chrome-use 扩展时**：下载 **[完整包 v0.1.2](https://github.com/Jacksonhuf/SkillFlow/releases/download/v0.1.2-full/universal-browser-full-0.1.2.zip)**，上传到 Skill Hub。chrome-use CLI 首次执行时自动准备，无需让用户安装。说明见 **`docs/STANDALONE.zh.md`**。
 
 **有 Skill Hub + 服务端平台工具时**：可用 slim 包或完整包，见 `docs/SKILL-HUB.zh.md`。
 

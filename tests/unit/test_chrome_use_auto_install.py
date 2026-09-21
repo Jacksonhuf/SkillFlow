@@ -33,7 +33,7 @@ def test_ensure_non_windows_skips_auto_install(
     monkeypatch.delenv("CHROME_USE_BIN", raising=False)
     monkeypatch.setattr(paths.shutil, "which", lambda _name: None)
 
-    with pytest.raises(SkillError, match="Windows-only"):
+    with pytest.raises(SkillError, match="初始化失败"):
         paths.ensure_chrome_use_executable(skill_root=tmp_path, auto_install=True)
 
 

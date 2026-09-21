@@ -2,7 +2,7 @@
   "schema_version": "1.0",
   "id": "universal-browser",
   "name": "Universal Browser",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "模板驱动的浏览器任务：选模板、填变量、Chrome 登录后继续，抽取与下载并校验业务结果。",
   "license": "MIT",
   "compatibility": [
@@ -22,7 +22,7 @@
     "user_local_install": false
   },
   "publish": {
-    "artifact": "dist/universal-browser-0.1.1.zip",
+    "artifact": "dist/universal-browser-0.1.2.zip",
     "build": "./scripts/build-skill-package.sh",
     "note": "Optional SkillFlow metadata only. Standard skill content is universal-browser/SKILL.md."
   }
