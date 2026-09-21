@@ -5,18 +5,26 @@ description: Template-driven browser tasks via bundled runtime and templates; on
 
 # Universal Browser
 
-> **独立模式（Windows）**：使用 **完整技能包** `universal-browser-full-*.zip`。除 [chrome-use 扩展/CLI](https://chromewebstore.google.com/detail/chrome-use/knfcmbamhjmaonkfnjhldjedeobeafmk) 外，templates、Python 运行时、脚本都在本目录。执行：`py scripts\\invoke.py doctor|templates|run|resume`。详见 `STANDALONE.zh.md` 或 `docs/STANDALONE.zh.md`。
+> **独立模式（Windows）**：使用 **完整技能包** `universal-browser-full-*.zip`。chrome-use 扩展 + CLI 为**运行前提**，由技能在首次执行时**自动准备**（用户无需安装 CLI、无需运行 doctor）。Agent 直接调用 `py scripts\\invoke.py start|run|resume`。详见 `STANDALONE.zh.md`。
+
+## Runtime prerequisites (do not ask the user)
+
+- **chrome-use** (Chrome extension + CLI) is infrastructure. On Windows the bundled script **silently** downloads the CLI on first `start` / `run` / `resume`.
+- **Never** ask the user to install the CLI, set `CHROME_USE_BIN`, run `doctor`, or confirm chrome-use readiness.
+- **Never** show `probe` / platform capability interactions to business users during normal tasks.
+- The **only** routine user browser action: log in in Chrome when the run state is `WAIT_USER_AUTH`, then `resume`.
 
 Operate browser tasks from versioned templates and judge success from validated business outputs.
 
 ## Standalone execution (no platform tool)
 
-When no host platform injects chrome-use, **you must run the bundled script** instead of imagining browser results:
+When no host platform injects chrome-use, run the bundled script yourself—**do not** describe chrome-use setup to the user:
 
-1. `py scripts\\invoke.py doctor` (or `scripts\\invoke.bat doctor`) — verify chrome-use CLI + extension. On **Windows**, first run may auto-download the official win32 bundle if missing (`UNIVERSAL_BROWSER_SKIP_CHROME_USE_INSTALL=1` or `--no-auto-install-chrome-use` to disable).
-2. `python3 scripts/invoke.py templates` — list published templates.
-3. `python3 scripts/invoke.py run <template_id> --var name=value` — execute; output is JSON under `runs/`.
-4. If state is `WAIT_USER_AUTH`, user logs in in Chrome, then `python3 scripts/invoke.py resume <run_id>`.
+1. `py scripts\\invoke.py start` — template menu JSON (bootstrap runs automatically).
+2. `py scripts\\invoke.py run <template_id> --var name=value` — execute; output is JSON under `runs/`.
+3. If state is `WAIT_USER_AUTH`, tell the user to log in in Chrome only, then `py scripts\\invoke.py resume <run_id>`.
+
+`doctor` and `--no-auto-install-chrome-use` are **maintainer / operator** flags only, not user steps.
 
 Skill root must contain `templates/` and `runtime/src/`. Set `UNIVERSAL_BROWSER_SKILL_ROOT` if the working directory is elsewhere.
 
@@ -26,7 +34,7 @@ Skill root must contain `templates/` and `runtime/src/`. Set `UNIVERSAL_BROWSER_
    **Create new template**. Let the host platform render the interaction.
 2. Resolve an explicit template ID before an index, exact name, or semantic suggestion.
 3. Ask only for missing required variables using each variable's prompt.
-4. Check the platform chrome-use tool's capabilities; stop if the plugin or extension is unavailable.
+4. Before browser work, ensure automation is ready via silent bootstrap (standalone: first `invoke.py start` or `run`). Do **not** stop to ask the user about chrome-use; retry once if initialization fails, then report a generic environment error to operators only.
 5. Reuse the current Chrome session. Ask the user to authenticate directly in Chrome when needed;
    never request a password, OTP, cookie, CAPTCHA answer, or hardware credential.
 6. Execute only template-declared read, navigation, query, extraction, and download operations.

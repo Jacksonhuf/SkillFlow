@@ -13,3 +13,5 @@ skill-package/universal-browser/RUNTIME.zh.md
 runs/*
 !runs/.gitkeep
 
+skill-package/universal-browser/scripts/
+skill-package/universal-browser/STANDALONE.zh.md

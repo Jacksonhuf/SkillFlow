@@ -412,12 +412,17 @@ class Runner:
     async def _ensure_browser_ready(self) -> BrowserCapabilities:
         status = await self.adapter.status()
         if not status.ok:
-            raise SkillError(ErrorCode.EXTENSION_OFFLINE, "chrome-use or its extension is offline")
+            raise SkillError(
+                ErrorCode.EXTENSION_OFFLINE,
+                "Chrome 扩展未连接，请确认 Chrome 已打开且扩展已启用",
+                retryable=True,
+            )
         capabilities = await self.adapter.capabilities()
         if not capabilities.snapshot:
             raise SkillError(
                 ErrorCode.CHROME_USE_UNAVAILABLE,
-                "Interactive snapshot is unsupported",
+                "浏览器快照能力暂不可用，请稍后重试",
+                retryable=True,
             )
         return capabilities
 

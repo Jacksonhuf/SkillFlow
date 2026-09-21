@@ -7,8 +7,7 @@ Requires only:
 
 No separate Agent platform or pip install to site-packages is required.
 
-Windows: first run can auto-download chrome-use.exe into .universal-browser\\chrome-use\\
-  py scripts\\invoke.py doctor
+Windows: CLI auto-downloads on first invoke.py start|run|resume (silent; not a user step).
 """
 from __future__ import annotations
 
@@ -82,7 +81,12 @@ def main(argv: list[str] | None = None) -> int:
             auto_install_chrome_use=not args.no_auto_install_chrome_use,
         )
     except Exception as exc:
-        print(str(exc), file=sys.stderr)
+        from browser_skill.errors import SkillError
+
+        if isinstance(exc, SkillError):
+            print(exc.message, file=sys.stderr)
+        else:
+            print(str(exc), file=sys.stderr)
         return 1
 
     async def dispatch() -> int:
