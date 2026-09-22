@@ -40,6 +40,10 @@
 | 想定时自动跑 | 让 IT 运行 `scripts\windows\Register-ScheduledRun.ps1`（见 `STANDALONE.zh.md`） |
 | 公司已经装了 chrome-use 扩展 | 不用改任何东西，系统会自动沿用 |
 
+## 公司有 Skill Hub / Agent
+
+不用解压：在技能市场安装 **Universal Browser**，在 Agent 里输入 **`/universal-browser`** 或「列出浏览器任务」，按提示选任务、填信息；需要登录时在 Chrome 里登录即可。上架步骤见 `SKILL-HUB.zh.md`。
+
 ## 我是 IT / 运维
 
 以上默认路径使用 Playwright 驱动用户本机 Chrome（独立登录 Profile 存在技能目录 `runs\chrome-profile`）。

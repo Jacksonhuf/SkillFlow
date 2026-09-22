@@ -12,6 +12,9 @@ skill-package/universal-browser/templates/
 skill-package/universal-browser/RUNTIME.zh.md
 skill-package/universal-browser/scripts/
 skill-package/universal-browser/STANDALONE.zh.md
+skill-package/universal-browser/QUICKSTART.zh.md
+skill-package/universal-browser/open-console.bat
+skill-package/universal-browser/open-console.sh
 skill-package/universal-browser/vendor/
 runs/*
 !runs/.gitkeep
