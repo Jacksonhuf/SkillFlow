@@ -57,8 +57,9 @@ def make_standalone_app(
 ) -> BrowserSkillApp:
     """Build the app for the bundled skill directory.
 
-    ``engine`` defaults to ``auto``: reuse an existing chrome-use CLI, otherwise drive the
-    user's Chrome through Playwright (installed on demand). Nothing here asks the user anything.
+    ``engine`` defaults to ``auto``: drive the user's Chrome through Playwright (installed on
+    demand), falling back to chrome-use only when Playwright is unavailable. Nothing here asks
+    the user anything.
     """
     root = skill_root or resolve_skill_root()
     bootstrap_runtime_import(root)

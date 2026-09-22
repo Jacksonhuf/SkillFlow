@@ -25,12 +25,25 @@ def test_explicit_engine_wins_over_detection(monkeypatch: pytest.MonkeyPatch) ->
     assert auto_engine.plan_engine().engine == "chrome-use"
 
 
-def test_existing_chrome_use_cli_is_reused(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_playwright_is_default_even_with_chrome_use_installed(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     monkeypatch.setattr(auto_engine, "chrome_use_available", lambda *a, **k: "/opt/chrome-use")
     monkeypatch.setattr(auto_engine, "playwright_available", lambda: True)
     plan = auto_engine.plan_engine()
+    assert plan.engine == "playwright"
+
+
+def test_existing_chrome_use_cli_only_when_playwright_unavailable(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(auto_engine, "chrome_use_available", lambda *a, **k: "/opt/chrome-use")
+    monkeypatch.setattr(auto_engine, "playwright_available", lambda: False)
+    monkeypatch.setattr(auto_engine, "install_playwright", lambda **k: (False, "pip 失败"))
+    plan = auto_engine.plan_engine()
     assert plan.engine == "chrome-use"
     assert plan.chrome_use_executable == "/opt/chrome-use"
+    assert "pip 失败" in plan.notes
 
 
 def test_playwright_preferred_when_no_cli(monkeypatch: pytest.MonkeyPatch) -> None:

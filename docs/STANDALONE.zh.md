@@ -6,10 +6,12 @@
 
 | 机器状态 | 自动结果 | 用户要做的 |
 |----------|----------|------------|
-| 已有 chrome-use CLI（IT 装过 / sidecar / `CHROME_USE_BIN`） | 沿用 chrome-use | 保持扩展启用 |
-| 没有 chrome-use，但有 Python + Chrome | **Playwright** 驱动本机 Chrome，独立登录 Profile 在 `runs\chrome-profile` | 首次运行在弹出的 Chrome 登录一次 |
+| 有 Python + Chrome（默认路线） | **Playwright** 驱动本机 Chrome，独立登录 Profile 在 `runs\chrome-profile` | 首次运行在弹出的 Chrome 登录一次 |
 | Python 里还没装 `playwright` | 首次 `start` / `run` / `ui` 静默 `pip install playwright`（`UNIVERSAL_BROWSER_NO_AUTO_PIP=1` 可关闭；内网请预装或配 `PIP_INDEX_URL`） | 无 |
+| Playwright 装不上，但机器上已有 chrome-use CLI（sidecar / `CHROME_USE_BIN`） | 回退沿用 chrome-use | 保持扩展启用 |
 | 都不可用 | 回退到 chrome-use 的 Windows 自动下载流程 | 无 |
+
+已装 chrome-use 的机器**不会**自动改用它；要强制走扩展路线请设 `UNIVERSAL_BROWSER_ENGINE=chrome-use`。
 
 控制台「设置」页显示同一份检查清单，缺项给「一键修复」（安装 Playwright / 从 chrome-use 切到 Playwright）。
 强制指定：`--engine chrome-use|playwright` 或 `UNIVERSAL_BROWSER_ENGINE`。

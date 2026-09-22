@@ -1,7 +1,7 @@
 # Universal Browser Skill — 快速开始
 
 **业务用户三步：** 解压 `universal-browser-full-*.zip` → 双击 `open-console.bat`（macOS / Linux：`open-console.sh`）→ 在网页里点任务、填信息、开始运行。
-浏览器驱动自动准备（已有 chrome-use 就沿用，否则用 Playwright 驱动本机 Chrome），第一次运行在弹出的 Chrome 里登录一次即可。详见 **`docs/QUICKSTART.zh.md`**。
+浏览器驱动自动准备（默认 Playwright 驱动本机 Chrome，无需任何插件），第一次运行在弹出的 Chrome 里登录一次即可。详见 **`docs/QUICKSTART.zh.md`**。
 
 **Agent 内使用：** Hub 上传完整技能包（≤5MB），对话里 `/universal-browser`。构建：`./scripts/build-skill-package.sh --full`。
 

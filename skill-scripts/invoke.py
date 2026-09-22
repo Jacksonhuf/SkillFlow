@@ -66,8 +66,8 @@ def main(argv: list[str] | None = None) -> int:
         choices=["auto", "chrome-use", "playwright"],
         default=os.environ.get("UNIVERSAL_BROWSER_ENGINE", "auto"),
         help=(
-            "Browser engine. auto (default): reuse an installed chrome-use CLI, otherwise drive "
-            "local Chrome with Playwright (installed on demand). "
+            "Browser engine. auto (default): drive local Chrome with Playwright (installed on "
+            "demand); chrome-use is only used when Playwright is unavailable. "
             "Set UNIVERSAL_BROWSER_CDP_URL to attach to a running Chrome."
         ),
     )

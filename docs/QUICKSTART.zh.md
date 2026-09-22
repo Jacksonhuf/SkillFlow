@@ -38,7 +38,7 @@
 | 顶部提示「浏览器驱动尚未安装」 | 点「一键修复」（需要能访问 pip 源；内网请让 IT 预装 `playwright` 包） |
 | 任务停在「请登录」 | 在弹出的 Chrome 里登录，回来点「我已登录，继续」 |
 | 想定时自动跑 | 让 IT 运行 `scripts\windows\Register-ScheduledRun.ps1`（见 `STANDALONE.zh.md`） |
-| 公司已经装了 chrome-use 扩展 | 不用改任何东西，系统会自动沿用 |
+| 公司已经装了 chrome-use 扩展 | 不影响；默认仍用 Playwright。IT 想强制用扩展可设 `UNIVERSAL_BROWSER_ENGINE=chrome-use` |
 
 ## 公司有 Skill Hub / Agent
 

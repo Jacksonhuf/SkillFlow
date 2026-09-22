@@ -3,11 +3,12 @@
 Business users should never pick an engine. ``plan_engine`` decides for them:
 
 1. An explicit request (``--engine`` / ``UNIVERSAL_BROWSER_ENGINE``) always wins.
-2. A chrome-use CLI that is already on the machine (IT-provisioned) keeps working as before.
-3. Otherwise Playwright drives the user's own Chrome with a persistent profile — the user logs
+2. Otherwise Playwright drives the user's own Chrome with a persistent profile — the user logs
    in once in the window that pops up and never touches a setting.
-4. When Playwright is not installed yet, it is installed silently with pip (opt out with
-   ``UNIVERSAL_BROWSER_NO_AUTO_PIP=1``); if that fails, fall back to the chrome-use bootstrap.
+3. When Playwright is not installed yet, it is installed silently with pip (opt out with
+   ``UNIVERSAL_BROWSER_NO_AUTO_PIP=1``).
+4. Only if Playwright is unavailable do we fall back to chrome-use: an already-present CLI
+   first, then the Windows bootstrap download.
 
 ``setup_status`` turns the same checks into a plain-language checklist for the console.
 """
@@ -139,14 +140,6 @@ def plan_engine(
     if wanted != ENGINE_AUTO:
         return EnginePlan(engine=resolve_engine(wanted), reason="explicit")
 
-    existing = chrome_use_available(chrome_use_executable, skill_root=skill_root)
-    if existing:
-        return EnginePlan(
-            engine="chrome-use",
-            reason="检测到已安装的 chrome-use CLI",
-            chrome_use_executable=existing,
-        )
-
     if playwright_available():
         return EnginePlan(engine="playwright", reason="使用 Playwright 驱动本机 Chrome")
 
@@ -163,6 +156,16 @@ def plan_engine(
     else:
         notes.append("未启用 Playwright 自动安装")
 
+    # Playwright is the default; chrome-use only remains as a fallback for machines
+    # where the Python package cannot be installed (offline) but the CLI already exists.
+    existing = chrome_use_available(chrome_use_executable, skill_root=skill_root)
+    if existing:
+        return EnginePlan(
+            engine="chrome-use",
+            reason="Playwright 不可用，沿用已安装的 chrome-use CLI",
+            chrome_use_executable=existing,
+            notes=notes,
+        )
     return EnginePlan(
         engine="chrome-use",
         reason="Playwright 不可用，回退到 chrome-use 引导安装",

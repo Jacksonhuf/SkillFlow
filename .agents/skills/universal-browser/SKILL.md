@@ -9,7 +9,7 @@ description: Template-driven browser tasks via bundled runtime and templates; on
 
 ## Runtime prerequisites (do not ask the user)
 
-- The browser engine is chosen **automatically** (`--engine auto`): an already-installed chrome-use CLI is reused; otherwise Playwright drives the user's own Chrome (installed on demand with pip). The bundled script does this **silently** on first `start` / `run` / `resume`.
+- The browser engine is chosen **automatically** (`--engine auto`): Playwright drives the user's own Chrome (the Python package is installed on demand with pip); chrome-use is only a fallback when Playwright is unavailable. The bundled script does this **silently** on first `start` / `run` / `resume`.
 - **Never** ask the user to install a CLI or Python package, set `CHROME_USE_BIN` / `UNIVERSAL_BROWSER_ENGINE`, run `doctor`, or confirm engine readiness.
 - Business users who prefer a UI double-click `open-console.bat` / `open-console.sh` at the skill root; the console shows a readiness checklist with one-click repair.
 - **Never** show `probe` / platform capability interactions to business users during normal tasks.
