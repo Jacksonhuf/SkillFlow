@@ -319,9 +319,18 @@ class ReportSpec(StrictModel):
 
 
 class DeliveryChannelSpec(StrictModel):
-    type: Literal["local", "webhook", "email"] = "local"
+    """One delivery destination.
+
+    ``target`` is a directory (local), an http(s) URL (webhook / wecom robot) or a comma-separated
+    recipient list (email). Credentials never live in templates: SMTP settings come from
+    ``UNIVERSAL_BROWSER_SMTP_*`` environment variables. ``options`` holds channel-specific knobs
+    such as ``subject``, ``attach``, ``max_attachment_mb`` or ``mentioned_mobile_list``.
+    """
+
+    type: Literal["local", "webhook", "email", "wecom"] = "local"
     target: str = ""
     enabled: bool = False
+    options: dict[str, Any] = Field(default_factory=dict)
 
 
 class DeliverySpec(StrictModel):

@@ -38,7 +38,7 @@ async def finalize_pipeline(
         path = workspace.atomic_text("report.md", markdown)
         artifacts["report"] = path.relative_to(workspace.path).as_posix()
         report_meta["path"] = artifacts["report"]
-    delivery = deliver(template, context, artifacts)
+    delivery = deliver(template, context, artifacts, analysis=analysis)
     payload = {
         "stages": {
             PipelineStage.PROCESS.value: {
