@@ -49,6 +49,9 @@ class RunWorkspace:
             json.dumps(payload, ensure_ascii=False, indent=2, default=_json_default) + "\n",
         )
 
+    def atomic_text(self, name: str, content: str) -> Path:
+        return self._atomic_text(self.resolve(name), content)
+
     @staticmethod
     def _atomic_text(path: Path, content: str) -> Path:
         path.parent.mkdir(parents=True, exist_ok=True)

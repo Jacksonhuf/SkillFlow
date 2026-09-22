@@ -198,7 +198,7 @@ class Runner:
             context.finished_at = datetime.now(UTC)
             artifacts = self.output_writer.write(context, report)
             pipeline_data = finalize_pipeline(context, report, artifacts)
-            artifacts.update({k: v for k, v in pipeline_data.items() if k.endswith("_json")})
+            self.output_writer.write_summary(context, report=report, artifacts=artifacts)
             self._persist_context(workspace, context)
             self._event(workspace, context, "run_finished", artifacts=artifacts)
             return SkillResponse(
@@ -209,11 +209,8 @@ class Runner:
                 data={
                     "artifacts": artifacts,
                     "validation": report.model_dump(mode="json"),
-<<<<<<< HEAD
                     "execution_contract": contract_payload(),
-=======
                     "pipeline": pipeline_data.get("pipeline"),
->>>>>>> 80673c4 (Refactor toward template-driven business data platform)
                 },
             )
         except SkillError as exc:
@@ -332,6 +329,7 @@ class Runner:
             context.finished_at = datetime.now(UTC)
             artifacts = self.output_writer.write(context, report)
             pipeline_data = finalize_pipeline(context, report, artifacts)
+            self.output_writer.write_summary(context, report=report, artifacts=artifacts)
             self._persist_context(workspace, context)
             self._event(workspace, context, "run_finished", artifacts=artifacts)
             return SkillResponse(
