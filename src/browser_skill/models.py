@@ -370,6 +370,7 @@ class BrowserCapabilities(StrictModel):
     sessions: bool = False
     dialogs: bool = False
     network: bool = False
+    screenshot: bool = False
 
 
 class NetworkExchange(StrictModel):

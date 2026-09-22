@@ -118,3 +118,10 @@ class FakeBrowserAdapter:
     async def network_requests(self) -> CommandResult:
         self.calls.append(("network_requests", (), {}))
         return self._take("network", CommandResult(ok=True, operation="network", data=[]))
+
+    async def screenshot(self) -> CommandResult:
+        self.calls.append(("screenshot", (), {}))
+        return self._take(
+            "screenshot",
+            CommandResult(ok=True, operation="screenshot", data=b"\x89PNG fake"),
+        )

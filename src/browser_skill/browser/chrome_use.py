@@ -106,6 +106,7 @@ class ChromeUseAdapter:
             sessions="session" in help_text,
             dialogs="dialog" in help_text,
             network="network" in help_text,
+            screenshot="screenshot" in help_text,
         )
 
     async def capabilities_payload(self) -> dict[str, Any]:
@@ -181,6 +182,9 @@ class ChromeUseAdapter:
 
     async def network_requests(self) -> CommandResult:
         return await self._run(["network", "list", "--json"])
+
+    async def screenshot(self) -> CommandResult:
+        return await self._run(["screenshot", "--json"])
 
 
 ToolInvoker = Callable[[str, dict[str, Any]], Awaitable[dict[str, Any]]]
@@ -301,3 +305,6 @@ class ChromeUseToolAdapter:
 
     async def network_requests(self) -> CommandResult:
         return await self._call("network.list")
+
+    async def screenshot(self) -> CommandResult:
+        return await self._call("screenshot")

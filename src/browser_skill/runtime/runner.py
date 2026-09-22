@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any
 
 from browser_skill.acquire.network import NetworkExtractor, NetworkRecordSource
+from browser_skill.acquire.vision import NullVisionProvider, VisionFallback, VisionProvider
 from browser_skill.browser.base import BrowserAdapter
 from browser_skill.errors import ErrorCode, SkillError
 from browser_skill.execution_contract import contract_payload
@@ -55,18 +56,21 @@ class Runner:
         output_writer: OutputWriter | None = None,
         policy: ActionPolicy | None = None,
         locator: LocatorService | None = None,
+        vision_provider: VisionProvider | None = None,
     ) -> None:
         self.adapter = adapter
         self.runs_root = runs_root
         self.variables = variable_resolver or VariableResolver()
         self.auth = auth_classifier or AuthClassifier()
         self.validator = validator or ResultValidator()
-        self.downloader = downloader or AttachmentDownloader()
-        self.extractor = extractor or RecordExtractor()
+        # One vision fallback shared by every locator so attempts are reported once per run
+        self.vision = VisionFallback(vision_provider or NullVisionProvider())
+        self.locator = locator or LocatorService(vision=self.vision)
+        self.downloader = downloader or AttachmentDownloader(locator=self.locator)
+        self.extractor = extractor or RecordExtractor(locator=self.locator)
         self.detail_collector = detail_collector or DetailCollector(self.downloader)
         self.output_writer = output_writer or OutputWriter()
         self.policy = policy or ActionPolicy()
-        self.locator = locator or LocatorService()
         self.run_store = RunStore(runs_root)
 
     async def run(
@@ -179,6 +183,7 @@ class Runner:
                         failed_record_count=len(detail_result.failed_record_keys),
                     )
             context.records = apply_processing(template, context.records)
+            self._report_vision(workspace, context)
             self._transition(workspace, context, RunState.VALIDATING)
             report = self.validator.validate(
                 template,
@@ -317,6 +322,7 @@ class Runner:
                         failed_record_count=len(detail_result.failed_record_keys),
                     )
             context.records = apply_processing(template, context.records)
+            self._report_vision(workspace, context)
             self._transition(workspace, context, RunState.VALIDATING)
             report = self.validator.validate(
                 template,
@@ -360,6 +366,21 @@ class Runner:
                 state=context.state,
                 data={"error": exc.as_dict()},
             )
+
+    def _report_vision(self, workspace: RunWorkspace, context: RunContext) -> None:
+        if not self.vision.attempts:
+            return
+        attempts = list(self.vision.attempts)
+        self.vision.attempts.clear()
+        self._event(
+            workspace,
+            context,
+            "vision_fallback",
+            source=AcquisitionSource.VISION.value,
+            provider=self.vision.provider.name,
+            located=sum(item["outcome"] == "located" for item in attempts),
+            attempts=attempts,
+        )
 
     async def _collect_records(
         self,

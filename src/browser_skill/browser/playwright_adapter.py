@@ -15,6 +15,7 @@ module imports it lazily so the rest of the runtime keeps working with chrome-us
 from __future__ import annotations
 
 import asyncio
+import base64
 import contextlib
 import json
 import re
@@ -23,6 +24,7 @@ from collections import deque
 from pathlib import Path
 from typing import Any
 
+from browser_skill.acquire.vision import parse_xy_target
 from browser_skill.errors import ErrorCode, SkillError
 from browser_skill.models import BrowserCapabilities, BrowserSnapshot, CommandResult
 
@@ -351,6 +353,7 @@ class PlaywrightAdapter:
             sessions=True,
             dialogs=True,
             network=True,
+            screenshot=True,
         )
 
     async def capabilities_payload(self) -> dict[str, Any]:
@@ -472,7 +475,11 @@ class PlaywrightAdapter:
         async def action() -> Any:
             page = await self._ensure()
             before = page.url
-            await self._locator(page, target).click(timeout=self.timeout_ms)
+            point = parse_xy_target(target)
+            if point is not None:  # vision fallback answers in viewport coordinates
+                await page.mouse.click(point[0], point[1])
+            else:
+                await self._locator(page, target).click(timeout=self.timeout_ms)
             if observe:
                 await self._settle(page)
                 # A popup may have replaced the active page while settling
@@ -618,6 +625,19 @@ class PlaywrightAdapter:
                 }
             ],
         )
+
+    async def screenshot(self) -> CommandResult:
+        async def action() -> Any:
+            page = await self._ensure()
+            png = await page.screenshot(type="png", full_page=False)
+            size = page.viewport_size or {}
+            return {
+                "png_base64": base64.b64encode(png).decode("ascii"),
+                "width": int(size.get("width", 0)),
+                "height": int(size.get("height", 0)),
+            }
+
+        return await self._guarded("screenshot", action)
 
     async def network_requests(self) -> CommandResult:
         await self._drain_captures()
