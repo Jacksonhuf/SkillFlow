@@ -9,6 +9,7 @@ from typing import Any
 from browser_skill.acquire.network import (
     NetworkDiscovery,
     NetworkExtractor,
+    NetworkRecordSource,
     parse_exchanges,
     resolve_path,
     split_field_path,
@@ -21,6 +22,8 @@ from browser_skill.models import (
     BrowserTemplate,
     CommandResult,
     LearnedMapping,
+    PaginationSpec,
+    PaginationStrategy,
     RunState,
     SourcePage,
 )
@@ -191,6 +194,138 @@ def test_runner_falls_back_to_dom_when_network_has_no_match(tmp_path: Path, temp
     assert run["records"][0]["sn"] == "DOM-SN"
     events = (tmp_path / str(response.run_id) / "execution.jsonl").read_text(encoding="utf-8")
     assert "network_extraction_fallback" in events
+
+
+def _page_body(*rows: tuple[str, str, str]) -> dict[str, Any]:
+    return {
+        "code": 0,
+        "data": {
+            "list": [
+                {"sampleId": sample_id, "sn": sn, "productModel": model}
+                for sample_id, sn, model in rows
+            ]
+        },
+    }
+
+
+def _page_exchange(page: int, body: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "url": f"https://example.internal/api/inventory/list?page={page}",
+        "method": "GET",
+        "status": 200,
+        "content_type": "application/json",
+        "body": body,
+    }
+
+
+def test_network_record_source_only_reads_fresh_exchanges_per_page(template_data) -> None:
+    template = _template(template_data, _learned_network())
+    page1 = _page_exchange(1, _page_body(("S-1", "SN-1", "P100")))
+    page2 = _page_exchange(2, _page_body(("S-2", "SN-2", "P200")))
+    adapter = FakeBrowserAdapter(
+        {
+            "network": [
+                CommandResult(ok=True, operation="network", data=[page1]),
+                # Browser keeps the cumulative log: page 1 must not be re-read on page 2.
+                CommandResult(ok=True, operation="network", data=[page1, page2]),
+                CommandResult(ok=True, operation="network", data=[page1, page2]),
+                CommandResult(ok=False, operation="network", safe_stderr="unavailable"),
+            ]
+        }
+    )
+    source = NetworkRecordSource(adapter, template)
+    snapshot = BrowserSnapshot()
+
+    assert asyncio.run(source(snapshot)) == [
+        {"sample_id": "S-1", "sn": "SN-1", "product_model": "P100"}
+    ]
+    assert asyncio.run(source(snapshot)) == [
+        {"sample_id": "S-2", "sn": "SN-2", "product_model": "P200"}
+    ]
+    assert asyncio.run(source(snapshot)) is None  # nothing new -> DOM fallback for this page
+    assert asyncio.run(source(snapshot)) is None  # listing failed -> DOM fallback
+    assert (source.network_pages, source.dom_pages, source.listing_failures) == (2, 2, 1)
+
+
+def test_runner_paginates_with_network_source_per_page(tmp_path: Path, template_data) -> None:
+    template = _template(template_data, _learned_network())
+    template.target.pagination = PaginationSpec(
+        strategy=PaginationStrategy.NEXT_BUTTON, semantic=["下一页"], max_pages=5
+    )
+    page1 = _page_exchange(1, _page_body(("S-1", "SN-1", "P100"), ("S-2", "SN-2", "P200")))
+    page2 = _page_exchange(2, _page_body(("S-3", "SN-3", "P300")))
+    first = BrowserSnapshot(
+        url="https://example.internal/list?page=1",
+        text="退出登录 样机盘点反馈",
+        elements=[{"role": "button", "text": "下一页", "ref": "@next"}],
+    )
+    second = BrowserSnapshot(
+        url="https://example.internal/list?page=2",
+        text="退出登录 样机盘点反馈 第2页",
+        elements=[{"role": "text", "text": "第 2 页（末页）"}],
+    )
+    adapter = FakeBrowserAdapter(
+        {
+            "snapshot": [first, second],
+            "capabilities": [
+                BrowserCapabilities(
+                    snapshot=True, find=True, download=True, downloads=True, tabs=True, network=True
+                )
+            ],
+            "find_result": [CommandResult(ok=False, operation="find")],
+            "network": [
+                CommandResult(ok=True, operation="network", data=[page1]),
+                CommandResult(ok=True, operation="network", data=[page1, page2]),
+            ],
+        }
+    )
+    response = asyncio.run(Runner(adapter, tmp_path).run(template, {}))
+    assert response.ok and response.state == RunState.COMPLETED
+    run = json.loads((tmp_path / str(response.run_id) / "run.json").read_text(encoding="utf-8"))
+    assert [record["sn"] for record in run["records"]] == ["SN-1", "SN-2", "SN-3"]
+    assert adapter.calls.count(("network_requests", (), {})) == 2
+    events = (tmp_path / str(response.run_id) / "execution.jsonl").read_text(encoding="utf-8")
+    assert '"network_pages": 2' in events and '"dom_pages": 0' in events
+
+
+def test_runner_mixes_network_and_dom_pages(tmp_path: Path, template_data) -> None:
+    """A page rendered without a fresh JSON response still contributes its DOM records."""
+    template = _template(template_data, _learned_network())
+    template.target.pagination = PaginationSpec(
+        strategy=PaginationStrategy.NEXT_BUTTON, semantic=["下一页"], max_pages=5
+    )
+    page1 = _page_exchange(1, _page_body(("S-1", "SN-1", "P100")))
+    first = BrowserSnapshot(
+        url="https://example.internal/list?page=1",
+        text="退出登录 样机盘点反馈",
+        elements=[{"role": "button", "text": "下一页", "ref": "@next"}],
+    )
+    second = BrowserSnapshot(
+        url="https://example.internal/list?page=2",
+        text="退出登录 样机盘点反馈",
+        records=[{"sample_id": "S-9", "sn": "DOM-SN", "product_model": "P900"}],
+    )
+    adapter = FakeBrowserAdapter(
+        {
+            "snapshot": [first, second],
+            "capabilities": [
+                BrowserCapabilities(
+                    snapshot=True, find=True, download=True, downloads=True, tabs=True, network=True
+                )
+            ],
+            "find_result": [CommandResult(ok=False, operation="find")],
+            "network": [
+                CommandResult(ok=True, operation="network", data=[page1]),
+                CommandResult(ok=True, operation="network", data=[page1]),
+            ],
+        }
+    )
+    response = asyncio.run(Runner(adapter, tmp_path).run(template, {}))
+    assert response.ok
+    run = json.loads((tmp_path / str(response.run_id) / "run.json").read_text(encoding="utf-8"))
+    assert [record["sn"] for record in run["records"]] == ["SN-1", "DOM-SN"]
+    events = (tmp_path / str(response.run_id) / "execution.jsonl").read_text(encoding="utf-8")
+    assert '"network_pages": 1' in events and '"dom_pages": 1' in events
 
 
 def test_runner_skips_network_without_capability(tmp_path: Path, template_data) -> None:

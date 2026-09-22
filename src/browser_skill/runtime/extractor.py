@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+from collections.abc import Awaitable, Callable
 from typing import Any
 
 from browser_skill.browser.base import BrowserAdapter
@@ -9,6 +10,9 @@ from browser_skill.models import BrowserSnapshot, BrowserTemplate, PaginationStr
 from browser_skill.runtime.locator import LocatorService
 from browser_skill.runtime.policy import ActionPolicy
 from browser_skill.runtime.table_parser import SnapshotTableParser
+
+RecordSource = Callable[[BrowserSnapshot], Awaitable[list[dict[str, Any]] | None]]
+"""Optional per-page record provider; ``None`` means "use DOM/table parsing for this page"."""
 
 
 class RecordExtractor:
@@ -29,6 +33,8 @@ class RecordExtractor:
         adapter: BrowserAdapter,
         template: BrowserTemplate,
         first_snapshot: BrowserSnapshot,
+        *,
+        record_source: RecordSource | None = None,
     ) -> tuple[list[dict[str, Any]], bool, BrowserSnapshot]:
         pagination = template.target.pagination
         records: list[dict[str, Any]] = []
@@ -39,7 +45,7 @@ class RecordExtractor:
         for _ in range(pagination.max_pages):
             fingerprint = self._page_fingerprint(current)
             seen_pages.add(fingerprint)
-            source_records = current.records or self.table_parser.parse(template, current)
+            source_records = await self._page_records(template, current, record_source)
             for record in self._normalized(template, source_records):
                 key = self._record_fingerprint(template, record)
                 if key not in seen_records:
@@ -91,6 +97,18 @@ class RecordExtractor:
                 return records, False, next_snapshot
             current = next_snapshot
         return records, False, current
+
+    async def _page_records(
+        self,
+        template: BrowserTemplate,
+        snapshot: BrowserSnapshot,
+        record_source: RecordSource | None,
+    ) -> list[dict[str, Any]]:
+        if record_source is not None:
+            provided = await record_source(snapshot)
+            if provided is not None:
+                return provided
+        return snapshot.records or self.table_parser.parse(template, snapshot)
 
     @staticmethod
     def _normalized(

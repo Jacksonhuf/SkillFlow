@@ -7,7 +7,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from browser_skill.acquire.network import NetworkExtractor, parse_exchanges
+from browser_skill.acquire.network import NetworkExtractor, NetworkRecordSource
 from browser_skill.browser.base import BrowserAdapter
 from browser_skill.errors import ErrorCode, SkillError
 from browser_skill.execution_contract import contract_payload
@@ -370,39 +370,37 @@ class Runner:
         snapshot: BrowserSnapshot,
         capabilities: BrowserCapabilities,
     ) -> tuple[list[dict[str, Any]], bool, BrowserSnapshot]:
-        """Acquisition ladder: learned network endpoint first, then DOM/table extraction."""
+        """Acquisition ladder: learned network endpoint per page first, then DOM/table parsing.
+
+        Pagination (clicks, scrolls, page budgets, cycle detection) is always driven by the
+        extractor; the network source only changes where each page's records come from.
+        """
         network_mappings = NetworkExtractor.network_field_mappings(template)
-        use_network = (
-            bool(network_mappings)
-            and capabilities.network
-            and template.target.pagination.strategy == PaginationStrategy.NONE
+        if not network_mappings or not capabilities.network:
+            return await self.extractor.collect(self.adapter, template, snapshot)
+        source = NetworkRecordSource(self.adapter, template)
+        records, complete, current = await self.extractor.collect(
+            self.adapter, template, snapshot, record_source=source
         )
-        if use_network:
-            result = await self.adapter.network_requests()
-            exchanges = parse_exchanges(result.data) if result.ok else []
-            records = NetworkExtractor().extract(template, exchanges) if exchanges else None
-            if records is not None:
-                keys = {field.key for field in template.target.fields}
-                normalized = [
-                    {key: value for key, value in record.items() if key in keys}
-                    for record in records
-                ]
-                self._event(
-                    workspace,
-                    context,
-                    "network_extraction",
-                    source=AcquisitionSource.NETWORK.value,
-                    record_count=len(normalized),
-                    exchange_count=len(exchanges),
-                )
-                return normalized, True, snapshot
+        if source.network_pages:
+            self._event(
+                workspace,
+                context,
+                "network_extraction",
+                source=AcquisitionSource.NETWORK.value,
+                record_count=len(records),
+                network_pages=source.network_pages,
+                dom_pages=source.dom_pages,
+            )
+        else:
             self._event(
                 workspace,
                 context,
                 "network_extraction_fallback",
-                reason="no_matching_exchange" if result.ok else "network_unavailable",
+                reason="network_unavailable" if source.listing_failures else "no_matching_exchange",
+                dom_pages=source.dom_pages,
             )
-        return await self.extractor.collect(self.adapter, template, snapshot)
+        return records, complete, current
 
     async def _apply_workflow(
         self,

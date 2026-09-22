@@ -6,6 +6,7 @@ session. The runtime never issues its own HTTP requests to the target system.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import re
 from dataclasses import dataclass
@@ -290,6 +291,55 @@ class NetworkDiscovery:
             matched_fields=sorted(matched),
             exchanges_considered=considered,
         )
+
+
+# --------------------------------------------------------------------------- run-time source
+
+
+def exchange_fingerprint(exchange: NetworkExchange) -> str:
+    payload = json.dumps(
+        {"url": exchange.url, "body": exchange.body}, ensure_ascii=False, sort_keys=True, default=str
+    )
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
+class NetworkRecordSource:
+    """Per-page record provider for ``RecordExtractor.collect``.
+
+    Each call lists the browser's observed exchanges, keeps only the ones not seen on earlier
+    pages, and extracts records through the learned endpoint mapping. Returning ``None`` lets the
+    extractor fall back to DOM parsing for that page, so pagination keeps working even when a page
+    was rendered without a fresh JSON response.
+    """
+
+    def __init__(self, adapter: Any, template: BrowserTemplate) -> None:
+        self.adapter = adapter
+        self.template = template
+        self.extractor = NetworkExtractor()
+        self._seen: set[str] = set()
+        self.network_pages = 0
+        self.dom_pages = 0
+        self.listing_failures = 0
+
+    async def __call__(self, _snapshot: BrowserSnapshot) -> list[dict[str, Any]] | None:
+        result = await self.adapter.network_requests()
+        if not result.ok:
+            self.listing_failures += 1
+            self.dom_pages += 1
+            return None
+        fresh: list[NetworkExchange] = []
+        for exchange in parse_exchanges(result.data):
+            fingerprint = exchange_fingerprint(exchange)
+            if fingerprint in self._seen:
+                continue
+            self._seen.add(fingerprint)
+            fresh.append(exchange)
+        records = self.extractor.extract(self.template, fresh) if fresh else None
+        if records is None:
+            self.dom_pages += 1
+            return None
+        self.network_pages += 1
+        return records
 
 
 # --------------------------------------------------------------------------- extraction
