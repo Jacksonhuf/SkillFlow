@@ -15,3 +15,6 @@ runs/*
 
 skill-package/universal-browser/scripts/
 skill-package/universal-browser/STANDALONE.zh.md
+vendor/chrome-use/*.tar.gz
+vendor/chrome-use/chrome-use.exe
+!vendor/chrome-use/.gitkeep

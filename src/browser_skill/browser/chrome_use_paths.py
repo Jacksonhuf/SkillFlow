@@ -17,24 +17,18 @@ CHROME_USE_WINDOWS_ASSET = "chrome-use-win32-x64.tar.gz"
 CHROME_USE_WINDOWS_RELEASE = os.environ.get("CHROME_USE_INSTALL_VERSION", "v1.5.131")
 
 CHROME_USE_INSTALL_HINT = """
-chrome-use CLI was not found. The Chrome Web Store extension alone is not enough.
+chrome-use CLI is NOT included inside the skill zip by default (only Python runtime + scripts).
 
-Windows (manual):
-  Download chrome-use-win32-x64.tar.gz from:
-  https://github.com/leeguooooo/chrome-use/releases
-  Extract chrome-use.exe and either add it to PATH or set:
-    set CHROME_USE_BIN=C:\\path\\to\\chrome-use.exe
+Windows auto-install (first invoke, needs HTTPS to GitHub unless offline options below):
+  Installs into: .universal-browser\\chrome-use\\chrome-use.exe
 
-First-run auto-install (Windows only):
-  Run once from the skill directory:
-    py scripts\\invoke.py doctor
-  The skill downloads the official win32 bundle into .universal-browser\\chrome-use\\
+Offline / firewall (pick one):
+  1) Pre-place: universal-browser\\vendor\\chrome-use\\chrome-use.exe (can ship in custom full zip)
+  2) Local archive: set CHROME_USE_LOCAL_ARCHIVE=C:\\path\\chrome-use-win32-x64.tar.gz
+  3) Mirror URL: set CHROME_USE_WINDOWS_DOWNLOAD_URL=https://your-mirror/.../chrome-use-win32-x64.tar.gz
+  4) Explicit binary: set CHROME_USE_BIN=C:\\path\\to\\chrome-use.exe
 
-After install (one time per machine):
-  chrome-use extension install
-  chrome-use doctor
-
-Disable skill auto-install:
+Disable auto-download:
   set UNIVERSAL_BROWSER_SKIP_CHROME_USE_INSTALL=1
 
 Docs: https://chrome-use.leeguoo.com/en/install.html
@@ -102,6 +96,50 @@ def _bundled_windows_executable(skill_root: Path | None) -> str | None:
     return None
 
 
+def _vendor_windows_executable(skill_root: Path | None) -> str | None:
+    if sys.platform != "win32" or skill_root is None:
+        return None
+    for candidate in (
+        skill_root / "vendor" / "chrome-use" / "chrome-use.exe",
+        skill_root / "vendor" / "chrome-use.exe",
+    ):
+        if candidate.is_file():
+            return str(candidate.resolve())
+    return None
+
+
+def _local_windows_archive(skill_root: Path) -> Path | None:
+    env_path = os.environ.get("CHROME_USE_LOCAL_ARCHIVE", "").strip()
+    if env_path:
+        path = Path(env_path).expanduser()
+        if path.is_file():
+            return path
+    bundled = skill_root / "vendor" / CHROME_USE_WINDOWS_ASSET
+    if bundled.is_file():
+        return bundled
+    return None
+
+
+def _extract_windows_archive(archive: Path, dest_dir: Path) -> Path:
+    try:
+        with tarfile.open(archive, "r:gz") as archive_file:
+            archive_file.extractall(dest_dir, filter="data")
+    except (tarfile.TarError, OSError) as exc:
+        raise _chrome_use_unavailable(
+            _USER_BROWSER_INIT_FAILED,
+            stage="adapter",
+            archive=str(archive),
+        ) from exc
+    exe = _find_windows_exe(dest_dir)
+    if exe is None:
+        raise _chrome_use_unavailable(
+            _USER_BROWSER_INIT_FAILED,
+            stage="adapter",
+            extract_dir=str(dest_dir),
+        )
+    return exe
+
+
 def _windows_download_url() -> str:
     release = CHROME_USE_WINDOWS_RELEASE
     version = release if release.startswith("v") else f"v{release.lstrip('v')}"
@@ -117,8 +155,23 @@ def _run_windows_installer(skill_root: Path) -> Path:
 
     dest_dir = _windows_bundle_dir(skill_root)
     dest_dir.mkdir(parents=True, exist_ok=True)
+
+    vendor_exe = _vendor_windows_executable(skill_root)
+    if vendor_exe:
+        target = dest_dir / "chrome-use.exe"
+        if not target.is_file() or target.stat().st_size == 0:
+            shutil.copy2(vendor_exe, target)
+        os.environ["CHROME_USE_BIN"] = str(target.resolve())
+        return target
+
+    local_archive = _local_windows_archive(skill_root)
+    if local_archive is not None:
+        exe = _extract_windows_archive(local_archive, dest_dir)
+        os.environ["CHROME_USE_BIN"] = str(exe.resolve())
+        return exe
+
     archive = dest_dir / CHROME_USE_WINDOWS_ASSET
-    url = _windows_download_url()
+    url = os.environ.get("CHROME_USE_WINDOWS_DOWNLOAD_URL", "").strip() or _windows_download_url()
 
     try:
         with urllib.request.urlopen(url, timeout=300) as response:
@@ -127,27 +180,16 @@ def _run_windows_installer(skill_root: Path) -> Path:
         raise _chrome_use_unavailable(
             _USER_BROWSER_INIT_FAILED,
             stage="adapter",
+            failure_reason="github_download_failed",
             download_url=url,
+            offline_hint=(
+                "GitHub unreachable. Ship vendor/chrome-use/chrome-use.exe, "
+                "set CHROME_USE_LOCAL_ARCHIVE or CHROME_USE_WINDOWS_DOWNLOAD_URL, "
+                "or set CHROME_USE_BIN."
+            ),
         ) from exc
 
-    try:
-        with tarfile.open(archive, "r:gz") as archive_file:
-            archive_file.extractall(dest_dir, filter="data")
-    except (tarfile.TarError, OSError) as exc:
-        raise _chrome_use_unavailable(
-            _USER_BROWSER_INIT_FAILED,
-            stage="adapter",
-            archive=str(archive),
-        ) from exc
-
-    exe = _find_windows_exe(dest_dir)
-    if exe is None:
-        raise _chrome_use_unavailable(
-            _USER_BROWSER_INIT_FAILED,
-            stage="adapter",
-            extract_dir=str(dest_dir),
-        )
-
+    exe = _extract_windows_archive(archive, dest_dir)
     os.environ["CHROME_USE_BIN"] = str(exe.resolve())
     return exe
 
@@ -183,6 +225,9 @@ def resolve_chrome_use_executable(name: str = "chrome-use") -> str:
     bundled = _bundled_windows_executable(skill_root)
     if bundled:
         return bundled
+    vendor = _vendor_windows_executable(skill_root)
+    if vendor:
+        return vendor
 
     override = os.environ.get("CHROME_USE_BIN", "").strip()
     if override:

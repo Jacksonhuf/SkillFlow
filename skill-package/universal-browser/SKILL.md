@@ -5,7 +5,7 @@ description: Template-driven browser tasks via bundled runtime and templates; on
 
 # Universal Browser
 
-> **独立模式（Windows）**：使用 **完整技能包** `universal-browser-full-*.zip`。chrome-use 扩展 + CLI 为**运行前提**，由技能在首次执行时**自动准备**（用户无需安装 CLI、无需运行 doctor）。Agent 直接调用 `py scripts\\invoke.py start|run|resume`。详见 `STANDALONE.zh.md`。
+> **独立模式（Windows）**：完整包 **内置 Python 运行时 + 模板 + 脚本**，**不默认内置** chrome-use CLI（首次可联网自动下载，或见 `vendor/` 离线方案）。扩展 + CLI 为运行前提。详见 `STANDALONE.zh.md`。
 
 ## Runtime prerequisites (do not ask the user)
 
