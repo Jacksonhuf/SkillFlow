@@ -3,11 +3,11 @@
 
 Requires only:
   - This full skill directory (SKILL.md + templates/ + runtime/)
-  - chrome-use CLI and the Chrome extension enabled in the user's browser
+  - Google Chrome on the machine (Playwright is installed on demand) — or an existing
+    chrome-use CLI + extension, which is reused automatically
 
 No separate Agent platform or pip install to site-packages is required.
-
-Windows: CLI auto-downloads on first invoke.py start|run|resume (silent; not a user step).
+Business users: double-click open-console.bat (Windows) / open-console.sh and use the web UI.
 """
 
 from __future__ import annotations
@@ -25,6 +25,15 @@ def _skill_root() -> Path:
 
 
 def _bootstrap() -> None:
+    # This guard must stay valid syntax on old interpreters so the message is actually shown.
+    if sys.version_info < (3, 12):  # noqa: UP036
+        current = "{}.{}".format(sys.version_info[0], sys.version_info[1])  # noqa: UP032
+        print(
+            "需要 Python 3.12 或更高版本（当前 " + current + "）。"
+            "请到 https://www.python.org/downloads/ 安装后重试。",
+            file=sys.stderr,
+        )
+        raise SystemExit(2)
     root = _skill_root()
     runtime_src = root / "runtime" / "src"
     if not runtime_src.is_dir():
@@ -54,11 +63,12 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument(
         "--engine",
-        choices=["chrome-use", "playwright"],
-        default=os.environ.get("UNIVERSAL_BROWSER_ENGINE", "chrome-use"),
+        choices=["auto", "chrome-use", "playwright"],
+        default=os.environ.get("UNIVERSAL_BROWSER_ENGINE", "auto"),
         help=(
-            "Browser engine: chrome-use (extension CLI, default) or playwright "
-            "(drives local Chrome; set UNIVERSAL_BROWSER_CDP_URL to attach to a running Chrome)"
+            "Browser engine. auto (default): reuse an installed chrome-use CLI, otherwise drive "
+            "local Chrome with Playwright (installed on demand). "
+            "Set UNIVERSAL_BROWSER_CDP_URL to attach to a running Chrome."
         ),
     )
     parser.add_argument(

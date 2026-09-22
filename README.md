@@ -1,8 +1,11 @@
 # Universal Browser Skill — 快速开始
 
-**没有其它平台、只有 OpenCode + chrome-use 扩展时**：Hub 上传 **[完整技能包 v0.1.5（≤5MB，不含 CLI）](https://github.com/Jacksonhuf/SkillFlow/releases/download/v0.1.5-full/universal-browser-full-0.1.5.zip)**。chrome-use CLI 在机器上单独准备（自动下载、sidecar 或 `CHROME_USE_BIN`）。见 **`docs/STANDALONE.zh.md`**。
+**业务用户三步：** 解压 `universal-browser-full-*.zip` → 双击 `open-console.bat`（macOS / Linux：`open-console.sh`）→ 在网页里点任务、填信息、开始运行。
+浏览器驱动自动准备（已有 chrome-use 就沿用，否则用 Playwright 驱动本机 Chrome），第一次运行在弹出的 Chrome 里登录一次即可。详见 **`docs/QUICKSTART.zh.md`**。
 
-**有 Skill Hub + 服务端平台工具时**：可用 slim 包或完整包，见 `docs/SKILL-HUB.zh.md`。
+**Agent 内使用：** Hub 上传完整技能包（≤5MB），对话里 `/universal-browser`。构建：`./scripts/build-skill-package.sh --full`。
+
+**IT / 运维：** 引擎、内网镜像、定时任务、chrome-use sidecar 见 **`docs/STANDALONE.zh.md`**；有服务端平台工具时见 `docs/SKILL-HUB.zh.md`。
 
 **本地开发（可选）：** `./scripts/install.sh`
 

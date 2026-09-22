@@ -104,6 +104,19 @@ def sync_full_skill_tree(
         shutil.copytree(scripts_src, scripts_dest)
         (scripts_dest / "invoke.py").chmod(0o755)
         (scripts_dest / "setup.sh").chmod(0o755)
+        # Double-click launchers live at the skill root so users never open scripts/.
+        for launcher in ("open-console.bat", "open-console.sh"):
+            source = scripts_dest / launcher
+            if source.is_file():
+                target = skill_dir / launcher
+                shutil.copy2(source, target)
+                if launcher.endswith(".sh"):
+                    source.chmod(0o755)
+                    target.chmod(0o755)
+
+    quickstart = base / "docs" / "QUICKSTART.zh.md"
+    if quickstart.exists():
+        shutil.copy2(quickstart, skill_dir / "QUICKSTART.zh.md")
 
     vendor_src = base / "vendor" / "chrome-use"
     if bundle_chrome_use and vendor_src.is_dir():

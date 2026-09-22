@@ -15,6 +15,7 @@ import secrets
 import threading
 import webbrowser
 from collections.abc import Callable, Coroutine
+from dataclasses import asdict
 from datetime import UTC, datetime
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -26,6 +27,18 @@ from urllib.parse import parse_qs, unquote, urlsplit
 from pydantic import ValidationError
 
 from browser_skill.app import BrowserSkillApp
+from browser_skill.browser.auto_engine import (
+    SetupStatus,
+    SetupStep,
+    auto_pip_allowed,
+    chrome_use_setup_status,
+    install_playwright,
+    playwright_available,
+    playwright_setup_status,
+)
+from browser_skill.browser.chrome_use import ChromeUseAdapter
+from browser_skill.browser.factory import build_adapter
+from browser_skill.browser.playwright_adapter import PlaywrightAdapter
 from browser_skill.errors import ErrorCode, SkillError
 from browser_skill.models import SkillRequest, SkillResponse
 from browser_skill.outputs.paths import contained_path, safe_filename
@@ -364,6 +377,67 @@ class ConsoleServer:
             payload["chrome_use_executable"] = str(executable)
         return payload
 
+    @property
+    def skill_root(self) -> Path:
+        return self.app.runs_root.parent
+
+    def setup_status(self) -> dict[str, Any]:
+        """Plain-language readiness checklist shown on the console home screen."""
+        adapter = self.app.adapter
+        if isinstance(adapter, PlaywrightAdapter):
+            status = playwright_setup_status(skill_root=self.skill_root)
+        elif isinstance(adapter, ChromeUseAdapter):
+            report = self.jobs.run_sync(lambda: probe_adapter(adapter, mode="local_cli"))
+            status = chrome_use_setup_status(
+                probe_ready=report.ready,
+                probe_status_ok=report.status_ok,
+                executable=str(adapter.executable),
+            )
+        else:
+            report = self.jobs.run_sync(lambda: probe_adapter(adapter, mode="local_cli"))
+            status = SetupStatus(
+                engine=type(adapter).__name__,
+                ready=report.status_ok,
+                headline="环境就绪，选择模板即可运行" if report.status_ok else "浏览器环境未就绪",
+                steps=[
+                    SetupStep(
+                        key="adapter",
+                        title="浏览器连接",
+                        ok=report.status_ok,
+                        detail="已连接" if report.status_ok else "未连接",
+                    )
+                ],
+            )
+        return asdict(status)
+
+    def repair(self, action: str) -> dict[str, Any]:
+        """One-click fixes triggered from the console; each one is idempotent."""
+        if action in {"install_playwright", "switch_to_playwright"}:
+            notes: list[str] = []
+            if not playwright_available():
+                if not auto_pip_allowed():
+                    raise SkillError(
+                        ErrorCode.ACTION_NOT_ALLOWED,
+                        "已禁用自动安装（UNIVERSAL_BROWSER_NO_AUTO_PIP），"
+                        "请联系管理员安装 Playwright",
+                    )
+                ok, message = install_playwright()
+                notes.append(message)
+                if not ok:
+                    raise SkillError(ErrorCode.CHROME_USE_UNAVAILABLE, message)
+            if not isinstance(self.app.adapter, PlaywrightAdapter):
+                self.jobs.run_sync(self._close_adapter)
+                self.app.adapter = build_adapter("playwright", skill_root=self.skill_root)
+                notes.append("已切换到 Playwright 引擎")
+            return {"action": action, "notes": notes, "setup": self.setup_status()}
+        raise SkillError(ErrorCode.ACTION_NOT_ALLOWED, f"未知修复动作 {action}")
+
+    async def _close_adapter(self) -> None:
+        close = getattr(self.app.adapter, "close", None)
+        if callable(close):
+            with contextlib.suppress(Exception):
+                await close()
+
 
 class _Handler(BaseHTTPRequestHandler):
     server_version = "UniversalBrowserConsole/1.0"
@@ -498,6 +572,8 @@ class _Handler(BaseHTTPRequestHandler):
                 self._send_json({"ok": True, "job": job})
         elif segments == ["doctor"]:
             self._send_json({"ok": True, "doctor": console.jobs.run_sync(console.doctor)})
+        elif segments == ["setup"]:
+            self._send_json({"ok": True, "setup": console.setup_status()})
         elif segments == ["meta"]:
             self._send_json(
                 {
@@ -548,6 +624,9 @@ class _Handler(BaseHTTPRequestHandler):
                 self._error("filename and content_base64 are required", HTTPStatus.BAD_REQUEST)
                 return
             self._send_json({"ok": True, **console.save_sample(filename, content)})
+        elif path == "/api/setup/repair":
+            action = str(payload.get("action", ""))
+            self._send_json({"ok": True, **console.repair(action)})
         else:
             self._error("Not found", HTTPStatus.NOT_FOUND)
 

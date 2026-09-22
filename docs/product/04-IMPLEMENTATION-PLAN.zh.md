@@ -87,6 +87,14 @@
 | Hub 制品 | `./scripts/build-skill-package.sh --full` → `dist/universal-browser-full-0.3.0.zip`（≤5MB） |
 | `pytest` 全量 | 203 通过、1 跳过 |
 
+## 阶段 F：易用性（用户三步：解压 → 双击 → 点运行）
+
+- ✅ 引擎自动选择 `browser/auto_engine.py`（`--engine auto` 为默认）：沿用已装 chrome-use → Playwright 驱动本机 Chrome → 缺 `playwright` 包时静默 `pip install`（`UNIVERSAL_BROWSER_NO_AUTO_PIP=1` 关闭）→ 回退 chrome-use 引导
+- ✅ 双击启动器 `open-console.bat` / `open-console.sh`（打包到技能根目录）：自动找 Python、缺失时引导下载、打开控制台
+- ✅ 控制台首屏环境自检 `GET /api/setup`（中文清单：驱动 / Chrome / 登录状态）与 `POST /api/setup/repair` 一键修复（安装 Playwright、chrome-use → Playwright 切换）
+- ✅ 控制台文案面向业务：运行任务 / 历史结果 / 新建模板 / 设置；「测试运行」「含未发布」收进高级选项；登录提示改为「在弹出的 Chrome 登录一次 → 我已登录，继续」
+- ✅ `invoke.py` 低版本 Python 给中文提示；`docs/QUICKSTART.zh.md` 一页三步随包分发；README / SKILL.md / STANDALONE 同步
+
 ## 里程碑验收
 
 | 里程碑 | 判定 |

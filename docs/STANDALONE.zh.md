@@ -1,6 +1,20 @@
-# 独立模式：Windows + OpenCode Agent + chrome-use（无其它平台）
+# 独立模式：Windows + OpenCode Agent（无其它平台）
 
-适用：**Windows 10/11**，Skill Hub / OpenCode 技能 + Chrome 里的 **chrome-use 扩展**。
+> **业务用户请先看 `QUICKSTART.zh.md`**：解压 → 双击 `open-console.bat` → 点任务运行。本文是 IT / 运维手册。
+
+## 引擎自动选择（默认 `--engine auto`）
+
+| 机器状态 | 自动结果 | 用户要做的 |
+|----------|----------|------------|
+| 已有 chrome-use CLI（IT 装过 / sidecar / `CHROME_USE_BIN`） | 沿用 chrome-use | 保持扩展启用 |
+| 没有 chrome-use，但有 Python + Chrome | **Playwright** 驱动本机 Chrome，独立登录 Profile 在 `runs\chrome-profile` | 首次运行在弹出的 Chrome 登录一次 |
+| Python 里还没装 `playwright` | 首次 `start` / `run` / `ui` 静默 `pip install playwright`（`UNIVERSAL_BROWSER_NO_AUTO_PIP=1` 可关闭；内网请预装或配 `PIP_INDEX_URL`） | 无 |
+| 都不可用 | 回退到 chrome-use 的 Windows 自动下载流程 | 无 |
+
+控制台「设置」页显示同一份检查清单，缺项给「一键修复」（安装 Playwright / 从 chrome-use 切到 Playwright）。
+强制指定：`--engine chrome-use|playwright` 或 `UNIVERSAL_BROWSER_ENGINE`。
+
+以下为 chrome-use 路线的分发细节。适用：**Windows 10/11**，Skill Hub / OpenCode 技能 + Chrome 里的 **chrome-use 扩展**。
 
 ## Skill Hub 上传哪个包（≤5MB）
 
@@ -40,6 +54,7 @@ py scripts\invoke.py resume <run_id>
 ## 本地界面与定时任务
 
 ```bat
+open-console.bat                        :: 业务用户：双击即开（等价于下一行）
 py scripts\invoke.py ui                 :: 本机控制台（仅 127.0.0.1，带令牌）
 py scripts\invoke.py ui --port 0        :: 随机端口
 powershell -File scripts\windows\Register-ScheduledRun.ps1 -TemplateId sales_daily -Daily 07:30 -Var @{date="yesterday"}
@@ -59,14 +74,14 @@ powershell -File scripts\windows\Register-ScheduledRun.ps1 -TemplateId sales_dai
 
 官方文档：https://chrome-use.leeguoo.com/en/install.html
 
-## 备选引擎：Playwright（不依赖 chrome-use 扩展）
+## Playwright 引擎参数（auto 未装 chrome-use 时的默认路线）
 
-当无法安装 chrome-use 扩展/CLI 时，可让 Skill 直接用 Playwright 驱动本机 Chrome。同样是每人本机 Chrome，不做集中 Runner。
+同样是每人本机 Chrome，不做集中 Runner。默认无需任何设置；以下仅用于定制。
 
 ```bat
-pip install playwright                      :: 一次（不需要 playwright install，直接用本机 Chrome）
+pip install playwright                      :: auto 模式会自动执行；内网可预装
 py scripts\invoke.py --engine playwright run sales_daily --var date=yesterday
-set UNIVERSAL_BROWSER_ENGINE=playwright     :: 或全局切换（ui / 定时任务同样生效）
+set UNIVERSAL_BROWSER_ENGINE=playwright     :: 强制使用（ui / 定时任务同样生效）
 ```
 
 | 模式 | 设置 | 说明 |

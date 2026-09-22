@@ -197,6 +197,21 @@ def test_doctor_and_meta(console: ConsoleServer) -> None:
     assert payload["meta"]["runs_root"]
 
 
+def test_setup_status_and_repair_validation(console: ConsoleServer) -> None:
+    status, payload, _ = _call(console, "/api/setup")
+    assert status == 200
+    setup = payload["setup"]
+    assert setup["ready"] is True
+    assert setup["headline"]
+    assert setup["steps"] and all("title" in step for step in setup["steps"])
+
+    status, payload, _ = _call(
+        console, "/api/setup/repair", method="POST", body={"action": "reboot"}
+    )
+    assert status == 400
+    assert "未知" in payload["message"]
+
+
 def test_console_refuses_non_loopback_bind(tmp_path: Path) -> None:
     app = BrowserSkillApp(tmp_path / "t", tmp_path / "r", FakeBrowserAdapter())
     with pytest.raises(SkillError):

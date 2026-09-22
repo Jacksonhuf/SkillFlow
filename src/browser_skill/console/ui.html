@@ -52,29 +52,32 @@
   <h1>Universal Browser</h1>
   <span class="sub">模板驱动 · 本机 Chrome · 结果校验</span>
   <nav>
-    <button data-view="templates" class="active">模板</button>
-    <button data-view="runs">运行记录</button>
-    <button data-view="teach">Teach</button>
-    <button data-view="env">环境</button>
+    <button data-view="templates" class="active">运行任务</button>
+    <button data-view="runs">历史结果</button>
+    <button data-view="teach">新建模板</button>
+    <button data-view="env">设置</button>
   </nav>
 </header>
 <main>
   <div id="tokenGate" class="card hidden">
-    <h3>需要控制台令牌</h3>
-    <p class="muted">请从启动 <code>invoke.py ui</code> 的终端复制带 <code>?token=</code> 的链接打开，或在下方粘贴令牌。</p>
+    <h3>请从启动器打开</h3>
+    <p class="muted">双击技能目录里的 <code>open-console.bat</code>（macOS / Linux：<code>open-console.sh</code>）会自动打开带令牌的页面。若你是手动输入地址，请从启动窗口复制带 <code>?token=</code> 的链接，或在下方粘贴令牌。</p>
     <input id="tokenInput" placeholder="token">
     <div class="row"><button class="btn" id="tokenSave">保存</button></div>
   </div>
+
+  <div id="setupBanner" class="notice hidden"></div>
 
   <!-- 模板 -->
   <section id="view-templates">
     <div class="card">
       <div class="row" style="margin-top:0">
-        <strong>可用模板</strong>
-        <label style="margin:0;display:flex;gap:6px;align-items:center"><input type="checkbox" id="showAll" style="width:auto">含未发布</label>
+        <strong>选择要做的任务</strong>
         <button class="btn secondary" id="refreshTemplates">刷新</button>
+        <a href="#" id="advToggle" class="muted" style="margin-left:auto">高级选项</a>
+        <label class="adv hidden" style="margin:0;display:flex;gap:6px;align-items:center"><input type="checkbox" id="showAll" style="width:auto">含未发布</label>
       </div>
-      <p class="muted">选择模板后只需填写模板定义的变量，其余由系统完成。</p>
+      <p class="muted">点一个任务，填好它要求的信息，点「开始运行」。需要登录时会弹出提示，你只需在 Chrome 里登录一次。</p>
     </div>
     <div id="templateGrid" class="grid"></div>
     <div id="runPanel" class="card hidden">
@@ -83,8 +86,8 @@
       <div id="runMeta"></div>
       <form id="varForm"></form>
       <div class="row">
-        <button class="btn" id="runBtn">运行</button>
-        <button class="btn secondary" id="testBtn">测试运行（未发布版本）</button>
+        <button class="btn" id="runBtn">开始运行</button>
+        <button class="btn secondary adv hidden" id="testBtn">测试运行（未发布版本）</button>
         <button class="btn secondary" id="closeRun">关闭</button>
       </div>
       <div id="jobStatus"></div>
@@ -103,9 +106,9 @@
   <!-- Teach -->
   <section id="view-teach" class="hidden">
     <div class="card">
-      <strong>Teach：第一次创建模板</strong>
+      <strong>新建模板：告诉系统你要什么结果</strong>
       <div class="steps"><span>1 上传样例</span><span>2 生成草稿</span><span>3 发现映射</span><span>4 测试运行</span><span>5 发布</span></div>
-      <p class="muted">系统会在你已登录的 Chrome 中理解页面、建立字段映射并试跑；你只需确认结果。</p>
+      <p class="muted">上传一份你想要的结果表（CSV / JSON），系统在你已登录的 Chrome 里理解页面、建立字段映射并试跑；你只需确认结果是否正确。日常只需「运行任务」，这一页偶尔才用。</p>
     </div>
     <div class="card">
       <h4>1. 上传结果样例（CSV / JSON）</h4>
@@ -141,15 +144,19 @@
     </div>
   </section>
 
-  <!-- 环境 -->
+  <!-- 设置 -->
   <section id="view-env" class="hidden">
     <div class="card">
-      <div class="row" style="margin-top:0"><strong>环境诊断</strong><button class="btn secondary" id="doctorBtn">重新检测</button></div>
-      <p class="muted">检查 chrome-use CLI 与 Chrome 扩展是否就绪。需要用户在 Chrome 中保持登录目标系统。</p>
+      <div class="row" style="margin-top:0"><strong>运行环境</strong><button class="btn secondary" id="setupBtn">重新检测</button></div>
+      <p class="muted">系统会自动选择浏览器驱动方式；这里只在出问题时需要看。</p>
+      <div id="setupList"></div>
+    </div>
+    <div class="card">
+      <div class="row" style="margin-top:0"><strong>技术详情</strong><button class="btn secondary" id="doctorBtn">显示 / 刷新</button></div>
       <div id="doctorSummary"></div>
       <pre id="doctorOut" class="hidden"></pre>
+      <pre id="metaOut" class="hidden"></pre>
     </div>
-    <div class="card"><strong>路径</strong><pre id="metaOut"></pre></div>
   </section>
 </main>
 
@@ -170,7 +177,7 @@
   }
   const post = (path, body) => api(path, { method: 'POST', body: JSON.stringify(body) });
 
-  $('tokenSave').onclick = () => { token = $('tokenInput').value.trim(); localStorage.setItem('ub_token', token); $('tokenGate').classList.add('hidden'); loadTemplates(); };
+  $('tokenSave').onclick = () => { token = $('tokenInput').value.trim(); localStorage.setItem('ub_token', token); $('tokenGate').classList.add('hidden'); loadTemplates(); loadSetup(); };
 
   // ---- 视图切换
   document.querySelectorAll('nav button').forEach(b => b.onclick = () => {
@@ -194,7 +201,7 @@
     let html = `<div class="notice ${resp.ok ? 'ok' : (st === 'WAIT_USER_AUTH' ? '' : 'bad')}">`;
     html += `<div>${fmtState(st)} ${esc(resp.message)}</div>`;
     if (resp.run_id) html += `<div class="muted">run_id: <code>${esc(resp.run_id)}</code></div>`;
-    if (st === 'WAIT_USER_AUTH') html += `<div class="row"><span>请在 Chrome 中完成登录，然后</span><button class="btn" id="resumeBtn">继续执行</button></div>`;
+    if (st === 'WAIT_USER_AUTH') html += `<div class="row"><span>请切到刚弹出的 Chrome 窗口完成登录（只需这一次），回来点</span><button class="btn" id="resumeBtn">我已登录，继续</button></div>`;
     const arts = resp.data && resp.data.artifacts;
     if (arts && resp.run_id) {
       html += '<div class="row">' + Object.entries(arts).map(([k, p]) => `<a class="btn secondary" href="/api/runs/${encodeURIComponent(resp.run_id)}/files/${p}?x=1" onclick="return window.__dl(event, this.href)">${esc(k)}</a>`).join('') + '</div>';
@@ -223,7 +230,7 @@
     return false;
   };
   async function submitJob(req, el, ctx) {
-    el.innerHTML = '<div class="notice">已提交，正在执行… 浏览器任务串行进行，请勿手动操作 Chrome。</div>';
+    el.innerHTML = '<div class="notice">正在执行… 系统会自动操作 Chrome，期间请不要在那个窗口里点击。</div>';
     try {
       const r = await post('/api/jobs', req);
       if (!r.ok) { el.innerHTML = `<div class="notice bad">${esc(r.message)}</div>`; return null; }
@@ -347,20 +354,68 @@
     if (r.ok) loadTemplates();
   };
 
-  // ---- 环境
+  // ---- 高级选项（默认收起，业务用户看不到测试运行 / 未发布模板）
+  let advanced = localStorage.getItem('ub_adv') === '1';
+  function applyAdvanced() {
+    document.querySelectorAll('.adv').forEach(el => el.classList.toggle('hidden', !advanced));
+    $('advToggle').textContent = advanced ? '收起高级选项' : '高级选项';
+  }
+  $('advToggle').onclick = (e) => { e.preventDefault(); advanced = !advanced; localStorage.setItem('ub_adv', advanced ? '1' : '0'); applyAdvanced(); };
+  applyAdvanced();
+
+  // ---- 环境自检：首屏横幅 + 设置页清单，同一份数据
+  let setupData = null;
+  function stepHtml(s) {
+    const mark = s.ok ? '<span class="badge ok">✓</span>' : '<span class="badge warn">!</span>';
+    let extra = '';
+    if (!s.ok && s.action) extra += ` <button class="btn" data-repair="${esc(s.action)}" style="padding:4px 12px">一键修复</button>`;
+    if (!s.ok && s.link) extra += ` <a class="btn secondary" style="padding:4px 12px" href="${esc(s.link)}" target="_blank" rel="noopener">打开下载页</a>`;
+    return `<div class="row" style="margin-top:6px">${mark}<strong>${esc(s.title)}</strong><span class="muted">${esc(s.detail)}</span>${extra}</div>`;
+  }
+  function renderSetup() {
+    const s = setupData; if (!s) return;
+    const banner = $('setupBanner');
+    if (s.ready) {
+      banner.className = 'notice ok'; banner.innerHTML = `<strong>${esc(s.headline)}</strong> <span class="muted">（浏览器驱动：${esc(s.engine)}）</span>`;
+      setTimeout(() => banner.classList.add('hidden'), 6000);
+    } else {
+      banner.className = 'notice';
+      banner.innerHTML = `<strong>${esc(s.headline)}</strong>` + s.steps.filter(x => !x.ok).map(stepHtml).join('');
+    }
+    banner.classList.remove('hidden');
+    $('setupList').innerHTML = `<div class="notice ${s.ready ? 'ok' : ''}"><strong>${esc(s.headline)}</strong><div class="muted">浏览器驱动：${esc(s.engine)}</div>${s.steps.map(stepHtml).join('')}</div>`;
+    document.querySelectorAll('[data-repair]').forEach(b => b.onclick = () => repair(b.dataset.repair, b));
+  }
+  async function loadSetup() {
+    try { const r = await api('/api/setup'); setupData = r.setup; renderSetup(); }
+    catch (e) { $('setupBanner').className = 'notice bad'; $('setupBanner').textContent = e.message; $('setupBanner').classList.remove('hidden'); }
+  }
+  async function repair(action, btn) {
+    btn.disabled = true; btn.textContent = '正在处理，可能需要一两分钟…';
+    try {
+      const r = await post('/api/setup/repair', { action });
+      if (!r.ok) { alert(r.message || '修复失败'); return; }
+      setupData = r.setup; renderSetup();
+    } catch (e) { alert(e.message); }
+    finally { btn.disabled = false; btn.textContent = '一键修复'; }
+  }
+  $('setupBtn').onclick = loadSetup;
+
   async function loadEnv() {
+    loadSetup();
+  }
+  $('doctorBtn').onclick = async () => {
     $('doctorSummary').innerHTML = '<span class="muted">检测中…</span>';
     try {
       const r = await api('/api/doctor'); const d = r.doctor;
-      $('doctorSummary').innerHTML = `<div class="notice ${d.ready ? 'ok' : 'bad'}">${d.ready ? '环境就绪' : '环境未就绪'} · CLI ${d.status_ok ? '在线' : '离线'}` +
+      $('doctorSummary').innerHTML = `<div class="notice ${d.ready ? 'ok' : 'bad'}">${d.ready ? '环境就绪' : '环境未就绪'} · 连接 ${d.status_ok ? '在线' : '离线'}` +
         (d.chrome_use_executable ? ` · <code>${esc(d.chrome_use_executable)}</code>` : '') + '</div>';
       $('doctorOut').classList.remove('hidden'); $('doctorOut').textContent = d.text || JSON.stringify(d, null, 2);
     } catch (e) { $('doctorSummary').innerHTML = `<div class="notice bad">${esc(e.message)}</div>`; }
-    const m = await api('/api/meta'); $('metaOut').textContent = JSON.stringify(m.meta, null, 2);
-  }
-  $('doctorBtn').onclick = loadEnv;
+    const m = await api('/api/meta'); $('metaOut').classList.remove('hidden'); $('metaOut').textContent = JSON.stringify(m.meta, null, 2);
+  };
 
-  if (!token) $('tokenGate').classList.remove('hidden'); else loadTemplates();
+  if (!token) $('tokenGate').classList.remove('hidden'); else { loadTemplates(); loadSetup(); }
 })();
 </script>
 </body>

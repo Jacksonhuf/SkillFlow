@@ -50,3 +50,7 @@ def test_build_full_skill_package_includes_runtime_and_templates() -> None:
         assert (skill_dir / "runtime" / "src" / "browser_skill" / "app.py").exists()
         assert zip_path.name.endswith(".zip")
         assert "full" in zip_path.name
+        # One-click entry points sit at the skill root next to SKILL.md
+        assert (skill_dir / "open-console.bat").is_file()
+        assert (skill_dir / "open-console.sh").is_file()
+        assert (skill_dir / "QUICKSTART.zh.md").is_file()

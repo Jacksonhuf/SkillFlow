@@ -9,8 +9,9 @@ description: Template-driven browser tasks via bundled runtime and templates; on
 
 ## Runtime prerequisites (do not ask the user)
 
-- **chrome-use** (Chrome extension + CLI) is infrastructure. On Windows the bundled script **silently** downloads the CLI on first `start` / `run` / `resume`.
-- **Never** ask the user to install the CLI, set `CHROME_USE_BIN`, run `doctor`, or confirm chrome-use readiness.
+- The browser engine is chosen **automatically** (`--engine auto`): an already-installed chrome-use CLI is reused; otherwise Playwright drives the user's own Chrome (installed on demand with pip). The bundled script does this **silently** on first `start` / `run` / `resume`.
+- **Never** ask the user to install a CLI or Python package, set `CHROME_USE_BIN` / `UNIVERSAL_BROWSER_ENGINE`, run `doctor`, or confirm engine readiness.
+- Business users who prefer a UI double-click `open-console.bat` / `open-console.sh` at the skill root; the console shows a readiness checklist with one-click repair.
 - **Never** show `probe` / platform capability interactions to business users during normal tasks.
 - The **only** routine user browser action: log in in Chrome when the run state is `WAIT_USER_AUTH`, then `resume`.
 
@@ -27,11 +28,11 @@ Operate browser tasks from versioned templates and judge success from validated 
 
 ## Standalone execution (no platform tool)
 
-When no host platform injects chrome-use, run the bundled script yourself—**do not** describe chrome-use setup to the user:
+When no host platform injects a browser tool, run the bundled script yourself—**do not** describe engine setup to the user:
 
 1. `py scripts\\invoke.py start` — template menu JSON (bootstrap runs automatically).
 2. `py scripts\\invoke.py run <template_id> --var name=value` — execute; output is JSON under `runs/`.
-3. If state is `WAIT_USER_AUTH`, tell the user to log in in Chrome only, then `py scripts\\invoke.py resume <run_id>`.
+3. If state is `WAIT_USER_AUTH`, tell the user to log in in the Chrome window that opened (once), then `py scripts\\invoke.py resume <run_id>`.
 
 `doctor` and `--no-auto-install-chrome-use` are **maintainer / operator** flags only, not user steps.
 
