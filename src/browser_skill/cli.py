@@ -14,7 +14,8 @@ from rich.table import Table
 from rich.text import Text
 
 from browser_skill.app import parse_variables
-from browser_skill.browser.chrome_use import ChromeUseAdapter, ChromeUseToolAdapter
+from browser_skill.browser.chrome_use import ChromeUseToolAdapter
+from browser_skill.browser.factory import build_adapter
 from browser_skill.errors import SkillError
 from browser_skill.interaction.template_menu import TemplateMenu
 from browser_skill.interaction.variables import VariableResolver
@@ -33,6 +34,11 @@ app = typer.Typer(
     rich_markup_mode="rich",
 )
 console = Console()
+
+
+def _adapter(executable: str) -> Any:
+    """chrome-use by default; UNIVERSAL_BROWSER_ENGINE=playwright switches to local Playwright."""
+    return build_adapter(chrome_use_executable=executable)
 
 
 def _store(path: Path) -> TemplateStore:
@@ -153,7 +159,7 @@ def doctor(
     """Probe the installed browser bridge before a real run."""
 
     async def check() -> object:
-        adapter = ChromeUseAdapter(executable=executable)
+        adapter = _adapter(executable)
         return await probe_adapter(adapter, mode="local_cli")
 
     report = asyncio.run(check())
@@ -263,7 +269,7 @@ def run(
         )
         with console.status("[bold #818cf8]正在执行并校验业务结果…[/bold #818cf8]", spinner="dots"):
             response = asyncio.run(
-                Runner(ChromeUseAdapter(executable=executable), runs_root).run(
+                Runner(_adapter(executable), runs_root).run(
                     template, supplied, dry_run=dry_run
                 )
             )
@@ -304,7 +310,7 @@ def local_console(
     from browser_skill.app import BrowserSkillApp
     from browser_skill.console.server import serve_console
 
-    skill_app = BrowserSkillApp(root, runs_root, ChromeUseAdapter(executable=executable))
+    skill_app = BrowserSkillApp(root, runs_root, _adapter(executable))
     serve_console(skill_app, port=port, open_browser=not no_browser)
 
 
@@ -330,7 +336,7 @@ def test_template(
             supplied[name] = typer.prompt(spec.prompt, hide_input=spec.sensitive)
         with console.status("[bold #818cf8]正在执行完整 Test Run…[/bold #818cf8]"):
             response = asyncio.run(
-                Runner(ChromeUseAdapter(executable=executable), runs_root).run(template, supplied)
+                Runner(_adapter(executable), runs_root).run(template, supplied)
             )
         console.print(
             Panel(
@@ -409,7 +415,7 @@ def resume(
             raise typer.BadParameter("Invalid run ID")
         with console.status("[bold #818cf8]正在重新检查登录并恢复任务…[/bold #818cf8]"):
             response = asyncio.run(
-                Runner(ChromeUseAdapter(executable=executable), runs_root).resume(
+                Runner(_adapter(executable), runs_root).resume(
                     workspace, parse_variables(variable or [])
                 )
             )

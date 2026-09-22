@@ -15,6 +15,7 @@ from urllib.parse import urlsplit
 
 from browser_skill.models import (
     AcquisitionSource,
+    BrowserSnapshot,
     BrowserTemplate,
     FieldSpec,
     LearnedMapping,
@@ -66,9 +67,7 @@ def parse_exchanges(data: Any) -> list[NetworkExchange]:
         if not isinstance(item, dict):
             continue
         entry: dict[str, Any] = item
-        request: dict[str, Any] = (
-            entry["request"] if isinstance(entry.get("request"), dict) else {}
-        )
+        request: dict[str, Any] = entry["request"] if isinstance(entry.get("request"), dict) else {}
         response: dict[str, Any] = (
             entry["response"] if isinstance(entry.get("response"), dict) else {}
         )
@@ -298,7 +297,10 @@ class NetworkDiscovery:
 
 def exchange_fingerprint(exchange: NetworkExchange) -> str:
     payload = json.dumps(
-        {"url": exchange.url, "body": exchange.body}, ensure_ascii=False, sort_keys=True, default=str
+        {"url": exchange.url, "body": exchange.body},
+        ensure_ascii=False,
+        sort_keys=True,
+        default=str,
     )
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 

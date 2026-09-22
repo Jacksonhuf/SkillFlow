@@ -33,8 +33,13 @@
 ## Network 采集（自动，无需用户参与）
 
 - Teach `discover` 的 JSON 里有 `network` 字段：`learned: true` 表示已学到 JSON 端点，之后运行会优先读该端点；`enabled: false` 表示当前 chrome-use 不支持网络监听，走 DOM 采集即可。
-- 运行事件 `network_extraction` / `network_extraction_fallback` 出现在 `execution.jsonl`；回退到 DOM 不是错误。
+- 运行事件 `network_extraction` / `network_extraction_fallback` 出现在 `execution.jsonl`；回退到 DOM 不是错误。分页模板同样适用：翻页由页面驱动，每页优先读新 JSON 响应，事件里的 `network_pages` / `dom_pages` 说明各页来源。
 - 不要向用户解释 XHR / endpoint / json_path，这些属于 Learned Profile 内部细节。
+
+## 浏览器引擎（运维设置，Agent 不需要提示用户）
+
+- 默认 chrome-use。运维可通过 `--engine playwright` 或环境变量 `UNIVERSAL_BROWSER_ENGINE=playwright` 切换为 Playwright 驱动本机 Chrome（`UNIVERSAL_BROWSER_CDP_URL` 附着已登录 Chrome，或独立持久 Profile）。
+- 两种引擎的返回契约（状态、`run_id`、产物）完全一致；Agent 执行流程不因引擎而变化。
 
 ## 与附件相关
 

@@ -74,7 +74,8 @@ Agent / CLI 仍通过 `invoke.py` 的 `start` → `run` / `test` → `publish` �
 
 ## 后续路线图
 
-1. Playwright 适配器与 Network 监听器接入 `acquire/`
-2. Teach 模式自动推断 XHR endpoint → `preferred_source: network`
-3. `processing` / `analysis` / `delivery` 插件注册表
-4. 定时任务 / Webhook / HTTP API 由 Host 平台或 sidecar 服务触发同一 `BusinessPipeline`
+1. ~~Playwright 适配器与 Network 监听器接入~~（已完成：`browser/playwright_adapter.py`、`acquire/network.py`）
+2. ~~Teach 模式自动推断 XHR endpoint → `preferred_source: network`~~（已完成）
+3. Vision 兜底接口（截图 + 模型定位）
+4. `processing` / `analysis` / `delivery` 插件注册表
+5. 定时任务 / Webhook / HTTP API 由 Host 平台或 sidecar 服务触发同一 `BusinessPipeline`

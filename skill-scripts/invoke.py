@@ -52,6 +52,15 @@ def main(argv: list[str] | None = None) -> int:
         help="chrome-use CLI name or path (or set CHROME_USE_BIN)",
     )
     parser.add_argument(
+        "--engine",
+        choices=["chrome-use", "playwright"],
+        default=os.environ.get("UNIVERSAL_BROWSER_ENGINE", "chrome-use"),
+        help=(
+            "Browser engine: chrome-use (extension CLI, default) or playwright "
+            "(drives local Chrome; set UNIVERSAL_BROWSER_CDP_URL to attach to a running Chrome)"
+        ),
+    )
+    parser.add_argument(
         "--no-auto-install-chrome-use",
         action="store_true",
         help=(
@@ -85,6 +94,7 @@ def main(argv: list[str] | None = None) -> int:
             _skill_root(),
             chrome_use_executable=args.chrome_use,
             auto_install_chrome_use=not args.no_auto_install_chrome_use,
+            engine=args.engine,
         )
     except Exception as exc:
         from browser_skill.errors import SkillError
