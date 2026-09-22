@@ -1,3 +1,3 @@
-from .strategies import AcquisitionPlanner, DEFAULT_ACQUISITION_ORDER
+from .strategies import DEFAULT_ACQUISITION_ORDER, AcquisitionPlanner
 
-__all__ = ["AcquisitionPlanner", "DEFAULT_ACQUISITION_ORDER"]
+__all__ = ["DEFAULT_ACQUISITION_ORDER", "AcquisitionPlanner"]

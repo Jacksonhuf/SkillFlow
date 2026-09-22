@@ -8,8 +8,8 @@ from pathlib import Path
 from typing import Any
 
 from browser_skill.browser.base import BrowserAdapter
-from browser_skill.execution_contract import contract_payload
 from browser_skill.errors import ErrorCode, SkillError
+from browser_skill.execution_contract import contract_payload
 from browser_skill.interaction.variables import VariableResolver
 from browser_skill.models import (
     AuthState,

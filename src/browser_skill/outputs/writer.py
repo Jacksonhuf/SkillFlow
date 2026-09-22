@@ -11,9 +11,9 @@ from typing import Any
 
 from browser_skill.errors import ErrorCode, SkillError
 from browser_skill.models import OutputFormat, RunContext, ValidationReport
+from browser_skill.outputs.manifest import write_manifest
 from browser_skill.outputs.paths import contained_path, safe_filename
 from browser_skill.outputs.xlsx import XlsxWriter
-from browser_skill.outputs.manifest import write_manifest
 
 
 def _json_default(value: Any) -> str:

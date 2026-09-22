@@ -5,8 +5,8 @@ from pathlib import Path
 from typing import Any
 
 from browser_skill.browser.base import BrowserAdapter
-from browser_skill.execution_contract import contract_payload
 from browser_skill.errors import ErrorCode, SkillError
+from browser_skill.execution_contract import contract_payload
 from browser_skill.interaction.contracts import (
     auth_required_interaction,
     error_interaction,

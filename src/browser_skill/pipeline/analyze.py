@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from browser_skill.models import AnalysisSpec, BrowserTemplate
+from browser_skill.models import BrowserTemplate
 
 
 def apply_analysis(

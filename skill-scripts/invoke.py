@@ -74,6 +74,11 @@ def main(argv: list[str] | None = None) -> int:
     resume_p.add_argument("run_id")
     resume_p.add_argument("--var", action="append", default=[])
 
+    ui_p = sub.add_parser("ui", help="Open the local web console (127.0.0.1 only)")
+    ui_p.add_argument("--port", type=int, default=8765, help="Port (0 = random free port)")
+    ui_p.add_argument("--no-browser", action="store_true", help="Do not open a browser tab")
+    ui_p.add_argument("--token", default=None, help="Fixed console token (default: random)")
+
     args = parser.parse_args(argv)
     try:
         app = make_standalone_app(
@@ -89,6 +94,17 @@ def main(argv: list[str] | None = None) -> int:
         else:
             print(str(exc), file=sys.stderr)
         return 1
+
+    if args.command == "ui":
+        from browser_skill.console.server import serve_console
+
+        serve_console(
+            app,
+            port=args.port,
+            open_browser=not args.no_browser,
+            token=args.token,
+        )
+        return 0
 
     async def dispatch() -> int:
         if args.command == "capabilities":

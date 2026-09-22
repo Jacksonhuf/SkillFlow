@@ -216,7 +216,8 @@ class TargetSpec(StrictModel):
             missing = set(attachment.match_by) - set(keys)
             if missing:
                 raise ValueError(
-                    f"attachment {attachment.key} match_by references unknown fields: {sorted(missing)}"
+                    f"attachment {attachment.key} match_by references unknown fields: "
+                    f"{sorted(missing)}"
                 )
         return self
 

@@ -6,7 +6,7 @@ import threading
 from copy import deepcopy
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
-from typing import Any
+from typing import Any, ClassVar
 
 from browser_skill.browser.fake import FakeBrowserAdapter
 from browser_skill.models import BrowserSnapshot, BrowserTemplate, RunState
@@ -104,9 +104,9 @@ def test_run_writes_report_manifest_and_local_delivery(tmp_path: Path, template_
 
 
 class _Hook(BaseHTTPRequestHandler):
-    received: list[dict[str, Any]] = []
+    received: ClassVar[list[dict[str, Any]]] = []
 
-    def do_POST(self) -> None:  # noqa: N802
+    def do_POST(self) -> None:
         length = int(self.headers.get("Content-Length", "0"))
         _Hook.received.append(json.loads(self.rfile.read(length)))
         self.send_response(204)

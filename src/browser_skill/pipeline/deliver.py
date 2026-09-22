@@ -66,11 +66,16 @@ def _deliver_webhook(
         method="POST",
     )
     try:
-        with urllib.request.urlopen(request, timeout=_WEBHOOK_TIMEOUT_SECONDS) as response:  # noqa: S310
+        with urllib.request.urlopen(request, timeout=_WEBHOOK_TIMEOUT_SECONDS) as response:
             status = int(getattr(response, "status", 200))
     except (urllib.error.URLError, OSError, ValueError) as exc:
         return {"type": "webhook", "ok": False, "target": channel.target, "error": str(exc)}
-    return {"type": "webhook", "ok": 200 <= status < 300, "target": channel.target, "status": status}
+    return {
+        "type": "webhook",
+        "ok": 200 <= status < 300,
+        "target": channel.target,
+        "status": status,
+    }
 
 
 def deliver(

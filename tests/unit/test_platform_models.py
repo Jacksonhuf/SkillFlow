@@ -2,8 +2,6 @@ from __future__ import annotations
 
 from copy import deepcopy
 
-import pytest
-
 from browser_skill.models import BrowserTemplate, LearnedSpec, TemplateStatus
 from browser_skill.templates.learned_store import LearnedProfileStore
 from browser_skill.templates.store import TemplateStore

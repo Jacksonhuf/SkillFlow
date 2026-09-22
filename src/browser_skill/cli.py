@@ -292,6 +292,22 @@ def run(
         raise typer.Exit(2) from exc
 
 
+@app.command("ui")
+def local_console(
+    root: Annotated[Path, typer.Option("--root")] = Path("templates"),
+    runs_root: Annotated[Path, typer.Option("--runs-root")] = Path("runs"),
+    executable: Annotated[str, typer.Option(help="chrome-use executable")] = "chrome-use",
+    port: Annotated[int, typer.Option(help="Port (0 = random free port)")] = 8765,
+    no_browser: Annotated[bool, typer.Option("--no-browser")] = False,
+) -> None:
+    """Open the local web console (binds to 127.0.0.1 only)."""
+    from browser_skill.app import BrowserSkillApp
+    from browser_skill.console.server import serve_console
+
+    skill_app = BrowserSkillApp(root, runs_root, ChromeUseAdapter(executable=executable))
+    serve_console(skill_app, port=port, open_browser=not no_browser)
+
+
 @app.command("test")
 def test_template(
     selector: str,
