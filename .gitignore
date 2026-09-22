@@ -10,11 +10,12 @@ build/
 skill-package/universal-browser/runtime/
 skill-package/universal-browser/templates/
 skill-package/universal-browser/RUNTIME.zh.md
+skill-package/universal-browser/scripts/
+skill-package/universal-browser/STANDALONE.zh.md
+skill-package/universal-browser/vendor/
 runs/*
 !runs/.gitkeep
 
-skill-package/universal-browser/scripts/
-skill-package/universal-browser/STANDALONE.zh.md
 vendor/chrome-use/*.tar.gz
 vendor/chrome-use/chrome-use.exe
 !vendor/chrome-use/.gitkeep
