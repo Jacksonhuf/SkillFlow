@@ -3,12 +3,13 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Literal
 
+from browser_skill.acquire.vision import VisionFallback
 from browser_skill.browser.base import BrowserAdapter
 from browser_skill.errors import ErrorCode, SkillError
 from browser_skill.models import BrowserSnapshot
 
 LocatorStrategy = Literal[
-    "learned", "snapshot_exact", "snapshot_partial", "semantic_find", "dom_hint"
+    "learned", "snapshot_exact", "snapshot_partial", "semantic_find", "dom_hint", "vision"
 ]
 
 
@@ -24,6 +25,10 @@ class LocatorService:
     """Resolve ephemeral action targets using a deterministic, ambiguity-safe priority order."""
 
     SAFE_TEXT_KEYS = ("text", "name", "label", "aria_label", "title")
+
+    def __init__(self, vision: VisionFallback | None = None) -> None:
+        # Vision is the last rung: only consulted when every DOM/semantic strategy failed.
+        self.vision = vision
 
     async def locate(
         self,
@@ -73,6 +78,13 @@ class LocatorService:
                 hint="validated_dom_hint",
                 confidence=0.4,
             )
+        if self.vision is not None and self.vision.enabled:
+            for hint in [*learned, *declared]:
+                target = await self.vision.locate(adapter, hint, page_url=snapshot.url)
+                if target:
+                    return LocatedTarget(
+                        target=target, strategy="vision", hint=hint, confidence=0.5
+                    )
         if required:
             raise SkillError(
                 ErrorCode.ELEMENT_NOT_FOUND,

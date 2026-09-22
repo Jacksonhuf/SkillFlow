@@ -17,6 +17,12 @@ See `templates/inventory_feedback/1.yaml` for a complete example and
 ## Schema 2.0 additions
 
 - Optional `processing` / `analysis` / `report` / `delivery` sections (business pipeline stages).
+  - `analysis`: `enabled`, `compare_with_previous` (record-count swing vs. the last completed run),
+    `record_change_threshold` (default 0.5), `prompt_template` / `model_hint` for a host model.
+  - `delivery.channels[]`: `type` in `local | webhook | email | wecom`, `target` (directory, URL,
+    or comma-separated recipients), `options` (`subject`, `attach`, `max_attachment_mb`,
+    `title`, `attach_result`, `mentioned_mobile_list`). SMTP credentials come from
+    `UNIVERSAL_BROWSER_SMTP_*` environment variables, never from the template.
 - Field extras: `aliases`, `validation_rule`. Attachment extras: `aliases`, `match_by`, `multiple`,
   `min_size_bytes`, `max_size_bytes`.
 - Learned mappings for 2.0 templates are stored beside the contract in

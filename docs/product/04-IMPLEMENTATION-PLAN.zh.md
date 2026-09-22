@@ -50,7 +50,7 @@
 - ✅ 分页模板的 Network 采集：`NetworkRecordSource` 作为 `RecordExtractor.collect` 的按页记录来源，翻页（下一页 / 加载更多 / 滚动 / 页码）仍由 DOM 驱动，每页只读取新出现的 JSON 响应，无新响应的页自动回退 DOM 表格；事件记录 `network_pages` / `dom_pages`
 - ✅ Playwright 适配器 `browser/playwright_adapter.py`（`BrowserAdapter` 全协议）：CDP 附着到用户已登录 Chrome / 独立持久 Profile / 临时实例三种模式；快照输出交互元素 `@eN` 引用与表格 `columnheader`/`cell`（含 `row_index`/`column_index`）；`find` 多策略定位并跳过禁用控件；下载、弹窗（自动关闭 + 状态上报）、多标签、XHR/Fetch JSON 响应捕获（`network_requests`）
 - ✅ 引擎切换：`browser/factory.py`，`invoke.py --engine playwright` 或 `UNIVERSAL_BROWSER_ENGINE=playwright`；`UNIVERSAL_BROWSER_CDP_URL` / `UNIVERSAL_BROWSER_PROFILE_DIR` / `UNIVERSAL_BROWSER_CHROME_PATH` / `UNIVERSAL_BROWSER_HEADLESS`
-- ⬜ Vision 兜底接口
+- ✅ Vision 兜底接口：`acquire/vision.py` 定义 `VisionProvider`（由 Host 注入视觉模型）与 `VisionFallback`（截图 → 模型 → `xy:<x>,<y>` 目标，置信度门限）；`LocatorService` 在 learned / snapshot / find / dom_hint 全部失败后才调用；适配器新增可选 `screenshot()`（Playwright 已实现、chrome-use 透传、Fake 可脚本化），Playwright 支持点击坐标目标；运行事件 `vision_fallback` 记录每次尝试。未注入 Provider 时行为与之前完全一致
 
 ### 阶段 D 验证记录
 
@@ -62,12 +62,21 @@
 | 新增用例（分页 Network） | 按页只读新响应、翻页两页均走 Network、Network + DOM 混合页 |
 | Playwright 集成测试 | 本地站点 + 无头 Chrome：快照表格/引用、翻页、网络捕获、下载、弹窗、填表；Runner 端到端两页 Network 采集；无学习映射时 DOM 表格回退（无 Playwright/Chrome 时自动跳过） |
 
-## 阶段 E：智能化与运营（后续 PR）
+## 阶段 E：智能化与运营
 
-- ⬜ 样例对齐 Teach（自动比对上传样例与试跑结果）
-- ⬜ 异常 AI 摘要（由 Host Agent 调用模型）
-- ⬜ 邮件 / 企业微信分发适配器
-- ⬜ 模板权限与多用户审计（若引入服务端）
+- ✅ 样例对齐 Teach：`runtime/sample_alignment.py`，`test` 动作携带 `sample_path` 时把上传样例（CSV / JSON）与试跑记录比对——列到字段的匹配（key / 名称 / 语义 / 别名 / 归一化）、取值形态（整数 / 小数 / 日期 / 文本…）与填充率、未覆盖列与无值字段，以中文问题清单输出；写入 `runs/<run_id>/sample_alignment.json`，控制台 Teach 向导自动带上样例并显示差异
+- ✅ 异常摘要：`pipeline/analyze.py` 规则引擎（校验问题、空结果、可选字段大面积为空、附件失败、分页未完成、与上次完成运行的记录数波动）输出 findings / severity / 中文摘要到 `pipeline.json` 与 `report.md`；`AnalysisProvider` 钩子供 Host Agent 注入模型生成 `ai_summary`，模型失败不影响运行；校验失败的运行同样产出分析（`pipeline.json` + 错误 details）
+- ✅ 邮件 / 企业微信分发：`pipeline/deliver.py` 新增 `email`（SMTP，凭据来自 `UNIVERSAL_BROWSER_SMTP_*` 环境变量，正文含分析摘要，附结果文件，大小预算）与 `wecom`（群机器人 markdown 摘要 + `upload_media` 上传结果文件），渠道参数放 `delivery.channels[].options`
+- ⬜ 模板权限与多用户审计（仅在引入服务端时；当前每人本机形态不需要）
+
+### 阶段 E 验证记录
+
+| 项 | 结果 |
+|----|------|
+| Vision | 定位顺序（DOM 命中不调用视觉）、低置信度 / 空 Provider 保持 `E_ELEMENT_NOT_FOUND`、无截图能力跳过、Runner 端到端点击 `xy` 目标并记录事件 |
+| 样例对齐 | 形态分类、多策略列匹配、覆盖率 / 形态差异 / 无值字段报告、`test` 动作附带报告并落盘 |
+| 分析 | 无异常运行、可选字段稀疏 + 记录数骤降对比上次、校验失败 → error、AI Provider 摘要与失败隔离、禁用即跳过 |
+| 分发 | 邮件（Fake SMTP：收件人、主题、正文、附件、登录）、未配置 SMTP 时报告不抛错、企业微信（本地机器人：markdown + 上传 + 文件消息、错误 key 失败） |
 
 ## 里程碑验收
 

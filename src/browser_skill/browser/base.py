@@ -49,6 +49,12 @@ class BrowserAdapter(Protocol):
     async def network_requests(self) -> CommandResult: ...
 
 
+class ScreenshotCapable(Protocol):
+    """Optional extension used by the vision fallback; adapters may omit it."""
+
+    async def screenshot(self) -> CommandResult: ...
+
+
 def snapshot_from_data(data: Any) -> BrowserSnapshot:
     if isinstance(data, BrowserSnapshot):
         return data

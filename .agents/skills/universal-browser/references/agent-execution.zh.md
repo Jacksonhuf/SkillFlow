@@ -41,6 +41,12 @@
 - 默认 chrome-use。运维可通过 `--engine playwright` 或环境变量 `UNIVERSAL_BROWSER_ENGINE=playwright` 切换为 Playwright 驱动本机 Chrome（`UNIVERSAL_BROWSER_CDP_URL` 附着已登录 Chrome，或独立持久 Profile）。
 - 两种引擎的返回契约（状态、`run_id`、产物）完全一致；Agent 执行流程不因引擎而变化。
 
+## 样例比对 / 分析 / 分发（读取结果即可，不需要额外操作）
+
+- Teach 阶段用户上传过样例时，`test` 请求带上 `sample_path`，返回的 `data.sample_alignment` 给出覆盖率与中文差异清单（`issues`）；`aligned: false` 时先把差异告诉用户再决定是否 publish。
+- `pipeline.json` 的 `stages.analyze` 含 `severity`（ok / info / warning / error）、`summary`、`findings`；向用户汇报时直接引用 `summary`（若有 `ai_summary` 优先）。校验失败的运行也有该字段（在错误 details 与 `pipeline.json` 中）。
+- `stages.deliver.channels` 逐渠道给出 `ok` 与 `error`（local / webhook / email / wecom）；分发失败不影响运行成功，只需如实告知哪个渠道未送达。
+
 ## 与附件相关
 
 - 模板声明 `attachments` 时，运行前会检查 chrome-use 是否具备 **find + download + downloads**。

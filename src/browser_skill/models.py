@@ -308,6 +308,8 @@ class AnalysisSpec(StrictModel):
     enabled: bool = False
     prompt_template: str = ""
     model_hint: str | None = None
+    compare_with_previous: bool = True
+    record_change_threshold: float = Field(default=0.5, ge=0.0, le=10.0)
 
 
 class ReportSpec(StrictModel):
@@ -317,9 +319,18 @@ class ReportSpec(StrictModel):
 
 
 class DeliveryChannelSpec(StrictModel):
-    type: Literal["local", "webhook", "email"] = "local"
+    """One delivery destination.
+
+    ``target`` is a directory (local), an http(s) URL (webhook / wecom robot) or a comma-separated
+    recipient list (email). Credentials never live in templates: SMTP settings come from
+    ``UNIVERSAL_BROWSER_SMTP_*`` environment variables. ``options`` holds channel-specific knobs
+    such as ``subject``, ``attach``, ``max_attachment_mb`` or ``mentioned_mobile_list``.
+    """
+
+    type: Literal["local", "webhook", "email", "wecom"] = "local"
     target: str = ""
     enabled: bool = False
+    options: dict[str, Any] = Field(default_factory=dict)
 
 
 class DeliverySpec(StrictModel):
@@ -370,6 +381,7 @@ class BrowserCapabilities(StrictModel):
     sessions: bool = False
     dialogs: bool = False
     network: bool = False
+    screenshot: bool = False
 
 
 class NetworkExchange(StrictModel):
