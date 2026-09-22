@@ -17,9 +17,9 @@ Acquire   → Normalize  → (attachments) → Process      → Validate → Ana
 | Normalize | `runtime/extractor.py`, `table_parser.py` | 已实现 |
 | Process | `pipeline/process.py` | 已实现（rename / coerce_type / default_value / dedupe） |
 | Validate | `runtime/validator.py` | 已实现 |
-| Analyze | `pipeline/analyze.py` | 占位（上下文写入 pipeline.json，由 Host Agent 调模型） |
+| Analyze | `pipeline/analyze.py` | 已实现规则异常发现 + 摘要；`AnalysisProvider` 钩子接 Host 模型 |
 | Report | `pipeline/report.py`, `outputs/manifest.py` | `report.md` + manifest |
-| Deliver | `pipeline/deliver.py` | 已实现 local / webhook；email 占位 |
+| Deliver | `pipeline/deliver.py` | 已实现 local / webhook / email（SMTP）/ wecom（企业微信机器人） |
 
 采集策略优先级（`acquire/strategies.py`）：
 
@@ -28,7 +28,8 @@ API → Network/XHR → DOM → Browser workflow → Vision
 ```
 
 - **Network（已实现）**：Teach 阶段读取浏览器已发生的请求（`adapter.network_requests()`，需 `capabilities.network`），在允许的主机中找到覆盖模板列表字段的 JSON 记录数组，写入 `preferred_source: network` + `endpoint_hint` + `json_path`；Run 阶段优先读取同一端点的 JSON（无分页模板），缺失时自动回退 DOM。运行时**不会**自行向目标系统发请求，只复用用户会话中已产生的响应。
-- **API / Vision**：仍为规划接口。
+- **Vision（接口已实现）**：`acquire/vision.py` 的 `VisionProvider` 由 Host 注入模型；`LocatorService` 在全部 DOM 策略失败后截图并请求坐标，命中则以 `xy:<x>,<y>` 目标点击。运行时自身不带模型。
+- **API**：仍为规划接口。
 
 ## 核心对象
 
@@ -76,6 +77,6 @@ Agent / CLI 仍通过 `invoke.py` 的 `start` → `run` / `test` → `publish` �
 
 1. ~~Playwright 适配器与 Network 监听器接入~~（已完成：`browser/playwright_adapter.py`、`acquire/network.py`）
 2. ~~Teach 模式自动推断 XHR endpoint → `preferred_source: network`~~（已完成）
-3. Vision 兜底接口（截图 + 模型定位）
+3. ~~Vision 兜底接口（截图 + 模型定位）~~（已完成接口，模型由 Host 注入）
 4. `processing` / `analysis` / `delivery` 插件注册表
 5. 定时任务 / Webhook / HTTP API 由 Host 平台或 sidecar 服务触发同一 `BusinessPipeline`
