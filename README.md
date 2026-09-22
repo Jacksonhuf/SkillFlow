@@ -1,6 +1,6 @@
 # Universal Browser Skill — 快速开始
 
-**没有其它平台、只有 OpenCode + chrome-use 扩展时**：下载 **[完整包 v0.1.2](https://github.com/Jacksonhuf/SkillFlow/releases/download/v0.1.3-full/universal-browser-full-0.1.3.zip)**，上传到 Skill Hub。chrome-use CLI 首次执行时自动准备，无需让用户安装。说明见 **`docs/STANDALONE.zh.md`**。
+**没有其它平台、只有 OpenCode + chrome-use 扩展时**：下载 **[完整包 v0.1.4（含 chrome-use CLI）](https://github.com/Jacksonhuf/SkillFlow/releases/download/v0.1.4-full/universal-browser-full-0.1.4.zip)**。若 GitHub 不可达，请用 **v0.1.4-full**（内含 `vendor/chrome-use/chrome-use.exe`），不要依赖在线下载。说明见 **`docs/STANDALONE.zh.md`**。
 
 **有 Skill Hub + 服务端平台工具时**：可用 slim 包或完整包，见 `docs/SKILL-HUB.zh.md`。
 
