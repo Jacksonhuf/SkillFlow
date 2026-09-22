@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from dataclasses import asdict
 from pathlib import Path
 from typing import Any
@@ -34,6 +35,7 @@ from browser_skill.models import (
     TemplateStatus,
 )
 from browser_skill.outputs.paths import contained_path
+from browser_skill.outputs.writer import RunWorkspace
 from browser_skill.platform.acceptance import validate_acceptance_bundle
 from browser_skill.platform.probe import probe_adapter
 from browser_skill.runtime.auto_repair import AutoRepairService
@@ -42,6 +44,7 @@ from browser_skill.runtime.recovery import RunRecoveryService
 from browser_skill.runtime.repair import RepairService
 from browser_skill.runtime.run_store import RunStore
 from browser_skill.runtime.runner import Runner
+from browser_skill.runtime.sample_alignment import SampleAligner
 from browser_skill.runtime.sample_analyzer import SampleAnalyzer
 from browser_skill.runtime.teach import TeachCompiler
 from browser_skill.runtime.teach_explorer import TeachExplorer
@@ -440,6 +443,8 @@ class BrowserSkillApp:
                     data={"interaction": interaction.model_dump(mode="json")},
                 )
             response = await self.runner.run(template, request.variables)
+            if request.action == "test" and request.sample_path is not None and response.run_id:
+                self._attach_sample_alignment(response, template, request.sample_path)
             if response.run_id and response.state == RunState.WAIT_USER_AUTH:
                 interaction = auth_required_interaction(
                     response.run_id,
@@ -457,6 +462,27 @@ class BrowserSkillApp:
             response.data["interaction"] = interaction.model_dump(mode="json")
             return response
         return SkillResponse(ok=False, message=f"动作尚需交互流程：{request.action}")
+
+    def _attach_sample_alignment(
+        self, response: SkillResponse, template: BrowserTemplate, sample_path: Path
+    ) -> None:
+        """Teach test with a sample: compare what the user wants with what the run produced."""
+        assert response.run_id is not None
+        path = contained_path(self.samples_root, *sample_path.parts)
+        run_dir = self.runs_root / response.run_id
+        records: list[dict[str, Any]] = []
+        run_file = run_dir / "run.json"
+        if run_file.is_file():
+            payload = json.loads(run_file.read_text(encoding="utf-8"))
+            records = [r for r in payload.get("records", []) if isinstance(r, dict)]
+        report = SampleAligner().align(template, path, records)
+        data = report.model_dump(mode="json")
+        data["aligned"] = report.aligned
+        if run_dir.is_dir():
+            RunWorkspace.existing(run_dir).atomic_json("sample_alignment.json", data)
+        response.data["sample_alignment"] = data
+        if not report.aligned and response.ok:
+            response.message = f"{response.message}；样例比对发现 {len(report.issues)} 个差异"
 
 
 def parse_variables(items: list[str]) -> dict[str, Any]:

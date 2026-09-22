@@ -201,6 +201,11 @@
     }
     const v = resp.data && resp.data.validation;
     if (v) html += `<div class="muted">记录 ${v.record_count} · 附件 ${v.download_count} · 字段完整度 ${(v.field_completeness * 100).toFixed(0)}%</div>`;
+    const al = resp.data && resp.data.sample_alignment;
+    if (al) {
+      html += `<div class="muted" style="margin-top:6px">样例比对：覆盖 ${(al.coverage * 100).toFixed(0)}% · ${al.aligned ? '一致' : al.issues.length + ' 个差异'}</div>`;
+      if (al.issues.length) html += '<ul style="margin:4px 0 0 18px">' + al.issues.map(i => `<li>${esc(i)}</li>`).join('') + '</ul>';
+    }
     if (resp.data && resp.data.error) html += `<pre>${esc(JSON.stringify(resp.data.error, null, 2))}</pre>`;
     html += '</div>';
     el.innerHTML = html;
@@ -330,7 +335,9 @@
   };
   $('teachTestBtn').onclick = async () => {
     const variables = teachVars();
-    const resp = await submitJob({ action: 'test', template_id: $('teachId').value.trim(), variables }, $('teachStatus'), { variables });
+    const req = { action: 'test', template_id: $('teachId').value.trim(), variables };
+    if (samplePath) req.sample_path = samplePath;  // compare the uploaded sample with the test run
+    const resp = await submitJob(req, $('teachStatus'), { variables });
     if (resp && resp.run_id) $('publishRun').value = resp.run_id;
   };
   $('publishBtn').onclick = async () => {
