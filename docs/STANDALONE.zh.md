@@ -37,6 +37,16 @@ py scripts\invoke.py run <template_id> --var name=value
 py scripts\invoke.py resume <run_id>
 ```
 
+## 本地界面与定时任务
+
+```bat
+py scripts\invoke.py ui                 :: 本机控制台（仅 127.0.0.1，带令牌）
+py scripts\invoke.py ui --port 0        :: 随机端口
+powershell -File scripts\windows\Register-ScheduledRun.ps1 -TemplateId sales_daily -Daily 07:30 -Var @{date="yesterday"}
+```
+
+界面提供：模板卡片 + 变量表单、运行记录与制品下载、Teach 向导、环境诊断。定时任务以当前用户身份运行，复用已登录 Chrome；未登录时停在 `WAIT_USER_AUTH`，在界面点「继续执行」即可。
+
 ## 运维
 
 | 场景 | 处理 |

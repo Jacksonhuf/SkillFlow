@@ -19,6 +19,17 @@
 2. 可静默重试一次 `run`（网络/扩展瞬时离线）。
 3. 仍失败：对用户简短说明；运维根据 `error.details.operator_guide` 或 `invoke capabilities` / `doctor` 处理。
 
+## 本地界面（可选，同一引擎）
+
+- 用户希望「用界面操作」时，告知运行 `py scripts\invoke.py ui`，浏览器自动打开 `http://127.0.0.1:8765/?token=...`。
+- 界面里的运行、Teach、续跑与 Agent 调用的是同一套 `BrowserSkillApp`，`run_id` 与 `runs/` 产物互通；Agent 可直接引用界面产生的 `run_id`。
+- 界面仅本机可访问，不要把带 token 的链接发给他人。
+
+## 成功后的产物（2.0 模板）
+
+- 除 `result.*` 外还有 `manifest.json`（记录+附件包）、`report.md`（若启用 `report`）、`pipeline.json`（各阶段状态，含 `deliver.channels` 投递结果）。
+- 投递失败不影响 run 成功；向用户汇报时读取 `pipeline.stages.deliver` 说明哪个渠道未送达。
+
 ## 与附件相关
 
 - 模板声明 `attachments` 时，运行前会检查 chrome-use 是否具备 **find + download + downloads**。

@@ -35,6 +35,21 @@ When no host platform injects chrome-use, run the bundled script yourself—**do
 
 `doctor` and `--no-auto-install-chrome-use` are **maintainer / operator** flags only, not user steps.
 
+## Local console (optional UI, same engine)
+
+`py scripts\\invoke.py ui` starts a **127.0.0.1-only** web console (token in the printed URL): template
+cards with variable forms, run history with artifact download (`result`, `manifest.json`, `report.md`),
+a Teach wizard (sample → draft → discover → test → publish) and environment diagnostics. It calls the same
+`BrowserSkillApp` actions as the Agent, so results are identical. Scheduled runs on the user's machine:
+`scripts\windows\Register-ScheduledRun.ps1` (Windows Task Scheduler → `invoke.py run`).
+
+## Pipeline (Template 2.0)
+
+Templates may declare `processing` (rename / coerce_type / default_value / dedupe_records), `report`
+(`report.md`), `delivery` (`local` directory copy, `webhook` JSON notification) and `analysis`
+(placeholder context). Learned mappings for 2.0 templates live in `templates/<id>/learned/<version>.yaml`
+so Repair never edits the business contract. See `docs/PLATFORM-ARCHITECTURE.zh.md` and `docs/product/`.
+
 Skill root must contain `templates/` and `runtime/src/`. Set `UNIVERSAL_BROWSER_SKILL_ROOT` if the working directory is elsewhere.
 
 ## Workflow
