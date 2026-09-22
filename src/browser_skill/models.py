@@ -308,6 +308,8 @@ class AnalysisSpec(StrictModel):
     enabled: bool = False
     prompt_template: str = ""
     model_hint: str | None = None
+    compare_with_previous: bool = True
+    record_change_threshold: float = Field(default=0.5, ge=0.0, le=10.0)
 
 
 class ReportSpec(StrictModel):

@@ -33,6 +33,8 @@ def render_markdown_report(
     context: RunContext,
     report: ValidationReport,
     artifacts: dict[str, str],
+    *,
+    analysis: dict[str, Any] | None = None,
 ) -> str:
     title = _render_title(template, context)
     ok_files = [item for item in context.downloaded_files if item.status == DownloadStatus.OK]
@@ -45,8 +47,7 @@ def render_markdown_report(
         f"- 生成时间：{datetime.now(UTC).isoformat(timespec='seconds')}",
         f"- 记录数：{len(context.records)}",
         f"- 附件（成功）：{len(ok_files)} / {len(context.downloaded_files)}",
-        f"- 校验：{'通过' if report.ok else '未通过'}"
-        + ("（部分结果）" if report.partial else ""),
+        f"- 校验：{'通过' if report.ok else '未通过'}" + ("（部分结果）" if report.partial else ""),
         "",
         "## 变量",
         "",
@@ -58,6 +59,13 @@ def render_markdown_report(
     lines += ["", "## 数据预览", "", _markdown_table(columns, context.records)]
     if len(context.records) > _MAX_PREVIEW_ROWS:
         lines.append(f"_仅显示前 {_MAX_PREVIEW_ROWS} 条，完整数据见结果文件。_")
+    if analysis and not analysis.get("skipped"):
+        lines += ["", f"## 分析（{analysis.get('severity', 'ok')}）", ""]
+        lines.append(str(analysis.get("ai_summary") or analysis.get("summary", "")).strip())
+        findings = analysis.get("findings") or []
+        if findings:
+            lines += ["", "### 发现", ""]
+            lines.extend(f"- [{item.get('severity')}] {item.get('message')}" for item in findings)
     if template.report.include_summary and report.issues:
         lines += ["", "## 校验问题", ""]
         lines.extend(

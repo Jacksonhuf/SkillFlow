@@ -25,7 +25,8 @@ from browser_skill.models import (
     SkillResponse,
 )
 from browser_skill.outputs.writer import OutputWriter, RunWorkspace
-from browser_skill.pipeline.orchestrator import finalize_pipeline
+from browser_skill.pipeline.analyze import AnalysisProvider
+from browser_skill.pipeline.orchestrator import analyze_failed_run, finalize_pipeline
 from browser_skill.pipeline.process import apply_processing
 from browser_skill.runtime.auth import AuthClassifier
 from browser_skill.runtime.capability_requirements import ensure_template_runtime_capabilities
@@ -57,8 +58,10 @@ class Runner:
         policy: ActionPolicy | None = None,
         locator: LocatorService | None = None,
         vision_provider: VisionProvider | None = None,
+        analysis_provider: AnalysisProvider | None = None,
     ) -> None:
         self.adapter = adapter
+        self.analysis_provider = analysis_provider
         self.runs_root = runs_root
         self.variables = variable_resolver or VariableResolver()
         self.auth = auth_classifier or AuthClassifier()
@@ -192,19 +195,24 @@ class Runner:
                 pagination_complete=context.pagination_complete,
             )
             if not report.ok:
+                analysis = await analyze_failed_run(
+                    context, report, analysis_provider=self.analysis_provider
+                )
                 raise SkillError(
                     ErrorCode.VALIDATION_FAILED,
                     "Business-result validation failed",
                     stage="VALIDATING",
                     repairable=True,
-                    details={"validation": report.model_dump(mode="json")},
+                    details={"validation": report.model_dump(mode="json"), "analysis": analysis},
                 )
             self._transition(workspace, context, RunState.WRITING_OUTPUT)
             final_state = RunState.PARTIAL if report.partial else RunState.COMPLETED
             context.state = final_state
             context.finished_at = datetime.now(UTC)
             artifacts = self.output_writer.write(context, report)
-            pipeline_data = finalize_pipeline(context, report, artifacts)
+            pipeline_data = await finalize_pipeline(
+                context, report, artifacts, analysis_provider=self.analysis_provider
+            )
             self.output_writer.write_summary(context, report=report, artifacts=artifacts)
             self._persist_context(workspace, context)
             self._event(workspace, context, "run_finished", artifacts=artifacts)
@@ -331,12 +339,23 @@ class Runner:
                 pagination_complete=context.pagination_complete,
             )
             if not report.ok:
-                raise SkillError(ErrorCode.VALIDATION_FAILED, "Business-result validation failed")
+                analysis = await analyze_failed_run(
+                    context, report, analysis_provider=self.analysis_provider
+                )
+                raise SkillError(
+                    ErrorCode.VALIDATION_FAILED,
+                    "Business-result validation failed",
+                    stage="VALIDATING",
+                    repairable=True,
+                    details={"validation": report.model_dump(mode="json"), "analysis": analysis},
+                )
             self._transition(workspace, context, RunState.WRITING_OUTPUT)
             context.state = RunState.PARTIAL if report.partial else RunState.COMPLETED
             context.finished_at = datetime.now(UTC)
             artifacts = self.output_writer.write(context, report)
-            pipeline_data = finalize_pipeline(context, report, artifacts)
+            pipeline_data = await finalize_pipeline(
+                context, report, artifacts, analysis_provider=self.analysis_provider
+            )
             self.output_writer.write_summary(context, report=report, artifacts=artifacts)
             self._persist_context(workspace, context)
             self._event(workspace, context, "run_finished", artifacts=artifacts)
