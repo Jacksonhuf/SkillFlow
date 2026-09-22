@@ -11,7 +11,8 @@ import yaml
 from pydantic import ValidationError
 
 from browser_skill.errors import ErrorCode, SkillError
-from browser_skill.models import BrowserTemplate, TemplateStatus
+from browser_skill.models import BrowserTemplate, LearnedSpec, TemplateStatus
+from browser_skill.templates.learned_store import LearnedProfileStore
 
 
 @dataclass(frozen=True, slots=True)
@@ -29,6 +30,7 @@ class TemplateStore:
     def __init__(self, root: Path) -> None:
         self.root = root.resolve()
         self.root.mkdir(parents=True, exist_ok=True)
+        self.learned = LearnedProfileStore(self.root)
 
     def _template_dir(self, template_id: str) -> Path:
         if not template_id or any(part in template_id for part in ("/", "\\", "..")):
@@ -172,6 +174,12 @@ class TemplateStore:
             raise SkillError(
                 ErrorCode.TEMPLATE_INVALID, f"Template is not published: {template_id}@{version}"
             )
+        return self._hydrate_learned(template)
+
+    def _hydrate_learned(self, template: BrowserTemplate) -> BrowserTemplate:
+        profile = self.learned.load(template.template_id, template.version)
+        if profile is not None:
+            return template.model_copy(update={"learned": profile}, deep=True)
         return template
 
     def save(self, template: BrowserTemplate) -> Path:
@@ -183,8 +191,13 @@ class TemplateStore:
             if existing != template:
                 raise SkillError(ErrorCode.TEMPLATE_INVALID, "Template versions are immutable")
             return target
+        learned_payload = template.learned
+        persisted = template
+        if template.schema_version == "2.0" and learned_payload != LearnedSpec():
+            self.learned.save(template.template_id, template.version, learned_payload)
+            persisted = template.model_copy(update={"learned": LearnedSpec()}, deep=True)
         content = yaml.safe_dump(
-            json.loads(template.model_dump_json()), allow_unicode=True, sort_keys=False
+            json.loads(persisted.model_dump_json()), allow_unicode=True, sort_keys=False
         )
         self._atomic_write(target, content)
         metadata = self._metadata(template.template_id)
@@ -207,6 +220,11 @@ class TemplateStore:
             json.dumps(metadata, ensure_ascii=False, indent=2) + "\n",
         )
         return target
+
+    def save_learned_profile(
+        self, template_id: str, version: int, learned: LearnedSpec
+    ) -> Path:
+        return self.learned.save(template_id, version, learned)
 
     def publish(self, template_id: str, version: int, *, test_passed: bool) -> BrowserTemplate:
         if not test_passed:

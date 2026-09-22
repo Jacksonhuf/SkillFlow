@@ -26,5 +26,16 @@ class RepairService:
         )
 
     def contract_unchanged(self, original: BrowserTemplate, candidate: BrowserTemplate) -> bool:
-        frozen = ("variables", "target", "validation", "output", "auth", "system")
+        frozen = (
+            "variables",
+            "target",
+            "validation",
+            "output",
+            "auth",
+            "system",
+            "processing",
+            "analysis",
+            "report",
+            "delivery",
+        )
         return all(getattr(original, key) == getattr(candidate, key) for key in frozen)

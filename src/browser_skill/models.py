@@ -68,6 +68,14 @@ class PaginationStrategy(StrEnum):
     INFINITE_SCROLL = "infinite_scroll"
 
 
+class AcquisitionSource(StrEnum):
+    API = "api"
+    NETWORK = "network"
+    DOM = "dom"
+    BROWSER = "browser"
+    VISION = "vision"
+
+
 class OutputFormat(StrEnum):
     JSON = "json"
     CSV = "csv"
@@ -137,7 +145,9 @@ class FieldSpec(StrictModel):
     type: FieldType = FieldType.STRING
     required: bool = False
     semantic: list[str] = Field(min_length=1)
+    aliases: list[str] = Field(default_factory=list)
     source: SourcePage = SourcePage.LIST
+    validation_rule: str | None = Field(default=None, max_length=500)
 
 
 class AttachmentSpec(StrictModel):
@@ -145,12 +155,17 @@ class AttachmentSpec(StrictModel):
     name: str = Field(min_length=1)
     required: bool = False
     semantic: list[str] = Field(min_length=1)
+    aliases: list[str] = Field(default_factory=list)
     source: SourcePage = SourcePage.DETAIL
     per_record: bool = True
+    multiple: bool = False
+    match_by: list[str] = Field(default_factory=list)
     file_types: list[str] = Field(default_factory=list)
     filename_pattern: str = "{original_name}"
     destination_subdir: str = "attachments"
     max_count: int | None = Field(default=None, ge=1)
+    min_size_bytes: int | None = Field(default=None, ge=0)
+    max_size_bytes: int | None = Field(default=None, ge=1)
 
     @field_validator("file_types")
     @classmethod
@@ -197,6 +212,12 @@ class TargetSpec(StrictModel):
             raise ValueError(f"record_key references unknown fields: {sorted(missing)}")
         if any(item.per_record for item in self.attachments) and not self.record_key:
             raise ValueError("per-record attachments require target.record_key")
+        for attachment in self.attachments:
+            missing = set(attachment.match_by) - set(keys)
+            if missing:
+                raise ValueError(
+                    f"attachment {attachment.key} match_by references unknown fields: {sorted(missing)}"
+                )
         return self
 
 
@@ -233,6 +254,9 @@ class LearnedMapping(StrictModel):
     strategy: Literal["semantic", "table_header", "label_value", "dom_hint"]
     hints: list[str] = Field(min_length=1)
     confidence: float = Field(default=0.5, ge=0.0, le=1.0)
+    preferred_source: AcquisitionSource | None = None
+    endpoint_hint: str | None = Field(default=None, max_length=500)
+    json_path: str | None = Field(default=None, max_length=500)
 
 
 class LearnedSpec(StrictModel):
@@ -240,6 +264,13 @@ class LearnedSpec(StrictModel):
     field_mappings: dict[str, LearnedMapping] = Field(default_factory=dict)
     attachment_mappings: dict[str, LearnedMapping] = Field(default_factory=dict)
     validated_at: datetime | None = None
+
+
+class LearnedProfileDocument(StrictModel):
+    schema_version: Literal["1.0"] = "1.0"
+    template_id: str = Field(pattern=r"^[a-z][a-z0-9_]{2,63}$")
+    template_version: int = Field(ge=1)
+    learned: LearnedSpec = Field(default_factory=LearnedSpec)
 
 
 class ValidationSpec(StrictModel):
@@ -257,10 +288,46 @@ class OutputSpec(StrictModel):
     filename_pattern: str = "result"
     attachments_dir: str = "attachments"
     include_source_metadata: bool = True
+    manifest: bool = True
+
+
+class ProcessingStepSpec(StrictModel):
+    action: Literal["rename_field", "coerce_type", "default_value", "dedupe_records"] = (
+        "rename_field"
+    )
+    params: dict[str, Any] = Field(default_factory=dict)
+
+
+class ProcessingSpec(StrictModel):
+    enabled: bool = False
+    steps: list[ProcessingStepSpec] = Field(default_factory=list)
+
+
+class AnalysisSpec(StrictModel):
+    enabled: bool = False
+    prompt_template: str = ""
+    model_hint: str | None = None
+
+
+class ReportSpec(StrictModel):
+    enabled: bool = False
+    title_pattern: str = "{template_id} Report"
+    include_summary: bool = True
+
+
+class DeliveryChannelSpec(StrictModel):
+    type: Literal["local", "webhook", "email"] = "local"
+    target: str = ""
+    enabled: bool = False
+
+
+class DeliverySpec(StrictModel):
+    enabled: bool = False
+    channels: list[DeliveryChannelSpec] = Field(default_factory=list)
 
 
 class BrowserTemplate(StrictModel):
-    schema_version: Literal["1.0"] = "1.0"
+    schema_version: Literal["1.0", "2.0"] = "1.0"
     template_id: str = Field(pattern=r"^[a-z][a-z0-9_]{2,63}$")
     name: str = Field(min_length=1, max_length=100)
     description: str = Field(default="", max_length=300)
@@ -272,6 +339,10 @@ class BrowserTemplate(StrictModel):
     target: TargetSpec
     workflow: WorkflowSpec = Field(default_factory=WorkflowSpec)
     learned: LearnedSpec = Field(default_factory=LearnedSpec)
+    processing: ProcessingSpec = Field(default_factory=ProcessingSpec)
+    analysis: AnalysisSpec = Field(default_factory=AnalysisSpec)
+    report: ReportSpec = Field(default_factory=ReportSpec)
+    delivery: DeliverySpec = Field(default_factory=DeliverySpec)
     validation: ValidationSpec = Field(default_factory=ValidationSpec)
     output: OutputSpec = Field(default_factory=OutputSpec)
 
