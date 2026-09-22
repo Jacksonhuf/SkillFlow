@@ -8,17 +8,19 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import contextlib
 import json
 import mimetypes
 import secrets
 import threading
 import webbrowser
+from collections.abc import Callable, Coroutine
 from datetime import UTC, datetime
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from queue import Queue
-from typing import Any, cast
+from typing import Any, TypeVar, cast
 from urllib.parse import parse_qs, unquote, urlsplit
 
 from pydantic import ValidationError
@@ -28,6 +30,8 @@ from browser_skill.errors import ErrorCode, SkillError
 from browser_skill.models import SkillRequest, SkillResponse
 from browser_skill.outputs.paths import contained_path, safe_filename
 from browser_skill.platform.probe import probe_adapter
+
+T = TypeVar("T")
 
 _UI_PATH = Path(__file__).with_name("ui.html")
 _MAX_BODY_BYTES = 20 * 1024 * 1024
@@ -44,16 +48,26 @@ _SYNC_ACTIONS = {
 
 
 class JobRegistry:
-    """Serial background executor: one browser task at a time, results kept in memory."""
+    """Serial background executor: one browser task at a time, results kept in memory.
+
+    All browser work runs on a single long-lived event loop owned by the worker thread, so
+    adapters that keep a live connection (Playwright) stay valid across jobs.
+    """
 
     def __init__(self, app: BrowserSkillApp) -> None:
         self.app = app
         self._jobs: dict[str, dict[str, Any]] = {}
         self._requests: dict[str, SkillRequest] = {}
-        self._queue: Queue[str | None] = Queue()
+        self._queue: Queue[str | _SyncCall | None] = Queue()
         self._lock = threading.Lock()
         self._worker = threading.Thread(target=self._loop, name="console-jobs", daemon=True)
         self._worker.start()
+
+    def run_sync(self, factory: Callable[[], Coroutine[Any, Any, T]], timeout: float = 120) -> T:
+        """Run a coroutine on the worker loop from another thread and wait for the result."""
+        call = _SyncCall(factory)
+        self._queue.put(call)
+        return cast(T, call.result(timeout))
 
     def submit(self, request: SkillRequest) -> dict[str, Any]:
         job_id = f"job_{datetime.now(UTC):%Y%m%dT%H%M%SZ}_{secrets.token_hex(3)}"
@@ -83,30 +97,68 @@ class JobRegistry:
         self._queue.put(None)
 
     def _loop(self) -> None:
-        while True:
-            job_id = self._queue.get()
-            if job_id is None:
-                return
-            request = self._requests.pop(job_id, None)
-            if request is None:
-                continue
-            self._set(job_id, status="running", started_at=datetime.now(UTC).isoformat())
-            try:
-                response = asyncio.run(self.app.handle(request))
-                payload = response.model_dump(mode="json")
-            except Exception as exc:
-                payload = SkillResponse(ok=False, message=str(exc)).model_dump(mode="json")
-            self._set(
-                job_id,
-                status="done",
-                finished_at=datetime.now(UTC).isoformat(),
-                response=payload,
-            )
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        try:
+            while True:
+                item = self._queue.get()
+                if item is None:
+                    return
+                if isinstance(item, _SyncCall):
+                    item.run(loop)
+                    continue
+                self._run_job(loop, item)
+        finally:
+            close = getattr(self.app.adapter, "close", None)
+            if callable(close):
+                with contextlib.suppress(Exception):
+                    loop.run_until_complete(close())
+            loop.close()
+
+    def _run_job(self, loop: asyncio.AbstractEventLoop, job_id: str) -> None:
+        request = self._requests.pop(job_id, None)
+        if request is None:
+            return
+        self._set(job_id, status="running", started_at=datetime.now(UTC).isoformat())
+        try:
+            response = loop.run_until_complete(self.app.handle(request))
+            payload = response.model_dump(mode="json")
+        except Exception as exc:
+            payload = SkillResponse(ok=False, message=str(exc)).model_dump(mode="json")
+        self._set(
+            job_id,
+            status="done",
+            finished_at=datetime.now(UTC).isoformat(),
+            response=payload,
+        )
 
     def _set(self, job_id: str, **fields: Any) -> None:
         with self._lock:
             if job_id in self._jobs:
                 self._jobs[job_id].update(fields)
+
+
+class _SyncCall:
+    def __init__(self, factory: Callable[[], Coroutine[Any, Any, Any]]) -> None:
+        self.factory = factory
+        self._done = threading.Event()
+        self._result: Any = None
+        self._error: BaseException | None = None
+
+    def run(self, loop: asyncio.AbstractEventLoop) -> None:
+        try:
+            self._result = loop.run_until_complete(self.factory())
+        except BaseException as exc:  # propagated to the waiting thread
+            self._error = exc
+        finally:
+            self._done.set()
+
+    def result(self, timeout: float) -> Any:
+        if not self._done.wait(timeout):
+            raise TimeoutError("console job worker did not respond in time")
+        if self._error is not None:
+            raise self._error
+        return self._result
 
 
 class ConsoleServer:
@@ -445,7 +497,7 @@ class _Handler(BaseHTTPRequestHandler):
             else:
                 self._send_json({"ok": True, "job": job})
         elif segments == ["doctor"]:
-            self._send_json({"ok": True, "doctor": asyncio.run(console.doctor())})
+            self._send_json({"ok": True, "doctor": console.jobs.run_sync(console.doctor)})
         elif segments == ["meta"]:
             self._send_json(
                 {

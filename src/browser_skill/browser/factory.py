@@ -9,6 +9,7 @@ profile); when neither is set an ephemeral Chrome is launched.
 from __future__ import annotations
 
 import os
+import shlex
 from pathlib import Path
 from typing import Any
 
@@ -20,6 +21,7 @@ CDP_URL_ENV = "UNIVERSAL_BROWSER_CDP_URL"
 PROFILE_DIR_ENV = "UNIVERSAL_BROWSER_PROFILE_DIR"
 CHROME_PATH_ENV = "UNIVERSAL_BROWSER_CHROME_PATH"
 HEADLESS_ENV = "UNIVERSAL_BROWSER_HEADLESS"
+CHROME_ARGS_ENV = "UNIVERSAL_BROWSER_CHROME_ARGS"
 
 ENGINES = ("chrome-use", "playwright")
 
@@ -64,6 +66,7 @@ def build_adapter(
         "user_data_dir": profile,
         "executable_path": os.environ.get(CHROME_PATH_ENV) or None,
         "headless": os.environ.get(HEADLESS_ENV, "").strip().casefold() in {"1", "true", "yes"},
+        "launch_args": shlex.split(os.environ.get(CHROME_ARGS_ENV, "")),
     }
     if skill_root is not None:
         options["downloads_dir"] = skill_root / "runs" / "downloads"

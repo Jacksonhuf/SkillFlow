@@ -9,6 +9,7 @@ No separate Agent platform or pip install to site-packages is required.
 
 Windows: CLI auto-downloads on first invoke.py start|run|resume (silent; not a user step).
 """
+
 from __future__ import annotations
 
 import argparse
@@ -169,7 +170,16 @@ def main(argv: list[str] | None = None) -> int:
             return 0 if response.ok else 1
         return 2
 
-    return asyncio.run(dispatch())
+    async def dispatch_and_close() -> int:
+        try:
+            return await dispatch()
+        finally:
+            # Playwright keeps a driver subprocess; release it before the loop shuts down.
+            close = getattr(app.adapter, "close", None)
+            if callable(close):
+                await close()
+
+    return asyncio.run(dispatch_and_close())
 
 
 if __name__ == "__main__":

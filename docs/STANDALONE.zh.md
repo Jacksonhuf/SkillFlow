@@ -75,5 +75,6 @@ set UNIVERSAL_BROWSER_ENGINE=playwright     :: 或全局切换（ui / 定时任�
 | 独立持久 Profile（默认） | 不设置或 `set UNIVERSAL_BROWSER_PROFILE_DIR=D:\ub-profile` | 首次运行在弹出的 Chrome 里登录一次，之后自动复用；默认目录 `runs\chrome-profile` |
 | 指定 Chrome 路径 | `set UNIVERSAL_BROWSER_CHROME_PATH=C:\...\chrome.exe` | 未设置时使用系统 Chrome（`channel=chrome`） |
 | 无头 | `set UNIVERSAL_BROWSER_HEADLESS=1` | 仅适合已登录 Profile 的定时任务 |
+| 额外启动参数 | `set UNIVERSAL_BROWSER_CHROME_ARGS=--lang=zh-CN` | 空格分隔，原样传给 Chrome |
 
 Playwright 引擎支持全部运行时能力（快照、语义查找、下载、弹窗、多标签、XHR/Fetch JSON 捕获），因此 Teach 学到的 Network 端点在分页模板上同样生效。
