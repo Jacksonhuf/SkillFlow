@@ -13,6 +13,7 @@ from browser_skill.errors import ErrorCode, SkillError
 from browser_skill.models import OutputFormat, RunContext, ValidationReport
 from browser_skill.outputs.paths import contained_path, safe_filename
 from browser_skill.outputs.xlsx import XlsxWriter
+from browser_skill.outputs.manifest import write_manifest
 
 
 def _json_default(value: Any) -> str:
@@ -115,6 +116,9 @@ class OutputWriter:
                 ]
                 self.xlsx_writer.write(path, columns=columns, records=context.records)
                 artifacts["xlsx"] = path.relative_to(workspace.path).as_posix()
+            manifest_path = write_manifest(context, report, artifacts)
+            if manifest_path:
+                artifacts["manifest"] = manifest_path
             self.write_summary(context, report=report, artifacts=artifacts)
             artifacts["summary"] = "summary.json"
             return artifacts

@@ -21,6 +21,8 @@ from browser_skill.models import (
     SkillResponse,
 )
 from browser_skill.outputs.writer import OutputWriter, RunWorkspace
+from browser_skill.pipeline.orchestrator import finalize_pipeline
+from browser_skill.pipeline.process import apply_processing
 from browser_skill.runtime.auth import AuthClassifier
 from browser_skill.runtime.detail import DetailCollector
 from browser_skill.runtime.downloader import AttachmentDownloader
@@ -171,6 +173,7 @@ class Runner:
                         file_count=len(detail_result.files),
                         failed_record_count=len(detail_result.failed_record_keys),
                     )
+            context.records = apply_processing(template, context.records)
             self._transition(workspace, context, RunState.VALIDATING)
             report = self.validator.validate(
                 template,
@@ -191,6 +194,8 @@ class Runner:
             context.state = final_state
             context.finished_at = datetime.now(UTC)
             artifacts = self.output_writer.write(context, report)
+            pipeline_data = finalize_pipeline(context, report, artifacts)
+            artifacts.update({k: v for k, v in pipeline_data.items() if k.endswith("_json")})
             self._persist_context(workspace, context)
             self._event(workspace, context, "run_finished", artifacts=artifacts)
             return SkillResponse(
@@ -198,7 +203,11 @@ class Runner:
                 message="任务完成" if final_state == RunState.COMPLETED else "任务产生部分结果",
                 run_id=run_id,
                 state=final_state,
-                data={"artifacts": artifacts, "validation": report.model_dump(mode="json")},
+                data={
+                    "artifacts": artifacts,
+                    "validation": report.model_dump(mode="json"),
+                    "pipeline": pipeline_data.get("pipeline"),
+                },
             )
         except SkillError as exc:
             context.state = (
@@ -300,6 +309,7 @@ class Runner:
                         file_count=len(detail_result.files),
                         failed_record_count=len(detail_result.failed_record_keys),
                     )
+            context.records = apply_processing(template, context.records)
             self._transition(workspace, context, RunState.VALIDATING)
             report = self.validator.validate(
                 template,
@@ -313,6 +323,7 @@ class Runner:
             context.state = RunState.PARTIAL if report.partial else RunState.COMPLETED
             context.finished_at = datetime.now(UTC)
             artifacts = self.output_writer.write(context, report)
+            pipeline_data = finalize_pipeline(context, report, artifacts)
             self._persist_context(workspace, context)
             self._event(workspace, context, "run_finished", artifacts=artifacts)
             return SkillResponse(
@@ -320,7 +331,11 @@ class Runner:
                 message="认证后已恢复并完成任务",
                 run_id=context.run_id,
                 state=context.state,
-                data={"artifacts": artifacts, "validation": report.model_dump(mode="json")},
+                data={
+                    "artifacts": artifacts,
+                    "validation": report.model_dump(mode="json"),
+                    "pipeline": pipeline_data.get("pipeline"),
+                },
             )
         except SkillError as exc:
             context.state = (
