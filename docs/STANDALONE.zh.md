@@ -4,9 +4,21 @@
 
 ## 用哪个包
 
-https://github.com/Jacksonhuf/SkillFlow/releases/download/v0.1.3-full/universal-browser-full-0.1.3.zip
+https://github.com/Jacksonhuf/SkillFlow/releases/download/v0.1.4-full/universal-browser-full-0.1.4.zip
 
 解压得到 `universal-browser/`，上传到 Skill Hub。
+
+# 完整包内含：SKILL、references、templates、runtime、scripts。**不含** chrome-use CLI 二进制（第三方、体积大）。
+
+## chrome-use CLI 从哪来
+
+| 方式 | 说明 |
+|------|------|
+| **默认** | 首次 `invoke.py start/run` 时从 **GitHub** 下载 win32 包到 `.universal-browser\chrome-use\`（需能访问 github.com） |
+| **内网/防火墙** | 运维预置 `universal-browser\vendor\chrome-use\chrome-use.exe`，或设置 `CHROME_USE_BIN` / `CHROME_USE_LOCAL_ARCHIVE` / 镜像 URL `CHROME_USE_WINDOWS_DOWNLOAD_URL` |
+| **自带 CLI 的完整包** | 打 zip 前在仓库执行 `./scripts/fetch-chrome-use-windows.sh`，再 `./scripts/build-skill-package.sh --full`（会把 `vendor/` 打进 zip） |
+
+**常见误解：**「完整包已内置 Chrome CLI」—— 默认 **没有**；只有 Python 运行时。扩展仍在 Chrome 里安装；CLI 按上表准备。
 
 ## 用户要做什么
 
@@ -36,5 +48,6 @@ py scripts\invoke.py resume <run_id>
 | 关闭自动下载 CLI | `set UNIVERSAL_BROWSER_SKIP_CHROME_USE_INSTALL=1` |
 | 指定 CLI 路径 | `set CHROME_USE_BIN=...` |
 | 指定下载版本 | `set CHROME_USE_INSTALL_VERSION=v1.5.131` |
+| GitHub 超时 / 内网 | 见上文 **vendor/** 或 `CHROME_USE_WINDOWS_DOWNLOAD_URL` / `CHROME_USE_LOCAL_ARCHIVE` |
 
 官方文档：https://chrome-use.leeguoo.com/en/install.html

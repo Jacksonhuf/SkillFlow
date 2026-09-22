@@ -82,6 +82,15 @@ def test_find_windows_exe_prefers_direct_child(tmp_path: Path) -> None:
     assert paths._find_windows_exe(bundle) == exe
 
 
+def test_vendor_exe_used_without_download(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(paths.sys, "platform", "win32")
+    vendor = tmp_path / "vendor" / "chrome-use" / "chrome-use.exe"
+    vendor.parent.mkdir(parents=True)
+    vendor.write_text("stub", encoding="utf-8")
+    monkeypatch.setenv("UNIVERSAL_BROWSER_SKILL_ROOT", str(tmp_path))
+    assert paths.resolve_chrome_use_executable() == str(vendor.resolve())
+
+
 def test_bundled_windows_executable(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(paths.sys, "platform", "win32")
     monkeypatch.setenv("UNIVERSAL_BROWSER_SKILL_ROOT", str(tmp_path))

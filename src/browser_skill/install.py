@@ -5,7 +5,7 @@ import shutil
 import zipfile
 from pathlib import Path
 
-_PACKAGE_VERSION = "0.1.3"
+_PACKAGE_VERSION = "0.1.4"
 _SKILL_ID = "universal-browser"
 
 
@@ -103,6 +103,14 @@ def sync_full_skill_tree(
         shutil.copytree(scripts_src, scripts_dest)
         (scripts_dest / "invoke.py").chmod(0o755)
         (scripts_dest / "setup.sh").chmod(0o755)
+
+    vendor_src = base / "vendor" / "chrome-use"
+    if vendor_src.is_dir() and any(vendor_src.iterdir()):
+        vendor_dest = skill_dir / "vendor" / "chrome-use"
+        vendor_dest.parent.mkdir(parents=True, exist_ok=True)
+        if vendor_dest.exists():
+            shutil.rmtree(vendor_dest)
+        shutil.copytree(vendor_src, vendor_dest)
 
     return skill_dir
 
