@@ -7,16 +7,19 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from browser_skill.acquire.network import NetworkExtractor, parse_exchanges
 from browser_skill.browser.base import BrowserAdapter
 from browser_skill.errors import ErrorCode, SkillError
 from browser_skill.execution_contract import contract_payload
 from browser_skill.interaction.variables import VariableResolver
 from browser_skill.models import (
+    AcquisitionSource,
     AuthState,
     BrowserCapabilities,
     BrowserSnapshot,
     BrowserTemplate,
     Checkpoint,
+    PaginationStrategy,
     RunContext,
     RunState,
     SkillResponse,
@@ -141,8 +144,8 @@ class Runner:
                 dialogs_supported=capabilities.dialogs,
             )
             self._transition(workspace, context, RunState.EXTRACTING, page_url=snapshot.url)
-            context.records, context.pagination_complete, snapshot = await self.extractor.collect(
-                self.adapter, template, snapshot
+            context.records, context.pagination_complete, snapshot = await self._collect_records(
+                workspace, context, template, snapshot, capabilities
             )
             needs_detail = any(field.source == "detail" for field in template.target.fields) or any(
                 item.source == "detail" for item in template.target.attachments
@@ -279,8 +282,8 @@ class Runner:
                 dialogs_supported=capabilities.dialogs,
             )
             self._transition(workspace, context, RunState.EXTRACTING, page_url=snapshot.url)
-            context.records, context.pagination_complete, snapshot = await self.extractor.collect(
-                self.adapter, template, snapshot
+            context.records, context.pagination_complete, snapshot = await self._collect_records(
+                workspace, context, template, snapshot, capabilities
             )
             needs_detail = any(field.source == "detail" for field in template.target.fields) or any(
                 item.source == "detail" for item in template.target.attachments
@@ -358,6 +361,48 @@ class Runner:
                 state=context.state,
                 data={"error": exc.as_dict()},
             )
+
+    async def _collect_records(
+        self,
+        workspace: RunWorkspace,
+        context: RunContext,
+        template: BrowserTemplate,
+        snapshot: BrowserSnapshot,
+        capabilities: BrowserCapabilities,
+    ) -> tuple[list[dict[str, Any]], bool, BrowserSnapshot]:
+        """Acquisition ladder: learned network endpoint first, then DOM/table extraction."""
+        network_mappings = NetworkExtractor.network_field_mappings(template)
+        use_network = (
+            bool(network_mappings)
+            and capabilities.network
+            and template.target.pagination.strategy == PaginationStrategy.NONE
+        )
+        if use_network:
+            result = await self.adapter.network_requests()
+            exchanges = parse_exchanges(result.data) if result.ok else []
+            records = NetworkExtractor().extract(template, exchanges) if exchanges else None
+            if records is not None:
+                keys = {field.key for field in template.target.fields}
+                normalized = [
+                    {key: value for key, value in record.items() if key in keys}
+                    for record in records
+                ]
+                self._event(
+                    workspace,
+                    context,
+                    "network_extraction",
+                    source=AcquisitionSource.NETWORK.value,
+                    record_count=len(normalized),
+                    exchange_count=len(exchanges),
+                )
+                return normalized, True, snapshot
+            self._event(
+                workspace,
+                context,
+                "network_extraction_fallback",
+                reason="no_matching_exchange" if result.ok else "network_unavailable",
+            )
+        return await self.extractor.collect(self.adapter, template, snapshot)
 
     async def _apply_workflow(
         self,

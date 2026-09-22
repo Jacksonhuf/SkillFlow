@@ -114,3 +114,7 @@ class FakeBrowserAdapter:
 
     async def list_sessions(self) -> CommandResult:
         return self._take("sessions", CommandResult(ok=True, operation="session", data=[]))
+
+    async def network_requests(self) -> CommandResult:
+        self.calls.append(("network_requests", (), {}))
+        return self._take("network", CommandResult(ok=True, operation="network", data=[]))

@@ -46,6 +46,8 @@ class BrowserAdapter(Protocol):
 
     async def list_sessions(self) -> CommandResult: ...
 
+    async def network_requests(self) -> CommandResult: ...
+
 
 def snapshot_from_data(data: Any) -> BrowserSnapshot:
     if isinstance(data, BrowserSnapshot):

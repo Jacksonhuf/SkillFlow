@@ -369,6 +369,22 @@ class BrowserCapabilities(StrictModel):
     tabs: bool = False
     sessions: bool = False
     dialogs: bool = False
+    network: bool = False
+
+
+class NetworkExchange(StrictModel):
+    """One observed HTTP exchange from the user's browser session (response body parsed)."""
+
+    url: str
+    method: str = "GET"
+    status: int = Field(default=200, ge=0, le=999)
+    content_type: str = ""
+    body: Any | None = None
+    size: int = Field(default=0, ge=0)
+
+    @property
+    def is_json(self) -> bool:
+        return "json" in self.content_type.casefold() or isinstance(self.body, (dict, list))
 
 
 class CommandResult(StrictModel):

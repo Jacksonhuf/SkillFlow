@@ -4,6 +4,7 @@ from dataclasses import asdict
 from pathlib import Path
 from typing import Any
 
+from browser_skill.acquire.network import NetworkDiscovery, parse_exchanges
 from browser_skill.browser.base import BrowserAdapter
 from browser_skill.errors import ErrorCode, SkillError
 from browser_skill.execution_contract import contract_payload
@@ -22,7 +23,16 @@ from browser_skill.interaction.contracts import (
 )
 from browser_skill.interaction.template_menu import TemplateMenu
 from browser_skill.interaction.variables import VariableResolver
-from browser_skill.models import AuthState, RunState, SkillRequest, SkillResponse, TemplateStatus
+from browser_skill.models import (
+    AuthState,
+    BrowserCapabilities,
+    BrowserTemplate,
+    MappingDiscoveryReport,
+    RunState,
+    SkillRequest,
+    SkillResponse,
+    TemplateStatus,
+)
 from browser_skill.outputs.paths import contained_path
 from browser_skill.platform.acceptance import validate_acceptance_bundle
 from browser_skill.platform.probe import probe_adapter
@@ -73,6 +83,41 @@ class BrowserSkillApp:
                     "interaction": interaction.model_dump(mode="json"),
                 },
             )
+
+    async def _learn_network_sources(
+        self,
+        template: BrowserTemplate,
+        report: MappingDiscoveryReport,
+        capabilities: BrowserCapabilities,
+    ) -> dict[str, Any]:
+        """Upgrade list-field mappings to a learned JSON endpoint when the browser exposes one."""
+        if not capabilities.network:
+            return {"enabled": False, "reason": "network capture unsupported"}
+        result = await self.adapter.network_requests()
+        if not result.ok:
+            return {"enabled": True, "learned": False, "reason": "network listing failed"}
+        exchanges = parse_exchanges(result.data)
+        discovery = NetworkDiscovery().discover(template, exchanges)
+        if not discovery.mappings:
+            return {
+                "enabled": True,
+                "learned": False,
+                "exchanges_considered": discovery.exchanges_considered,
+            }
+        report.learned.field_mappings.update(discovery.mappings)
+        for key in discovery.mappings:
+            if key in report.missing_required_fields:
+                report.missing_required_fields.remove(key)
+            if key not in report.matched_fields:
+                report.matched_fields.append(key)
+        return {
+            "enabled": True,
+            "learned": True,
+            "endpoint": discovery.endpoint,
+            "array_path": discovery.array_path,
+            "fields": discovery.matched_fields,
+            "exchanges_considered": discovery.exchanges_considered,
+        }
 
     async def _handle(self, request: SkillRequest) -> SkillResponse:
         if request.action == "start":
@@ -271,6 +316,7 @@ class BrowserSkillApp:
                 )
             exploration = await TeachExplorer().explore(self.adapter, template, snapshot)
             report = exploration.report
+            network_summary = await self._learn_network_sources(template, report, capabilities)
             candidate_version: int | None = None
             if report.publishable_candidate:
                 candidate_version = self.store.next_version(template.template_id)
@@ -303,6 +349,7 @@ class BrowserSkillApp:
                         "steps": exploration.steps,
                         "budget_exhausted": exploration.budget_exhausted,
                     },
+                    "network": network_summary,
                     "interaction": interaction.model_dump(mode="json"),
                 },
             )
