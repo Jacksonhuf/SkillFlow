@@ -27,9 +27,19 @@
 
 ## 阶段 C：触发与分发
 
-- ✅ Windows 任务计划脚本 `scripts/windows/Register-ScheduledRun.ps1`
+- ✅ Windows 任务计划脚本 `skill-scripts/windows/Register-ScheduledRun.ps1`（打包为 `scripts/windows/`）
 - ✅ SKILL.md / references / STANDALONE 文档更新（`ui` 命令与本机界面说明）
-- ✅ 完整包体积门禁保持 ≤5MB
+- ✅ 完整包体积门禁保持 ≤5MB（当前 78 文件，约 120KB）
+
+## 验证记录（本 PR）
+
+| 项 | 结果 |
+|----|------|
+| `pytest` 全量 | 160 通过、1 跳过（integration） |
+| `mypy --strict` | 通过 |
+| `ruff` | 仅遗留 `snapshot_normalize.py` 一处 E501（main 已有） |
+| 控制台真实浏览器渲染 | Headless Chrome 打开 `/?token=` 正常显示模板卡片 |
+| 后台任务 | Fake 适配器 run → COMPLETED，生成 `report.md` / `manifest.json` / `pipeline.json` |
 
 ## 阶段 D：稳定采集（后续 PR）
 
