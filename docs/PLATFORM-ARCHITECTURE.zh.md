@@ -13,13 +13,13 @@ Acquire   → Normalize  → (attachments) → Process      → Validate → Ana
 
 | 阶段 | 模块 | 状态 |
 |------|------|------|
-| Acquire | `runtime/runner.py` + chrome-use 适配器 | 已实现（DOM/浏览器/UI） |
+| Acquire | `runtime/runner.py` + `acquire/network.py` + chrome-use 适配器 | 已实现（Network → DOM/浏览器工作流） |
 | Normalize | `runtime/extractor.py`, `table_parser.py` | 已实现 |
-| Process | `pipeline/process.py` | 扩展点（默认透传） |
+| Process | `pipeline/process.py` | 已实现（rename / coerce_type / default_value / dedupe） |
 | Validate | `runtime/validator.py` | 已实现 |
-| Analyze | `pipeline/analyze.py` | 扩展点（占位） |
-| Report | `outputs/writer.py`, `outputs/manifest.py` | 表格输出 + manifest |
-| Deliver | `pipeline/deliver.py` | 扩展点（占位） |
+| Analyze | `pipeline/analyze.py` | 占位（上下文写入 pipeline.json，由 Host Agent 调模型） |
+| Report | `pipeline/report.py`, `outputs/manifest.py` | `report.md` + manifest |
+| Deliver | `pipeline/deliver.py` | 已实现 local / webhook；email 占位 |
 
 采集策略优先级（`acquire/strategies.py`）：
 
@@ -27,7 +27,8 @@ Acquire   → Normalize  → (attachments) → Process      → Validate → Ana
 API → Network/XHR → DOM → Browser workflow → Vision
 ```
 
-Network/API/Vision 适配器为 **规划接口**；Teach/Discovery 会写入 `preferred_source` 到 Learned Profile，供后续引擎选用。
+- **Network（已实现）**：Teach 阶段读取浏览器已发生的请求（`adapter.network_requests()`，需 `capabilities.network`），在允许的主机中找到覆盖模板列表字段的 JSON 记录数组，写入 `preferred_source: network` + `endpoint_hint` + `json_path`；Run 阶段优先读取同一端点的 JSON（无分页模板），缺失时自动回退 DOM。运行时**不会**自行向目标系统发请求，只复用用户会话中已产生的响应。
+- **API / Vision**：仍为规划接口。
 
 ## 核心对象
 

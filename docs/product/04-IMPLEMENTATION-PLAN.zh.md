@@ -41,12 +41,23 @@
 | 控制台真实浏览器渲染 | Headless Chrome 打开 `/?token=` 正常显示模板卡片 |
 | 后台任务 | Fake 适配器 run → COMPLETED，生成 `report.md` / `manifest.json` / `pipeline.json` |
 
-## 阶段 D：稳定采集（后续 PR）
+## 阶段 D：稳定采集
 
-- ⬜ Teach 阶段监听 XHR，写入 `preferred_source: network` + `endpoint_hint`
-- ⬜ Network 采集器（复用浏览器 Session 读取 JSON）
+- ✅ 适配器 `network` 能力与 `network_requests()`（CLI `network list --json` / 平台工具 `network.list` / Fake）
+- ✅ Teach 阶段读取已发生的 XHR/Fetch，匹配模板字段（含 camelCase / 别名 / 语义），写入 `preferred_source: network` + `endpoint_hint` + `json_path`
+- ✅ Run 阶段 Network 优先采集（仅允许主机、无分页模板），缺失自动回退 DOM 并记录事件
+- ✅ Teach → Test 闭环测试：学到端点后测试运行直接使用 JSON 记录
+- 🔄 分页模板的 Network 采集（按页读取新响应）
 - ⬜ Playwright 适配器（`BrowserAdapter` 协议实现）
 - ⬜ Vision 兜底接口
+
+### 阶段 D 验证记录
+
+| 项 | 结果 |
+|----|------|
+| `pytest` 全量 | 171 通过、1 跳过 |
+| `mypy --strict` | 通过 |
+| 新增用例 | 解析多种请求形态、发现端点忽略非允许主机、必填字段缺失不学习、提取与回退、无能力不调用 |
 
 ## 阶段 E：智能化与运营（后续 PR）
 

@@ -30,6 +30,12 @@
 - 除 `result.*` 外还有 `manifest.json`（记录+附件包）、`report.md`（若启用 `report`）、`pipeline.json`（各阶段状态，含 `deliver.channels` 投递结果）。
 - 投递失败不影响 run 成功；向用户汇报时读取 `pipeline.stages.deliver` 说明哪个渠道未送达。
 
+## Network 采集（自动，无需用户参与）
+
+- Teach `discover` 的 JSON 里有 `network` 字段：`learned: true` 表示已学到 JSON 端点，之后运行会优先读该端点；`enabled: false` 表示当前 chrome-use 不支持网络监听，走 DOM 采集即可。
+- 运行事件 `network_extraction` / `network_extraction_fallback` 出现在 `execution.jsonl`；回退到 DOM 不是错误。
+- 不要向用户解释 XHR / endpoint / json_path，这些属于 Learned Profile 内部细节。
+
 ## 与附件相关
 
 - 模板声明 `attachments` 时，运行前会检查 chrome-use 是否具备 **find + download + downloads**。
