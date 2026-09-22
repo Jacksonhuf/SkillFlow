@@ -25,6 +25,9 @@ cli = [
   "rich>=13.9,<15",
   "typer>=0.15,<1",
 ]
+playwright = [
+  "playwright>=1.45,<2",
+]
 
 [project.scripts]
 browser-skill = "browser_skill.cli:app"
@@ -35,7 +38,7 @@ packages = ["src/browser_skill"]
 [tool.pytest.ini_options]
 addopts = "-q --strict-markers"
 testpaths = ["tests"]
-markers = ["integration: requires a real chrome-use installation and Chrome extension"]
+markers = ["integration: requires a real browser (chrome-use + extension, or Playwright + local Chrome)"]
 
 [tool.ruff]
 target-version = "py312"
