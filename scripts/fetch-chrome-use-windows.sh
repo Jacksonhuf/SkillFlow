@@ -10,6 +10,7 @@ mkdir -p "$DEST"
 echo "Fetching $URL"
 curl -fsSL "$URL" -o "$DEST/$ASSET"
 tar -xzf "$DEST/$ASSET" -C "$DEST"
+rm -f "$DEST/$ASSET"
 if [[ -f "$DEST/chrome-use.exe" ]]; then
   echo "OK: $DEST/chrome-use.exe"
 else

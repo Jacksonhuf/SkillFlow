@@ -5,7 +5,7 @@ import shutil
 import zipfile
 from pathlib import Path
 
-_PACKAGE_VERSION = "0.1.4"
+_PACKAGE_VERSION = "0.1.5"
 _SKILL_ID = "universal-browser"
 
 
@@ -64,6 +64,7 @@ def sync_full_skill_tree(
     destination: Path,
     *,
     root: Path | None = None,
+    bundle_chrome_use: bool = False,
 ) -> Path:
     """Standard skill tree plus bundled templates/ and runtime/ Python source."""
     base = repo_root(root)
@@ -105,12 +106,19 @@ def sync_full_skill_tree(
         (scripts_dest / "setup.sh").chmod(0o755)
 
     vendor_src = base / "vendor" / "chrome-use"
-    if vendor_src.is_dir() and any(vendor_src.iterdir()):
+    if bundle_chrome_use and vendor_src.is_dir():
+        exe = vendor_src / "chrome-use.exe"
+        if not exe.is_file():
+            raise FileNotFoundError(
+                "bundle_chrome_use requires vendor/chrome-use/chrome-use.exe. "
+                "Run ./scripts/fetch-chrome-use-windows.sh first."
+            )
         vendor_dest = skill_dir / "vendor" / "chrome-use"
-        vendor_dest.parent.mkdir(parents=True, exist_ok=True)
-        if vendor_dest.exists():
-            shutil.rmtree(vendor_dest)
-        shutil.copytree(vendor_src, vendor_dest)
+        vendor_dest.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(exe, vendor_dest / "chrome-use.exe")
+        license_file = vendor_src / "LICENSE"
+        if license_file.is_file():
+            shutil.copy2(license_file, vendor_dest / "LICENSE")
 
     return skill_dir
 
@@ -178,15 +186,21 @@ def build_skill_package(
     return skill_dir, zip_path
 
 
+_HUB_FULL_ZIP_MAX_BYTES = 5 * 1024 * 1024
+
+
 def build_full_skill_package(
     *,
     root: Path | None = None,
     output_dir: Path | None = None,
+    bundle_chrome_use: bool = False,
 ) -> tuple[Path, Path]:
     """Build zip with SKILL.md, references/, templates/, and installable runtime/ source."""
     base = repo_root(root)
     package_root = base / "skill-package"
-    skill_dir = sync_full_skill_tree(package_root, root=base)
+    skill_dir = sync_full_skill_tree(
+        package_root, root=base, bundle_chrome_use=bundle_chrome_use
+    )
 
     dist = output_dir or (base / "dist")
     dist.mkdir(parents=True, exist_ok=True)
@@ -199,7 +213,41 @@ def build_full_skill_package(
         include_hub_manifest=False,
         manifest_path=manifest_path,
     )
+    if not bundle_chrome_use and zip_path.stat().st_size > _HUB_FULL_ZIP_MAX_BYTES:
+        raise RuntimeError(
+            f"Full skill zip exceeds Hub limit ({zip_path.stat().st_size} > "
+            f"{_HUB_FULL_ZIP_MAX_BYTES} bytes). Remove large assets from the skill tree."
+        )
     return skill_dir, zip_path
+
+
+def build_chrome_use_sidecar_package(
+    *,
+    root: Path | None = None,
+    output_dir: Path | None = None,
+) -> tuple[Path, Path]:
+    """Separate artifact: chrome-use.exe only (not uploaded as the Skill Hub skill zip)."""
+    base = repo_root(root)
+    vendor_src = base / "vendor" / "chrome-use"
+    exe = vendor_src / "chrome-use.exe"
+    if not exe.is_file():
+        raise FileNotFoundError(
+            "Missing vendor/chrome-use/chrome-use.exe. Run ./scripts/fetch-chrome-use-windows.sh"
+        )
+
+    dist = output_dir or (base / "dist")
+    dist.mkdir(parents=True, exist_ok=True)
+    zip_path = dist / f"{_SKILL_ID}-chrome-use-sidecar-{_PACKAGE_VERSION}.zip"
+    if zip_path.exists():
+        zip_path.unlink()
+
+    with zipfile.ZipFile(zip_path, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+        archive.write(exe, f"{_SKILL_ID}/vendor/chrome-use/chrome-use.exe")
+        license_file = vendor_src / "LICENSE"
+        if license_file.is_file():
+            archive.write(license_file, f"{_SKILL_ID}/vendor/chrome-use/LICENSE")
+
+    return vendor_src, zip_path
 
 
 def default_skill_targets(*, global_install: bool = False) -> list[Path]:

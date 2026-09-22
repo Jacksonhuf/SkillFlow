@@ -5,7 +5,7 @@ description: Template-driven browser tasks via bundled runtime and templates; on
 
 # Universal Browser
 
-> **独立模式（Windows）**：完整包 **内置 Python 运行时 + 模板 + 脚本**，**不默认内置** chrome-use CLI（首次可联网自动下载，或见 `vendor/` 离线方案）。扩展 + CLI 为运行前提。详见 `STANDALONE.zh.md`。
+> **独立模式（Windows）**：Hub 上传 **≤5MB** 的 `universal-browser-full-*.zip`（runtime+模板+脚本，**不含** chrome-use.exe）。CLI 机器级安装或 sidecar/镜像，见 `STANDALONE.zh.md`。
 
 ## Runtime prerequisites (do not ask the user)
 
