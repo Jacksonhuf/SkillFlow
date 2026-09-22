@@ -250,6 +250,42 @@ def build_chrome_use_sidecar_package(
     return vendor_src, zip_path
 
 
+def build_chrome_use_installer_package(
+    *,
+    root: Path | None = None,
+    output_dir: Path | None = None,
+) -> tuple[Path, Path]:
+    """Windows one-click folder: PS1 + BAT + bundled chrome-use.exe (not for Skill Hub)."""
+    base = repo_root(root)
+    vendor_src = base / "vendor" / "chrome-use"
+    exe = vendor_src / "chrome-use.exe"
+    if not exe.is_file():
+        raise FileNotFoundError(
+            "Missing vendor/chrome-use/chrome-use.exe. Run ./scripts/fetch-chrome-use-windows.sh"
+        )
+
+    windows_scripts = base / "scripts" / "windows"
+    if not (windows_scripts / "Install-ChromeUseStack.ps1").is_file():
+        raise FileNotFoundError("Missing scripts/windows/Install-ChromeUseStack.ps1")
+
+    dist = output_dir or (base / "dist")
+    dist.mkdir(parents=True, exist_ok=True)
+    zip_path = dist / f"{_SKILL_ID}-chrome-use-installer-{_PACKAGE_VERSION}.zip"
+    if zip_path.exists():
+        zip_path.unlink()
+
+    doc = base / "docs" / "CHROME-USE-ONE-CLICK.zh.md"
+    with zipfile.ZipFile(zip_path, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+        for name in ("Install-ChromeUseStack.ps1", "install-chrome-use-stack.bat"):
+            path = windows_scripts / name
+            archive.write(path, f"chrome-use-installer/{name}")
+        archive.write(exe, "chrome-use-installer/vendor/chrome-use/chrome-use.exe")
+        if doc.is_file():
+            archive.write(doc, "chrome-use-installer/README.zh.md")
+
+    return windows_scripts, zip_path
+
+
 def default_skill_targets(*, global_install: bool = False) -> list[Path]:
     if global_install:
         return [Path.home() / ".config" / "opencode" / "skills"]

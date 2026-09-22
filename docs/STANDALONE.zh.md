@@ -43,6 +43,7 @@ py scripts\invoke.py resume <run_id>
 |------|------|
 | Hub 5MB 限制 | 只用 **full** zip，不用 sidecar 当 Skill 上传 |
 | Sidecar 解压 | 将 `chrome-use-sidecar-*.zip` 解压进 `universal-browser\`（覆盖/合并 `vendor\`） |
+| **一键安装器（推荐 IT）** | 解压 `chrome-use-installer-*.zip`，双击 `install-chrome-use-stack.bat`（CLI+桥接+打开扩展商店） |
 | 关闭自动下载 | `set UNIVERSAL_BROWSER_SKIP_CHROME_USE_INSTALL=1` |
 | 指定 CLI | `set CHROME_USE_BIN=...` |
 
