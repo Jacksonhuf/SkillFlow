@@ -78,6 +78,15 @@
 | 分析 | 无异常运行、可选字段稀疏 + 记录数骤降对比上次、校验失败 → error、AI Provider 摘要与失败隔离、禁用即跳过 |
 | 分发 | 邮件（Fake SMTP：收件人、主题、正文、附件、登录）、未配置 SMTP 时报告不抛错、企业微信（本地机器人：markdown + 上传 + 文件消息、错误 key 失败） |
 
+## 发布 0.3.0（main，#21 + #22）
+
+| 项 | 结果 |
+|----|------|
+| 合并 | `cursor/phase-e-intelligence-delivery-f629` → `main`（含分页 Network、Playwright、Vision、Analyze、邮件/企微） |
+| 版本 | `0.3.0`（`install.py` / `hub.manifest.json` / `pyproject.toml`） |
+| Hub 制品 | `./scripts/build-skill-package.sh --full` → `dist/universal-browser-full-0.3.0.zip`（≤5MB） |
+| `pytest` 全量 | 203 通过、1 跳过 |
+
 ## 里程碑验收
 
 | 里程碑 | 判定 |
