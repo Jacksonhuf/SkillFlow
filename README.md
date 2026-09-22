@@ -10,8 +10,9 @@
 
 # Universal Browser Skill
 
-A platform-native Skill package for template-driven browser tasks. It installs into an existing
-Agent platform, uses that platform's chrome-use tool/plugin with the user's signed-in Chrome, treats
+A platform-native Skill package for **template-driven business data automation** (Acquire → Validate → Report → Deliver). Architecture and roadmap: **`docs/PLATFORM-ARCHITECTURE.zh.md`**.
+
+It installs into an existing Agent platform, uses that platform's chrome-use tool/plugin with the user's signed-in Chrome, treats
 downloads as first-class outputs, and reports success only after business-result validation.
 
 It is **not** an Agent platform, standalone chat application, browser automation service, or end-user
