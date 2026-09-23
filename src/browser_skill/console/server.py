@@ -439,6 +439,9 @@ class ConsoleServer:
                 await close()
 
 
+_CONSOLE_COOKIE = "ub_console_token"
+
+
 class _Handler(BaseHTTPRequestHandler):
     server_version = "UniversalBrowserConsole/1.0"
 
@@ -463,9 +466,34 @@ class _Handler(BaseHTTPRequestHandler):
     def _error(self, message: str, status: HTTPStatus, **extra: Any) -> None:
         self._send_json({"ok": False, "message": message, **extra}, status)
 
+    def _provided_token(self) -> str:
+        header = self.headers.get("X-Console-Token", "")
+        if header.strip():
+            return header.strip()
+        parts = urlsplit(self.path)
+        query = parse_qs(parts.query)
+        query_tokens = query.get("token") or query.get("access_token")
+        if query_tokens:
+            return unquote(query_tokens[0]).strip()
+        cookie_header = self.headers.get("Cookie", "")
+        prefix = f"{_CONSOLE_COOKIE}="
+        for chunk in cookie_header.split(";"):
+            chunk = chunk.strip()
+            if chunk.startswith(prefix):
+                return unquote(chunk[len(prefix) :]).strip()
+        return ""
+
     def _authorized(self) -> bool:
-        provided = self.headers.get("X-Console-Token", "")
+        provided = self._provided_token()
+        if not provided:
+            return False
         return secrets.compare_digest(provided, self.console.token)
+
+    def _set_console_cookie(self) -> None:
+        self.send_header(
+            "Set-Cookie",
+            f"{_CONSOLE_COOKIE}={self.console.token}; Path=/; HttpOnly; SameSite=Lax",
+        )
 
     def _read_json(self) -> dict[str, Any]:
         length = int(self.headers.get("Content-Length", "0") or 0)
@@ -482,7 +510,7 @@ class _Handler(BaseHTTPRequestHandler):
             raise SkillError(ErrorCode.VARIABLE_INVALID, "Request body must be a JSON object")
         return cast(dict[str, Any], payload)
 
-    def _serve_ui(self) -> None:
+    def _serve_ui(self, *, remember_session: bool = False) -> None:
         if not _UI_PATH.is_file():
             self._error("UI asset missing", HTTPStatus.NOT_FOUND)
             return
@@ -492,6 +520,8 @@ class _Handler(BaseHTTPRequestHandler):
         self.send_header("Content-Length", str(len(body)))
         self.send_header("Cache-Control", "no-store")
         self.send_header("X-Frame-Options", "DENY")
+        if remember_session:
+            self._set_console_cookie()
         self.send_header(
             "Content-Security-Policy",
             "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; "
@@ -529,7 +559,12 @@ class _Handler(BaseHTTPRequestHandler):
         path = parts.path
         query = parse_qs(parts.query)
         if path in {"/", "/index.html"}:
-            self._serve_ui()
+            query_token = (query.get("token") or query.get("access_token") or [""])[0]
+            remember = bool(
+                query_token
+                and secrets.compare_digest(unquote(query_token).strip(), self.console.token)
+            )
+            self._serve_ui(remember_session=remember)
             return
         if not path.startswith("/api/"):
             self._error("Not found", HTTPStatus.NOT_FOUND)
@@ -639,6 +674,9 @@ def serve_console(
     token: str | None = None,
 ) -> None:
     server = ConsoleServer(app, port=port, token=token)
-    print(f"Universal Browser 本地控制台: {server.url}")
+    url = server.url
+    print(f"Universal Browser 本地控制台: {url}")
+    print("若浏览器未自动打开，请复制上面整行链接到 Chrome（不要只输入 127.0.0.1）。")
+    print("令牌每次启动都会变；不要用上次保存的旧链接。")
     print("仅本机可访问；关闭请按 Ctrl+C。")
     server.serve_forever(open_browser=open_browser)

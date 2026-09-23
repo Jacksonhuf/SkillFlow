@@ -60,9 +60,10 @@
 </header>
 <main>
   <div id="tokenGate" class="card hidden">
-    <h3>请从启动器打开</h3>
-    <p class="muted">双击技能目录里的 <code>open-console.bat</code>（macOS / Linux：<code>open-console.sh</code>）会自动打开带令牌的页面。若你是手动输入地址，请从启动窗口复制带 <code>?token=</code> 的链接，或在下方粘贴令牌。</p>
-    <input id="tokenInput" placeholder="token">
+    <h3>需要登录控制台</h3>
+    <p class="muted">每次双击 <code>open-console.bat</code> 都会生成<strong>新令牌</strong>。请从<strong>黑色窗口</strong>复制整行以 <code>http://127.0.0.1</code> 开头的链接，粘贴到浏览器地址栏打开（不要只输入 127.0.0.1）。</p>
+    <p class="muted">若只复制令牌：粘贴 <code>token=</code> 后面那一串，或粘贴完整链接，点保存。</p>
+    <input id="tokenInput" placeholder="粘贴 token 或完整链接">
     <div class="row"><button class="btn" id="tokenSave">保存</button></div>
   </div>
 
@@ -163,21 +164,53 @@
 <script>
 (function () {
   const qs = new URLSearchParams(location.search);
-  let token = qs.get('token') || localStorage.getItem('ub_token') || '';
-  if (qs.get('token')) { localStorage.setItem('ub_token', token); history.replaceState({}, '', location.pathname); }
+  function normalizeToken(raw) {
+    raw = String(raw || '').trim();
+    if (!raw) return '';
+    try {
+      if (raw.includes('://')) {
+        const u = new URL(raw);
+        const t = u.searchParams.get('token') || u.searchParams.get('access_token');
+        if (t) return t.trim();
+      }
+    } catch (e) { /* not a URL */ }
+    const m = raw.match(/[?&]token=([^&\s#]+)/i);
+    if (m) return decodeURIComponent(m[1]).trim();
+    return raw;
+  }
+  let token = normalizeToken(qs.get('token') || '') || normalizeToken(localStorage.getItem('ub_token') || '');
+  if (qs.get('token')) {
+    token = normalizeToken(qs.get('token'));
+    localStorage.setItem('ub_token', token);
+    history.replaceState({}, '', location.pathname);
+  }
   const $ = (id) => document.getElementById(id);
   const esc = (s) => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   const fmtState = (s) => { const cls = s === 'COMPLETED' ? 'ok' : (s === 'PARTIAL' || s === 'WAIT_USER_AUTH') ? 'warn' : (s === 'FAILED' || s === 'CANCELLED') ? 'bad' : ''; return `<span class="badge ${cls}">${esc(s || '-')}</span>`; };
 
   async function api(path, opts = {}) {
-    const res = await fetch(path, { ...opts, headers: { 'X-Console-Token': token, 'Content-Type': 'application/json', ...(opts.headers || {}) } });
-    if (res.status === 401) { $('tokenGate').classList.remove('hidden'); throw new Error('未授权：请提供控制台令牌'); }
+    const headers = { 'Content-Type': 'application/json', ...(opts.headers || {}) };
+    if (token) headers['X-Console-Token'] = token;
+    const res = await fetch(path, { ...opts, credentials: 'same-origin', headers });
+    if (res.status === 401) {
+      localStorage.removeItem('ub_token');
+      token = '';
+      $('tokenInput').value = '';
+      $('tokenGate').classList.remove('hidden');
+      throw new Error('未授权：令牌无效或已过期。请关闭网页，从黑色窗口复制新的完整链接打开。');
+    }
     const ct = res.headers.get('Content-Type') || '';
     return ct.includes('json') ? res.json() : res;
   }
   const post = (path, body) => api(path, { method: 'POST', body: JSON.stringify(body) });
 
-  $('tokenSave').onclick = () => { token = $('tokenInput').value.trim(); localStorage.setItem('ub_token', token); $('tokenGate').classList.add('hidden'); loadTemplates(); loadSetup(); };
+  $('tokenSave').onclick = () => {
+    token = normalizeToken($('tokenInput').value);
+    if (!token) { alert('请粘贴 token 或完整链接'); return; }
+    localStorage.setItem('ub_token', token);
+    $('tokenGate').classList.add('hidden');
+    loadTemplates(); loadSetup();
+  };
 
   // ---- 视图切换
   document.querySelectorAll('nav button').forEach(b => b.onclick = () => {
@@ -221,7 +254,7 @@
   }
   window.__dl = async (ev, href) => {
     ev.preventDefault();
-    const res = await fetch(href, { headers: { 'X-Console-Token': token } });
+    const res = await fetch(href, { credentials: 'same-origin', headers: token ? { 'X-Console-Token': token } : {} });
     if (!res.ok) { alert('下载失败'); return false; }
     const blob = await res.blob();
     const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
@@ -415,7 +448,8 @@
     const m = await api('/api/meta'); $('metaOut').classList.remove('hidden'); $('metaOut').textContent = JSON.stringify(m.meta, null, 2);
   };
 
-  if (!token) $('tokenGate').classList.remove('hidden'); else { loadTemplates(); loadSetup(); }
+  if (!token) $('tokenGate').classList.remove('hidden');
+  else { loadTemplates().catch(() => {}); loadSetup().catch(() => {}); }
 })();
 </script>
 </body>

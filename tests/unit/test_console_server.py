@@ -197,6 +197,18 @@ def test_doctor_and_meta(console: ConsoleServer) -> None:
     assert payload["meta"]["runs_root"]
 
 
+def test_console_cookie_authorizes_api_without_header(console: ConsoleServer) -> None:
+    status, _, headers = _call(console, f"/?token={console.token}", token=None)
+    assert status == 200
+    assert "ub_console_token" in headers.get("set-cookie", "")
+    request = urllib.request.Request(f"http://127.0.0.1:{console.port}/api/templates")
+    request.add_header("Cookie", f"ub_console_token={console.token}")
+    with urllib.request.urlopen(request, timeout=10) as response:
+        payload = json.loads(response.read())
+    assert payload["ok"] is True
+    assert payload["templates"]
+
+
 def test_setup_status_and_repair_validation(console: ConsoleServer) -> None:
     status, payload, _ = _call(console, "/api/setup")
     assert status == 200
