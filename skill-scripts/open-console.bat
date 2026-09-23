@@ -30,6 +30,7 @@ exit /b 2
 
 :ub_found
 echo Starting Universal Browser console... A browser tab opens automatically.
+echo If an older black window is still running, it will be closed so you get the new version.
 echo Keep this window open while you use the console. Close it to stop.
 echo Using: %PYCMD%
 %PYCMD% "%INVOKE%" ui %*
