@@ -12,6 +12,12 @@ import pytest
 
 from browser_skill.app import BrowserSkillApp
 from browser_skill.browser.fake import FakeBrowserAdapter
+from browser_skill.console import instance as console_instance
+from browser_skill.console.instance import (
+    _legacy_token_console_at,
+    _legacy_ui_at,
+    stop_prior_console_on_port,
+)
 from browser_skill.console.server import ConsoleServer
 from browser_skill.models import BrowserSnapshot, BrowserTemplate
 from browser_skill.templates.store import TemplateStore
@@ -88,3 +94,50 @@ def test_new_console_replaces_listener_on_same_port(
             second.shutdown()
     finally:
         first.shutdown()
+
+
+def test_legacy_token_and_ui_probes() -> None:
+    import threading
+    from http import HTTPStatus
+    from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+    class LegacyHandler(BaseHTTPRequestHandler):
+        def do_GET(self) -> None:
+            if self.path.startswith("/api/"):
+                self.send_response(HTTPStatus.UNAUTHORIZED)
+                self.end_headers()
+                self.wfile.write(b'{"ok":false,"message":"Unauthorized"}')
+                return
+            self.send_response(HTTPStatus.OK)
+            self.end_headers()
+            self.wfile.write(b"<html><div id=tokenGate></div></html>")
+
+        def log_message(self, *_args: object) -> None:
+            return
+
+    legacy = ThreadingHTTPServer(("127.0.0.1", 0), LegacyHandler)
+    thread = threading.Thread(target=legacy.serve_forever, daemon=True)
+    thread.start()
+    base = f"http://127.0.0.1:{legacy.server_address[1]}/"
+    try:
+        assert _legacy_token_console_at(base)
+        assert _legacy_ui_at(base)
+    finally:
+        legacy.shutdown()
+        legacy.server_close()
+        thread.join(timeout=2)
+
+
+def test_stop_prior_clears_legacy_token_console(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(console_instance, "_pids_listening_on_loopback", lambda _port: [4242])
+    monkeypatch.setattr(console_instance, "_legacy_token_console_at", lambda _base: True)
+    monkeypatch.setattr(console_instance, "_legacy_ui_at", lambda _base: False)
+    monkeypatch.setattr(console_instance, "_meta_at", lambda _base: None)
+    monkeypatch.setattr(console_instance, "_wait_port_free", lambda _port: True)
+    stopped: list[int] = []
+    monkeypatch.setattr(console_instance, "_terminate_pid", lambda pid: stopped.append(pid))
+
+    result = stop_prior_console_on_port("127.0.0.1", 8765)
+    assert result.stopped is True
+    assert stopped == [4242]
+    assert "token" in (result.message or "")

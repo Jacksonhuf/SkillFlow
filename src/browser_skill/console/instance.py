@@ -13,6 +13,7 @@ import time
 import urllib.error
 import urllib.request
 from dataclasses import dataclass
+from http import HTTPStatus
 from typing import Any
 
 
@@ -27,11 +28,37 @@ def _meta_at(base_url: str, *, timeout: float = 1.5) -> dict[str, Any] | None:
     try:
         with urllib.request.urlopen(url, timeout=timeout) as response:
             body = json.loads(response.read().decode("utf-8"))
+    except urllib.error.HTTPError:
+        return None
     except (OSError, TimeoutError, urllib.error.URLError, json.JSONDecodeError):
         return None
     if not body.get("ok") or "meta" not in body:
         return None
     return body["meta"]
+
+
+def _legacy_token_console_at(base_url: str, *, timeout: float = 1.5) -> bool:
+    """Pre-0.3.6 consoles required a token for every /api/* call including /api/meta."""
+    url = base_url.rstrip("/") + "/api/meta"
+    try:
+        with urllib.request.urlopen(url, timeout=timeout) as response:
+            response.read()
+    except urllib.error.HTTPError as exc:
+        return exc.code == HTTPStatus.UNAUTHORIZED
+    except (OSError, TimeoutError, urllib.error.URLError):
+        return False
+    else:
+        return False
+
+
+def _legacy_ui_at(base_url: str, *, timeout: float = 1.5) -> bool:
+    try:
+        with urllib.request.urlopen(base_url, timeout=timeout) as response:
+            chunk = response.read(16000)
+    except (OSError, TimeoutError, urllib.error.URLError):
+        return False
+    text = chunk.decode("utf-8", errors="replace")
+    return "tokenGate" in text or "__UB_CONSOLE_TOKEN__" in text
 
 
 def _shutdown_at(base_url: str, *, timeout: float = 2.0) -> bool:
@@ -168,12 +195,29 @@ def _terminate_pid(pid: int) -> None:
         os.kill(pid, signal.SIGKILL)
 
 
+def _terminate_listeners(port: int, *, except_pid: int | None = None) -> list[int]:
+    stopped: list[int] = []
+    for pid in _pids_listening_on_loopback(port):
+        if except_pid is not None and pid == except_pid:
+            continue
+        _terminate_pid(pid)
+        stopped.append(pid)
+    return stopped
+
+
 def stop_prior_console_on_port(host: str, port: int) -> PriorInstanceResult:
     if host not in {"127.0.0.1", "localhost", "::1"} or port == 0:
         return PriorInstanceResult(stopped=False)
 
     base = f"http://127.0.0.1:{port}/"
+    listeners = _pids_listening_on_loopback(port)
+    if not listeners:
+        return PriorInstanceResult(stopped=False)
+
+    legacy = _legacy_token_console_at(base) or _legacy_ui_at(base)
     meta = _meta_at(base)
+    my_pid = os.getpid()
+
     if meta is not None:
         old_version = meta.get("version", "?")
         if _shutdown_at(base) and _wait_port_free(port):
@@ -184,29 +228,57 @@ def stop_prior_console_on_port(host: str, port: int) -> PriorInstanceResult:
                 ),
             )
 
-    my_pid = os.getpid()
-    for pid in _pids_listening_on_loopback(port):
-        if pid == my_pid:
-            continue
-        command = _command_line(pid)
-        if meta is not None or _is_ub_console_commandline(command):
-            _terminate_pid(pid)
-            if _wait_port_free(port):
-                detail = f"（PID {pid}）" if pid else ""
-                return PriorInstanceResult(
-                    stopped=True,
-                    message=(
-                        f"已结束占用端口 {port} 的旧控制台进程{detail}。"
-                        "请只保留本次打开的黑色窗口。"
-                    ),
-                )
+    should_clear = legacy or meta is not None
+    if not should_clear:
+        should_clear = any(
+            _is_ub_console_commandline(_command_line(pid))
+            for pid in listeners
+            if pid != my_pid
+        )
 
-    if meta is not None:
+    if not should_clear:
         return PriorInstanceResult(
             stopped=False,
             message=(
-                f"端口 {port} 仍被旧控制台占用（v{meta.get('version', '?')}）。"
-                "请关闭所有旧的黑色窗口后，再双击 open-console.bat。"
+                f"端口 {port} 已被其它程序占用。"
+                "请关闭占用该端口的程序后，再双击 open-console.bat。"
+            ),
+        )
+
+    stopped_pids = _terminate_listeners(port, except_pid=my_pid)
+    if _wait_port_free(port):
+        if legacy:
+            return PriorInstanceResult(
+                stopped=True,
+                message=(
+                    f"已结束端口 {port} 上仍要求 token 的旧控制台"
+                    f"（进程 {stopped_pids[0] if stopped_pids else '?'}），"
+                    "正在启动无 token 的新版本。请关闭浏览器里旧的 127.0.0.1 标签页。"
+                ),
+            )
+        if meta is not None:
+            return PriorInstanceResult(
+                stopped=True,
+                message=(
+                    f"已结束占用端口 {port} 的旧控制台（v{meta.get('version', '?')}）。"
+                    "请只保留本次打开的黑色窗口。"
+                ),
+            )
+        return PriorInstanceResult(
+            stopped=True,
+            message=(
+                f"已结束占用端口 {port} 的旧控制台进程。"
+                "请只保留本次打开的黑色窗口。"
+            ),
+        )
+
+    if legacy or meta is not None:
+        return PriorInstanceResult(
+            stopped=False,
+            message=(
+                f"端口 {port} 仍被旧控制台占用"
+                f"{'（旧版需 token）' if legacy else ''}。"
+                "请手动关闭所有黑色窗口后重试。"
             ),
         )
     return PriorInstanceResult(stopped=False)
