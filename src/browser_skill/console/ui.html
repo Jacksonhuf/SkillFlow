@@ -3,6 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Cache-Control" content="no-store">
 <title>Universal Browser · 本地控制台</title>
 <style>
   :root {
@@ -161,6 +162,9 @@
 
   async function api(path, opts = {}) {
     const res = await fetch(path, { ...opts, headers: { 'Content-Type': 'application/json', ...(opts.headers || {}) } });
+    if (res.status === 401) {
+      throw new Error('检测到旧版控制台（需 token）仍在运行：请关闭所有黑色窗口，只保留最新双击打开的那个，再刷新本页。');
+    }
     const ct = res.headers.get('Content-Type') || '';
     return ct.includes('json') ? res.json() : res;
   }
