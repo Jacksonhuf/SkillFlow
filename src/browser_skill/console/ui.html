@@ -50,7 +50,7 @@
 <body>
 <header>
   <h1>Universal Browser</h1>
-  <span class="sub">模板驱动 · 本机 Chrome · 结果校验</span>
+  <span class="sub">模板驱动 · 本机 Chrome · 结果校验 <span id="verTag"></span></span>
   <nav>
     <button data-view="templates" class="active">运行任务</button>
     <button data-view="runs">历史结果</button>
@@ -404,6 +404,7 @@
 
   loadTemplates();
   loadSetup();
+  api('/api/meta').then(m => { if (m && m.meta && m.meta.version) $('verTag').textContent = '· v' + m.meta.version; }).catch(() => {});
 })();
 </script>
 </body>
