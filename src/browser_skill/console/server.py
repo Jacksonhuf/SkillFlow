@@ -13,6 +13,7 @@ import json
 import mimetypes
 import secrets
 import threading
+import time
 import webbrowser
 from collections.abc import Callable, Coroutine
 from dataclasses import asdict
@@ -40,6 +41,7 @@ from browser_skill.browser.auto_engine import (
 from browser_skill.browser.chrome_use import ChromeUseAdapter
 from browser_skill.browser.factory import build_adapter
 from browser_skill.browser.playwright_adapter import PlaywrightAdapter
+from browser_skill.console.instance import ensure_loopback_port_free
 from browser_skill.errors import ErrorCode, SkillError
 from browser_skill.models import SkillRequest, SkillResponse
 from browser_skill.outputs.paths import contained_path, safe_filename
@@ -187,17 +189,21 @@ class ConsoleServer:
             raise SkillError(ErrorCode.ACTION_NOT_ALLOWED, "Console only binds to loopback")
         self.app = app
         self.jobs = JobRegistry(app)
+        self.prior_instance_note: str | None = None
         self.port_fallback_note: str | None = None
+        if port != 0:
+            prior = ensure_loopback_port_free(host, port)
+            if prior.message:
+                self.prior_instance_note = prior.message
         try:
             self._server = ThreadingHTTPServer((host, port), _Handler)
         except OSError as exc:
             if port == 0:
                 raise
-            # An older console (or another program) still owns the port: never serve a stale
-            # UI from that process by accident — pick a free port and tell the user.
+            # Another non-UB program owns the port — avoid serving stale UI on 8765.
             self.port_fallback_note = (
-                f"端口 {port} 已被占用（可能有旧的控制台窗口未关闭，错误：{exc.strerror}），"
-                "已改用随机端口。请关闭旧的黑色窗口和旧标签页。"
+                f"端口 {port} 已被其他程序占用（{exc.strerror}），已改用随机端口。"
+                "若仍看到旧页面，请关闭占用该端口的程序或旧标签页。"
             )
             self._server = ThreadingHTTPServer((host, 0), _Handler)
         self._server.daemon_threads = True
@@ -237,6 +243,13 @@ class ConsoleServer:
         if self._thread is not None:
             self._server.shutdown()
         self._server.server_close()
+
+    def request_stop(self) -> None:
+        threading.Thread(target=self._stop_after_response, name="console-stop", daemon=True).start()
+
+    def _stop_after_response(self) -> None:
+        time.sleep(0.05)
+        self.shutdown()
 
     # ----- API implementation -------------------------------------------------
 
@@ -631,6 +644,9 @@ class _Handler(BaseHTTPRequestHandler):
         elif path == "/api/setup/repair":
             action = str(payload.get("action", ""))
             self._send_json({"ok": True, **console.repair(action)})
+        elif path == "/api/shutdown":
+            self._send_json({"ok": True})
+            console.request_stop()
         else:
             self._error("Not found", HTTPStatus.NOT_FOUND)
 
@@ -644,8 +660,10 @@ def serve_console(
     server = ConsoleServer(app, port=port)
     url = server.url
     print(f"Universal Browser 本地控制台 v{__version__}: {url}")
+    if server.prior_instance_note:
+        print(server.prior_instance_note)
     if server.port_fallback_note:
         print(server.port_fallback_note)
-    print("无需 token；仅本机可访问。若页面仍要求令牌，说明是旧标签页：关掉后重新打开上面地址。")
+    print("无需 token；仅本机可访问。若页面仍要求令牌或版本不对，关掉旧标签页后打开上面地址。")
     print("关闭黑色窗口即停止服务。")
     server.serve_forever(open_browser=open_browser)

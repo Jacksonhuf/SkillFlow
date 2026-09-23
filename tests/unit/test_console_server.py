@@ -222,11 +222,11 @@ def test_meta_reports_version_and_busy_port_falls_back(console: ConsoleServer) -
     assert status == 200
     assert payload["meta"]["version"] == __version__
 
-    # A second console on the same (busy) port must not crash; it moves to a free port.
-    second = ConsoleServer(console.app, port=console.port)
+    port = console.port
+    second = ConsoleServer(console.app, port=port)
     try:
-        assert second.port != console.port
-        assert second.port_fallback_note is not None
-        assert str(console.port) in second.port_fallback_note
+        assert second.port == port
+        assert second.prior_instance_note is not None
+        assert "旧控制台" in second.prior_instance_note
     finally:
         second.shutdown()
