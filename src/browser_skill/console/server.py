@@ -26,6 +26,7 @@ from urllib.parse import parse_qs, unquote, urlsplit
 
 from pydantic import ValidationError
 
+from browser_skill import __version__
 from browser_skill.app import BrowserSkillApp
 from browser_skill.browser.auto_engine import (
     SetupStatus,
@@ -186,7 +187,19 @@ class ConsoleServer:
             raise SkillError(ErrorCode.ACTION_NOT_ALLOWED, "Console only binds to loopback")
         self.app = app
         self.jobs = JobRegistry(app)
-        self._server = ThreadingHTTPServer((host, port), _Handler)
+        self.port_fallback_note: str | None = None
+        try:
+            self._server = ThreadingHTTPServer((host, port), _Handler)
+        except OSError as exc:
+            if port == 0:
+                raise
+            # An older console (or another program) still owns the port: never serve a stale
+            # UI from that process by accident — pick a free port and tell the user.
+            self.port_fallback_note = (
+                f"端口 {port} 已被占用（可能有旧的控制台窗口未关闭，错误：{exc.strerror}），"
+                "已改用随机端口。请关闭旧的黑色窗口和旧标签页。"
+            )
+            self._server = ThreadingHTTPServer((host, 0), _Handler)
         self._server.daemon_threads = True
         setattr(self._server, "console", self)  # noqa: B010
         self._thread: threading.Thread | None = None
@@ -220,7 +233,9 @@ class ConsoleServer:
 
     def shutdown(self) -> None:
         self.jobs.stop()
-        self._server.shutdown()
+        # BaseServer.shutdown() blocks forever if serve_forever() never ran.
+        if self._thread is not None:
+            self._server.shutdown()
         self._server.server_close()
 
     # ----- API implementation -------------------------------------------------
@@ -570,6 +585,7 @@ class _Handler(BaseHTTPRequestHandler):
                 {
                     "ok": True,
                     "meta": {
+                        "version": __version__,
                         "templates_root": str(console.app.store.root),
                         "runs_root": str(console.app.runs_root),
                         "samples_root": str(console.app.samples_root),
@@ -627,6 +643,9 @@ def serve_console(
 ) -> None:
     server = ConsoleServer(app, port=port)
     url = server.url
-    print(f"Universal Browser 本地控制台: {url}")
-    print("仅本机可访问；关闭黑色窗口即停止服务。")
+    print(f"Universal Browser 本地控制台 v{__version__}: {url}")
+    if server.port_fallback_note:
+        print(server.port_fallback_note)
+    print("无需 token；仅本机可访问。若页面仍要求令牌，说明是旧标签页：关掉后重新打开上面地址。")
+    print("关闭黑色窗口即停止服务。")
     server.serve_forever(open_browser=open_browser)
