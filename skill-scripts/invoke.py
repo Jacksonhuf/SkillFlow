@@ -14,14 +14,26 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import contextlib
 import json
 import os
 import sys
+import traceback
 from pathlib import Path
 
 
 def _skill_root() -> Path:
     return Path(__file__).resolve().parent.parent
+
+
+def _configure_stdio() -> None:
+    if sys.platform != "win32":
+        return
+    for stream in (sys.stdout, sys.stderr):
+        reconfigure = getattr(stream, "reconfigure", None)
+        if callable(reconfigure):
+            with contextlib.suppress(OSError, ValueError):
+                reconfigure(encoding="utf-8", errors="replace")
 
 
 def _bootstrap() -> None:
@@ -38,6 +50,7 @@ def _bootstrap() -> None:
             file=sys.stderr,
         )
         raise SystemExit(2)
+    _configure_stdio()
     root = _skill_root()
     runtime_src = root / "runtime" / "src"
     if not runtime_src.is_dir():
@@ -127,11 +140,24 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "ui":
         from browser_skill.console.server import serve_console
 
-        serve_console(
-            app,
-            port=args.port,
-            open_browser=not args.no_browser,
-        )
+        try:
+            serve_console(
+                app,
+                port=args.port,
+                open_browser=not args.no_browser,
+            )
+        except KeyboardInterrupt:
+            return 0
+        except Exception as exc:
+            log_path = _skill_root() / "runs" / "console-start.log"
+            try:
+                log_path.parent.mkdir(parents=True, exist_ok=True)
+                log_path.write_text(traceback.format_exc(), encoding="utf-8")
+                print(f"Console failed to start. Details written to: {log_path}", file=sys.stderr)
+            except OSError:
+                print(f"Console failed to start: {exc}", file=sys.stderr)
+                traceback.print_exc()
+            return 1
         return 0
 
     async def dispatch() -> int:
