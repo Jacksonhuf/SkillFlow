@@ -39,7 +39,7 @@ def console(tmp_path: Path, template_data: dict[str, Any]) -> Iterator[ConsoleSe
         }
     )
     app = BrowserSkillApp(templates, tmp_path / "runs", adapter)
-    server = ConsoleServer(app, port=0, token="test-token")
+    server = ConsoleServer(app, port=0)
     server.start()
     try:
         yield server
@@ -53,7 +53,6 @@ def _call(
     *,
     method: str = "GET",
     body: dict[str, Any] | None = None,
-    token: str | None = "test-token",
 ) -> tuple[int, Any, dict[str, str]]:
     request = urllib.request.Request(
         f"http://127.0.0.1:{server.port}{path}",
@@ -61,8 +60,6 @@ def _call(
         method=method,
         headers={"Content-Type": "application/json"},
     )
-    if token is not None:
-        request.add_header("X-Console-Token", token)
     try:
         with urllib.request.urlopen(request, timeout=10) as response:
             raw = response.read()
@@ -88,18 +85,15 @@ def _wait_job(server: ConsoleServer, job_id: str) -> dict[str, Any]:
     raise AssertionError("job did not finish")
 
 
-def test_ui_is_served_without_token_but_api_requires_it(console: ConsoleServer) -> None:
-    status, body, headers = _call(console, "/", token=None)
+def test_ui_and_api_open_on_loopback_without_token(console: ConsoleServer) -> None:
+    status, body, headers = _call(console, "/")
     assert status == 200
     assert "text/html" in headers["content-type"]
     assert b"Universal Browser" in body
-    assert console.token.encode() in body
-    assert b"__UB_CONSOLE_TOKEN__" in body
 
-    status, _, _ = _call(console, "/api/templates", token=None)
-    assert status == 401
-    status, _, _ = _call(console, "/api/templates", token="wrong")
-    assert status == 401
+    status, payload, _ = _call(console, "/api/templates")
+    assert status == 200
+    assert payload["templates"]
 
 
 def test_templates_and_detail(console: ConsoleServer) -> None:
@@ -198,17 +192,6 @@ def test_doctor_and_meta(console: ConsoleServer) -> None:
     assert status == 200
     assert payload["meta"]["runs_root"]
 
-
-def test_console_cookie_authorizes_api_without_header(console: ConsoleServer) -> None:
-    status, _, headers = _call(console, f"/?token={console.token}", token=None)
-    assert status == 200
-    assert "ub_console_token" in headers.get("set-cookie", "")
-    request = urllib.request.Request(f"http://127.0.0.1:{console.port}/api/templates")
-    request.add_header("Cookie", f"ub_console_token={console.token}")
-    with urllib.request.urlopen(request, timeout=10) as response:
-        payload = json.loads(response.read())
-    assert payload["ok"] is True
-    assert payload["templates"]
 
 
 def test_setup_status_and_repair_validation(console: ConsoleServer) -> None:

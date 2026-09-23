@@ -59,14 +59,6 @@
   </nav>
 </header>
 <main>
-  <div id="tokenGate" class="card hidden">
-    <h3>无法连接本机控制台</h3>
-    <p class="muted">这<strong>不是</strong>业务系统账号密码，而是防止其它网页误操作本机 API 的本地密钥。通常<strong>无需填写</strong>：请关闭本页，双击 <code>open-console.bat</code> 让浏览器自动打开。</p>
-    <p class="muted">若仍提示未授权：关闭所有控制台网页和黑色窗口后重新双击；或粘贴黑色窗口里完整链接 / <code>token=</code> 后的字符串。</p>
-    <input id="tokenInput" placeholder="粘贴 token 或完整链接">
-    <div class="row"><button class="btn" id="tokenSave">保存</button></div>
-  </div>
-
   <div id="setupBanner" class="notice hidden"></div>
 
   <!-- 模板 -->
@@ -163,55 +155,16 @@
 
 <script>
 (function () {
-  const qs = new URLSearchParams(location.search);
-  function normalizeToken(raw) {
-    raw = String(raw || '').trim();
-    if (!raw) return '';
-    try {
-      if (raw.includes('://')) {
-        const u = new URL(raw);
-        const t = u.searchParams.get('token') || u.searchParams.get('access_token');
-        if (t) return t.trim();
-      }
-    } catch (e) { /* not a URL */ }
-    const m = raw.match(/[?&]token=([^&\s#]+)/i);
-    if (m) return decodeURIComponent(m[1]).trim();
-    return raw;
-  }
-  let token = normalizeToken(typeof window.__UB_CONSOLE_TOKEN__ === 'string' ? window.__UB_CONSOLE_TOKEN__ : '')
-    || normalizeToken(qs.get('token') || '')
-    || normalizeToken(localStorage.getItem('ub_token') || '');
-  if (token) localStorage.setItem('ub_token', token);
-  if (qs.get('token')) {
-    history.replaceState({}, '', location.pathname);
-  }
   const $ = (id) => document.getElementById(id);
   const esc = (s) => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   const fmtState = (s) => { const cls = s === 'COMPLETED' ? 'ok' : (s === 'PARTIAL' || s === 'WAIT_USER_AUTH') ? 'warn' : (s === 'FAILED' || s === 'CANCELLED') ? 'bad' : ''; return `<span class="badge ${cls}">${esc(s || '-')}</span>`; };
 
   async function api(path, opts = {}) {
-    const headers = { 'Content-Type': 'application/json', ...(opts.headers || {}) };
-    if (token) headers['X-Console-Token'] = token;
-    const res = await fetch(path, { ...opts, credentials: 'same-origin', headers });
-    if (res.status === 401) {
-      localStorage.removeItem('ub_token');
-      token = '';
-      $('tokenInput').value = '';
-      $('tokenGate').classList.remove('hidden');
-      throw new Error('未授权：令牌无效或已过期。请关闭网页，从黑色窗口复制新的完整链接打开。');
-    }
+    const res = await fetch(path, { ...opts, headers: { 'Content-Type': 'application/json', ...(opts.headers || {}) } });
     const ct = res.headers.get('Content-Type') || '';
     return ct.includes('json') ? res.json() : res;
   }
   const post = (path, body) => api(path, { method: 'POST', body: JSON.stringify(body) });
-
-  $('tokenSave').onclick = () => {
-    token = normalizeToken($('tokenInput').value);
-    if (!token) { alert('请粘贴 token 或完整链接'); return; }
-    localStorage.setItem('ub_token', token);
-    $('tokenGate').classList.add('hidden');
-    loadTemplates(); loadSetup();
-  };
 
   // ---- 视图切换
   document.querySelectorAll('nav button').forEach(b => b.onclick = () => {
@@ -255,7 +208,7 @@
   }
   window.__dl = async (ev, href) => {
     ev.preventDefault();
-    const res = await fetch(href, { credentials: 'same-origin', headers: token ? { 'X-Console-Token': token } : {} });
+    const res = await fetch(href);
     if (!res.ok) { alert('下载失败'); return false; }
     const blob = await res.blob();
     const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
@@ -449,8 +402,8 @@
     const m = await api('/api/meta'); $('metaOut').classList.remove('hidden'); $('metaOut').textContent = JSON.stringify(m.meta, null, 2);
   };
 
-  if (!token) $('tokenGate').classList.remove('hidden');
-  else { loadTemplates().catch(() => {}); loadSetup().catch(() => {}); }
+  loadTemplates();
+  loadSetup();
 })();
 </script>
 </body>

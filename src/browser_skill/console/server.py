@@ -1,7 +1,7 @@
 """Local-only web console for the Universal Browser Skill.
 
-Binds to 127.0.0.1, protects every /api/* call with a per-process token, and reuses
-``BrowserSkillApp.handle`` so the UI, the Agent and the CLI behave identically.
+Binds to 127.0.0.1 only (no token; suitable for trusted intranet / single-user machines).
+Reuses ``BrowserSkillApp.handle`` so the UI, the Agent and the CLI behave identically.
 """
 
 from __future__ import annotations
@@ -11,7 +11,6 @@ import base64
 import contextlib
 import json
 import mimetypes
-import os
 import secrets
 import threading
 import webbrowser
@@ -182,12 +181,10 @@ class ConsoleServer:
         *,
         host: str = "127.0.0.1",
         port: int = 8765,
-        token: str | None = None,
     ) -> None:
         if host not in {"127.0.0.1", "localhost", "::1"}:
             raise SkillError(ErrorCode.ACTION_NOT_ALLOWED, "Console only binds to loopback")
         self.app = app
-        self.token = token or secrets.token_urlsafe(24)
         self.jobs = JobRegistry(app)
         self._server = ThreadingHTTPServer((host, port), _Handler)
         self._server.daemon_threads = True
@@ -200,7 +197,7 @@ class ConsoleServer:
 
     @property
     def url(self) -> str:
-        return f"http://127.0.0.1:{self.port}/?token={self.token}"
+        return f"http://127.0.0.1:{self.port}/"
 
     def start(self) -> str:
         self._thread = threading.Thread(
@@ -440,28 +437,6 @@ class ConsoleServer:
                 await close()
 
 
-_CONSOLE_COOKIE = "ub_console_token"
-_CONSOLE_TOKEN_FILE = ".console-token"
-
-
-def resolve_console_token(runs_root: Path, explicit: str | None = None) -> str:
-    """Local-only API secret (not a business login). Reuse runs/.console-token across restarts."""
-    if explicit and explicit.strip():
-        return explicit.strip()
-    env = os.environ.get("UNIVERSAL_BROWSER_CONSOLE_TOKEN", "").strip()
-    if env:
-        return env
-    path = runs_root / _CONSOLE_TOKEN_FILE
-    if path.is_file():
-        stored = path.read_text(encoding="utf-8").strip()
-        if stored:
-            return stored
-    value = secrets.token_urlsafe(24)
-    runs_root.mkdir(parents=True, exist_ok=True)
-    path.write_text(value + "\n", encoding="utf-8")
-    return value
-
-
 class _Handler(BaseHTTPRequestHandler):
     server_version = "UniversalBrowserConsole/1.0"
 
@@ -486,35 +461,6 @@ class _Handler(BaseHTTPRequestHandler):
     def _error(self, message: str, status: HTTPStatus, **extra: Any) -> None:
         self._send_json({"ok": False, "message": message, **extra}, status)
 
-    def _provided_token(self) -> str:
-        header = self.headers.get("X-Console-Token", "")
-        if header.strip():
-            return header.strip()
-        parts = urlsplit(self.path)
-        query = parse_qs(parts.query)
-        query_tokens = query.get("token") or query.get("access_token")
-        if query_tokens:
-            return unquote(query_tokens[0]).strip()
-        cookie_header = self.headers.get("Cookie", "")
-        prefix = f"{_CONSOLE_COOKIE}="
-        for chunk in cookie_header.split(";"):
-            chunk = chunk.strip()
-            if chunk.startswith(prefix):
-                return unquote(chunk[len(prefix) :]).strip()
-        return ""
-
-    def _authorized(self) -> bool:
-        provided = self._provided_token()
-        if not provided:
-            return False
-        return secrets.compare_digest(provided, self.console.token)
-
-    def _set_console_cookie(self) -> None:
-        self.send_header(
-            "Set-Cookie",
-            f"{_CONSOLE_COOKIE}={self.console.token}; Path=/; HttpOnly; SameSite=Lax",
-        )
-
     def _read_json(self) -> dict[str, Any]:
         length = int(self.headers.get("Content-Length", "0") or 0)
         if length <= 0:
@@ -530,26 +476,16 @@ class _Handler(BaseHTTPRequestHandler):
             raise SkillError(ErrorCode.VARIABLE_INVALID, "Request body must be a JSON object")
         return cast(dict[str, Any], payload)
 
-    def _serve_ui(self, *, remember_session: bool = False) -> None:
+    def _serve_ui(self) -> None:
         if not _UI_PATH.is_file():
             self._error("UI asset missing", HTTPStatus.NOT_FOUND)
             return
-        body = _UI_PATH.read_text(encoding="utf-8")
-        injection = (
-            f"<script>window.__UB_CONSOLE_TOKEN__={json.dumps(self.console.token)};</script>"
-        )
-        if "<body>" in body:
-            body = body.replace("<body>", "<body>" + injection, 1)
-        else:
-            body = injection + body
-        payload = body.encode("utf-8")
+        payload = _UI_PATH.read_bytes()
         self.send_response(HTTPStatus.OK)
         self.send_header("Content-Type", "text/html; charset=utf-8")
         self.send_header("Content-Length", str(len(payload)))
         self.send_header("Cache-Control", "no-store")
         self.send_header("X-Frame-Options", "DENY")
-        if remember_session:
-            self._set_console_cookie()
         self.send_header(
             "Content-Security-Policy",
             "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; "
@@ -587,18 +523,10 @@ class _Handler(BaseHTTPRequestHandler):
         path = parts.path
         query = parse_qs(parts.query)
         if path in {"/", "/index.html"}:
-            query_token = (query.get("token") or query.get("access_token") or [""])[0]
-            remember = bool(
-                query_token
-                and secrets.compare_digest(unquote(query_token).strip(), self.console.token)
-            )
-            self._serve_ui(remember_session=remember)
+            self._serve_ui()
             return
         if not path.startswith("/api/"):
             self._error("Not found", HTTPStatus.NOT_FOUND)
-            return
-        if not self._authorized():
-            self._error("Unauthorized", HTTPStatus.UNAUTHORIZED)
             return
         try:
             self._route_get(path, query)
@@ -656,9 +584,6 @@ class _Handler(BaseHTTPRequestHandler):
         if not path.startswith("/api/"):
             self._error("Not found", HTTPStatus.NOT_FOUND)
             return
-        if not self._authorized():
-            self._error("Unauthorized", HTTPStatus.UNAUTHORIZED)
-            return
         try:
             payload = self._read_json()
             self._route_post(path, payload)
@@ -699,13 +624,9 @@ def serve_console(
     *,
     port: int = 8765,
     open_browser: bool = True,
-    token: str | None = None,
 ) -> None:
-    resolved = resolve_console_token(app.runs_root, token)
-    server = ConsoleServer(app, port=port, token=resolved)
+    server = ConsoleServer(app, port=port)
     url = server.url
     print(f"Universal Browser 本地控制台: {url}")
-    print("说明：token 是本机控制台密钥（不是业务密码），保存在 runs\\.console-token。")
-    print("请用上面整行链接打开；若未自动弹出浏览器，复制到 Chrome 地址栏即可。")
     print("仅本机可访问；关闭黑色窗口即停止服务。")
     server.serve_forever(open_browser=open_browser)

@@ -3,4 +3,4 @@
 from .models import BrowserTemplate, RunState, TemplateStatus
 
 __all__ = ["BrowserTemplate", "RunState", "TemplateStatus"]
-__version__ = "0.3.5"
+__version__ = "0.3.6"
