@@ -93,6 +93,8 @@ def test_ui_is_served_without_token_but_api_requires_it(console: ConsoleServer) 
     assert status == 200
     assert "text/html" in headers["content-type"]
     assert b"Universal Browser" in body
+    assert console.token.encode() in body
+    assert b"__UB_CONSOLE_TOKEN__" in body
 
     status, _, _ = _call(console, "/api/templates", token=None)
     assert status == 401

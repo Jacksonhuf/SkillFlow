@@ -60,9 +60,9 @@
 </header>
 <main>
   <div id="tokenGate" class="card hidden">
-    <h3>需要登录控制台</h3>
-    <p class="muted">每次双击 <code>open-console.bat</code> 都会生成<strong>新令牌</strong>。请从<strong>黑色窗口</strong>复制整行以 <code>http://127.0.0.1</code> 开头的链接，粘贴到浏览器地址栏打开（不要只输入 127.0.0.1）。</p>
-    <p class="muted">若只复制令牌：粘贴 <code>token=</code> 后面那一串，或粘贴完整链接，点保存。</p>
+    <h3>无法连接本机控制台</h3>
+    <p class="muted">这<strong>不是</strong>业务系统账号密码，而是防止其它网页误操作本机 API 的本地密钥。通常<strong>无需填写</strong>：请关闭本页，双击 <code>open-console.bat</code> 让浏览器自动打开。</p>
+    <p class="muted">若仍提示未授权：关闭所有控制台网页和黑色窗口后重新双击；或粘贴黑色窗口里完整链接 / <code>token=</code> 后的字符串。</p>
     <input id="tokenInput" placeholder="粘贴 token 或完整链接">
     <div class="row"><button class="btn" id="tokenSave">保存</button></div>
   </div>
@@ -178,10 +178,11 @@
     if (m) return decodeURIComponent(m[1]).trim();
     return raw;
   }
-  let token = normalizeToken(qs.get('token') || '') || normalizeToken(localStorage.getItem('ub_token') || '');
+  let token = normalizeToken(typeof window.__UB_CONSOLE_TOKEN__ === 'string' ? window.__UB_CONSOLE_TOKEN__ : '')
+    || normalizeToken(qs.get('token') || '')
+    || normalizeToken(localStorage.getItem('ub_token') || '');
+  if (token) localStorage.setItem('ub_token', token);
   if (qs.get('token')) {
-    token = normalizeToken(qs.get('token'));
-    localStorage.setItem('ub_token', token);
     history.replaceState({}, '', location.pathname);
   }
   const $ = (id) => document.getElementById(id);

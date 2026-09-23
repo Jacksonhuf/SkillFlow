@@ -11,6 +11,7 @@ import base64
 import contextlib
 import json
 import mimetypes
+import os
 import secrets
 import threading
 import webbrowser
@@ -440,6 +441,25 @@ class ConsoleServer:
 
 
 _CONSOLE_COOKIE = "ub_console_token"
+_CONSOLE_TOKEN_FILE = ".console-token"
+
+
+def resolve_console_token(runs_root: Path, explicit: str | None = None) -> str:
+    """Local-only API secret (not a business login). Reuse runs/.console-token across restarts."""
+    if explicit and explicit.strip():
+        return explicit.strip()
+    env = os.environ.get("UNIVERSAL_BROWSER_CONSOLE_TOKEN", "").strip()
+    if env:
+        return env
+    path = runs_root / _CONSOLE_TOKEN_FILE
+    if path.is_file():
+        stored = path.read_text(encoding="utf-8").strip()
+        if stored:
+            return stored
+    value = secrets.token_urlsafe(24)
+    runs_root.mkdir(parents=True, exist_ok=True)
+    path.write_text(value + "\n", encoding="utf-8")
+    return value
 
 
 class _Handler(BaseHTTPRequestHandler):
@@ -514,10 +534,18 @@ class _Handler(BaseHTTPRequestHandler):
         if not _UI_PATH.is_file():
             self._error("UI asset missing", HTTPStatus.NOT_FOUND)
             return
-        body = _UI_PATH.read_bytes()
+        body = _UI_PATH.read_text(encoding="utf-8")
+        injection = (
+            f"<script>window.__UB_CONSOLE_TOKEN__={json.dumps(self.console.token)};</script>"
+        )
+        if "<body>" in body:
+            body = body.replace("<body>", "<body>" + injection, 1)
+        else:
+            body = injection + body
+        payload = body.encode("utf-8")
         self.send_response(HTTPStatus.OK)
         self.send_header("Content-Type", "text/html; charset=utf-8")
-        self.send_header("Content-Length", str(len(body)))
+        self.send_header("Content-Length", str(len(payload)))
         self.send_header("Cache-Control", "no-store")
         self.send_header("X-Frame-Options", "DENY")
         if remember_session:
@@ -528,7 +556,7 @@ class _Handler(BaseHTTPRequestHandler):
             "connect-src 'self'; img-src 'self' data:",
         )
         self.end_headers()
-        self.wfile.write(body)
+        self.wfile.write(payload)
 
     def _serve_file(self, path: Path) -> None:
         content_type = mimetypes.guess_type(path.name)[0] or "application/octet-stream"
@@ -673,10 +701,11 @@ def serve_console(
     open_browser: bool = True,
     token: str | None = None,
 ) -> None:
-    server = ConsoleServer(app, port=port, token=token)
+    resolved = resolve_console_token(app.runs_root, token)
+    server = ConsoleServer(app, port=port, token=resolved)
     url = server.url
     print(f"Universal Browser 本地控制台: {url}")
-    print("若浏览器未自动打开，请复制上面整行链接到 Chrome（不要只输入 127.0.0.1）。")
-    print("令牌每次启动都会变；不要用上次保存的旧链接。")
-    print("仅本机可访问；关闭请按 Ctrl+C。")
+    print("说明：token 是本机控制台密钥（不是业务密码），保存在 runs\\.console-token。")
+    print("请用上面整行链接打开；若未自动弹出浏览器，复制到 Chrome 地址栏即可。")
+    print("仅本机可访问；关闭黑色窗口即停止服务。")
     server.serve_forever(open_browser=open_browser)
