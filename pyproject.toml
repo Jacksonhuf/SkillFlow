@@ -7,7 +7,7 @@ name = "universal-browser-skill"
 version = "0.3.1"
 description = "A template-driven, validation-first browser skill for a user's real Chrome session"
 readme = "README.md"
-requires-python = ">=3.12"
+requires-python = ">=3.11"
 license = { text = "MIT" }
 dependencies = [
   "pydantic>=2.10,<3",

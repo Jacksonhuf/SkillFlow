@@ -26,11 +26,15 @@ def _skill_root() -> Path:
 
 def _bootstrap() -> None:
     # This guard must stay valid syntax on old interpreters so the message is actually shown.
-    if sys.version_info < (3, 12):  # noqa: UP036
+    if sys.version_info < (3, 11):  # noqa: UP036
         current = "{}.{}".format(sys.version_info[0], sys.version_info[1])  # noqa: UP032
         print(
-            "需要 Python 3.12 或更高版本（当前 " + current + "）。"
-            "请到 https://www.python.org/downloads/ 安装后重试。",
+            "需要 Python 3.11 或更高版本（当前 " + current + "）。"
+            "请到 https://www.python.org/downloads/ 安装 3.12（推荐）后重试。",
+            file=sys.stderr,
+        )
+        print(
+            "Windows 已装多版本时可在技能目录执行： py -3.12 scripts\\invoke.py ui",
             file=sys.stderr,
         )
         raise SystemExit(2)
