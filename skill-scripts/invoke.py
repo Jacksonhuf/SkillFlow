@@ -99,7 +99,12 @@ def main(argv: list[str] | None = None) -> int:
     resume_p.add_argument("--var", action="append", default=[])
 
     ui_p = sub.add_parser("ui", help="Open the local web console (127.0.0.1 only)")
-    ui_p.add_argument("--port", type=int, default=8765, help="Port (0 = random free port)")
+    ui_p.add_argument(
+        "--port",
+        type=int,
+        default=8771,
+        help="Port (default 8771; legacy 8765 is cleared on start; 0 = random)",
+    )
     ui_p.add_argument("--no-browser", action="store_true", help="Do not open a browser tab")
 
     args = parser.parse_args(argv)
