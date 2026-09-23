@@ -38,9 +38,15 @@ echo Starting Universal Browser console on port 8771...
 echo Do NOT use old http://127.0.0.1:8765/ tabs - they may still ask for a token.
 echo Keep this window open while you use the console. Close it to stop.
 echo Using: %PYCMD%
-%PYCMD% "%INVOKE%" ui %*
-if errorlevel 1 (
+%PYCMD% -u "%INVOKE%" ui %*
+set "UBERR=%ERRORLEVEL%"
+if not "%UBERR%"=="0" (
   echo.
-  echo The console stopped with an error. See the message above.
+  echo The console stopped with error code %UBERR%.
+  echo Check runs\console-start.log in this folder for details.
+  echo.
+  echo If the log mentions port conflict, close ALL black windows and try again.
+  echo Or run manually: %PYCMD% -u "%INVOKE%" ui --port 0
   pause
+  exit /b %UBERR%
 )

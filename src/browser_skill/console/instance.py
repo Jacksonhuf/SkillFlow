@@ -373,7 +373,7 @@ def ensure_loopback_port_free(host: str, port: int) -> PriorInstanceResult:
 
 
 def prepare_console_listen(host: str, port: int) -> PriorInstanceResult:
-    """Kill stale consoles on legacy ports and other invoke.py ui processes, then take `port`."""
+    """Clear legacy loopback ports, then bind ``port`` (never raises)."""
     if os.environ.get("UNIVERSAL_BROWSER_CONSOLE_KEEP_OLD", "").strip().lower() in {
         "1",
         "true",
@@ -382,28 +382,27 @@ def prepare_console_listen(host: str, port: int) -> PriorInstanceResult:
         return PriorInstanceResult(stopped=False)
 
     notes: list[str] = []
-    my_pid = os.getpid()
-    for legacy_port in LEGACY_CONSOLE_PORTS:
-        if legacy_port == port:
-            continue
-        if not _pids_listening_on_loopback(legacy_port) and not _is_legacy_console_at(legacy_port):
-            continue
-        prior = stop_prior_console_on_port(host, legacy_port)
-        if prior.message:
-            notes.append(prior.message)
+    try:
+        for legacy_port in LEGACY_CONSOLE_PORTS:
+            if legacy_port == port:
+                continue
+            if not _pids_listening_on_loopback(legacy_port) and not _is_legacy_console_at(
+                legacy_port
+            ):
+                continue
+            prior = stop_prior_console_on_port(host, legacy_port)
+            if prior.message:
+                notes.append(prior.message)
 
-    others = kill_other_ub_console_processes(except_pid=my_pid)
-    if others:
-        notes.append(
-            "已结束本机其它 Universal Browser 控制台进程 "
-            f"（PID {', '.join(str(p) for p in others)}）。"
+        main = stop_prior_console_on_port(host, port)
+        if notes:
+            combined = " ".join(n for n in notes if n)
+            if main.message:
+                combined = main.message + " " + combined
+            return PriorInstanceResult(stopped=main.stopped, message=combined.strip())
+        return main
+    except Exception as exc:
+        return PriorInstanceResult(
+            stopped=False,
+            message=f"清理旧控制台时跳过（{exc}）。将继续尝试启动。",
         )
-        time.sleep(0.3)
-
-    main = stop_prior_console_on_port(host, port)
-    if notes:
-        combined = " ".join(n for n in notes if n)
-        if main.message:
-            combined = main.message + " " + combined
-        return PriorInstanceResult(stopped=main.stopped or bool(others), message=combined.strip())
-    return main

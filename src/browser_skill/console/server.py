@@ -668,18 +668,24 @@ def serve_console(
     port: int = DEFAULT_CONSOLE_PORT,
     open_browser: bool = True,
 ) -> None:
+    def _out(message: str) -> None:
+        try:
+            print(message)
+        except UnicodeEncodeError:
+            print(message.encode("ascii", errors="replace").decode("ascii"))
+
     server = ConsoleServer(app, port=port)
     url = server.url
-    print(f"Universal Browser 本地控制台 v{__version__}: {url}")
+    _out(f"Universal Browser console v{__version__}: {url}")
     if server.prior_instance_note:
-        print(server.prior_instance_note)
+        _out(server.prior_instance_note)
     if server.port_fallback_note:
-        print(server.port_fallback_note)
+        _out(server.port_fallback_note)
     if _is_legacy_console_at(8765):
-        print(
-            "【重要】旧控制台仍在 http://127.0.0.1:8765/（会出现「令牌/未授权」）。"
-            "请不要再打开 8765，只使用上面这一行新地址。"
+        _out(
+            "IMPORTANT: Legacy token console still on http://127.0.0.1:8765/ — do NOT use it. "
+            f"Use ONLY the URL above ({url})."
         )
-    print("无需 token；仅本机可访问。页面右上角应显示版本号。")
-    print("关闭黑色窗口即停止服务。")
+    _out("No token required. Page header should show the version number.")
+    _out("Close this window to stop the console.")
     server.serve_forever(open_browser=open_browser)
