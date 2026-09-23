@@ -5,7 +5,7 @@ import shutil
 import zipfile
 from pathlib import Path
 
-_PACKAGE_VERSION = "0.3.2"
+_PACKAGE_VERSION = "0.3.3"
 _SKILL_ID = "universal-browser"
 
 
@@ -60,6 +60,13 @@ def _runtime_ignore(_directory: str, names: list[str]) -> set[str]:
     return {name for name in names if name in {"__pycache__", ".mypy_cache", "tests"}}
 
 
+def _copy_windows_batch(source: Path, target: Path) -> None:
+    """Copy a .bat/.cmd file with CRLF so cmd.exe on Windows does not mis-parse lines."""
+    text = source.read_text(encoding="utf-8")
+    text = text.replace("\r\n", "\n").replace("\r", "\n").replace("\n", "\r\n")
+    target.write_bytes(text.encode("utf-8"))
+
+
 def sync_full_skill_tree(
     destination: Path,
     *,
@@ -104,15 +111,22 @@ def sync_full_skill_tree(
         shutil.copytree(scripts_src, scripts_dest)
         (scripts_dest / "invoke.py").chmod(0o755)
         (scripts_dest / "setup.sh").chmod(0o755)
+        for batch_name in ("invoke.bat", "open-console.bat"):
+            batch_src = scripts_src / batch_name
+            if batch_src.is_file():
+                _copy_windows_batch(batch_src, scripts_dest / batch_name)
         # Double-click launchers live at the skill root so users never open scripts/.
         for launcher in ("open-console.bat", "open-console.sh"):
-            source = scripts_dest / launcher
+            source = scripts_src / launcher
             if source.is_file():
                 target = skill_dir / launcher
-                shutil.copy2(source, target)
-                if launcher.endswith(".sh"):
-                    source.chmod(0o755)
+                if launcher.endswith(".bat"):
+                    _copy_windows_batch(source, target)
+                else:
+                    shutil.copy2(source, target)
                     target.chmod(0o755)
+        if (scripts_dest / "open-console.sh").is_file():
+            (scripts_dest / "open-console.sh").chmod(0o755)
 
     quickstart = base / "docs" / "QUICKSTART.zh.md"
     if quickstart.exists():
