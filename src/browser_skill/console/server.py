@@ -41,7 +41,11 @@ from browser_skill.browser.auto_engine import (
 from browser_skill.browser.chrome_use import ChromeUseAdapter
 from browser_skill.browser.factory import build_adapter
 from browser_skill.browser.playwright_adapter import PlaywrightAdapter
-from browser_skill.console.instance import ensure_loopback_port_free
+from browser_skill.console.instance import (
+    DEFAULT_CONSOLE_PORT,
+    _is_legacy_console_at,
+    prepare_console_listen,
+)
 from browser_skill.errors import ErrorCode, SkillError
 from browser_skill.models import SkillRequest, SkillResponse
 from browser_skill.outputs.paths import contained_path, safe_filename
@@ -183,7 +187,7 @@ class ConsoleServer:
         app: BrowserSkillApp,
         *,
         host: str = "127.0.0.1",
-        port: int = 8765,
+        port: int = DEFAULT_CONSOLE_PORT,
     ) -> None:
         if host not in {"127.0.0.1", "localhost", "::1"}:
             raise SkillError(ErrorCode.ACTION_NOT_ALLOWED, "Console only binds to loopback")
@@ -192,7 +196,7 @@ class ConsoleServer:
         self.prior_instance_note: str | None = None
         self.port_fallback_note: str | None = None
         if port != 0:
-            prior = ensure_loopback_port_free(host, port)
+            prior = prepare_console_listen(host, port)
             if prior.message:
                 self.prior_instance_note = prior.message
         try:
@@ -200,7 +204,6 @@ class ConsoleServer:
         except OSError as exc:
             if port == 0:
                 raise
-            # Another non-UB program owns the port — avoid serving stale UI on 8765.
             self.port_fallback_note = (
                 f"端口 {port} 已被其他程序占用（{exc.strerror}），已改用随机端口。"
                 "若仍看到旧页面，请关闭占用该端口的程序或旧标签页。"
@@ -509,7 +512,13 @@ class _Handler(BaseHTTPRequestHandler):
         if not _UI_PATH.is_file():
             self._error("UI asset missing", HTTPStatus.NOT_FOUND)
             return
-        payload = _UI_PATH.read_bytes()
+        body = _UI_PATH.read_text(encoding="utf-8")
+        stamp = (
+            f'<script>window.__UB_EXPECTED_VERSION__={json.dumps(__version__)};'
+            f"window.__UB_CONSOLE_PORT__={self.console.port};</script>"
+        )
+        body = body.replace("<body>", "<body>" + stamp, 1) if "<body>" in body else stamp + body
+        payload = body.encode("utf-8")
         self.send_response(HTTPStatus.OK)
         self.send_header("Content-Type", "text/html; charset=utf-8")
         self.send_header("Content-Length", str(len(payload)))
@@ -656,7 +665,7 @@ class _Handler(BaseHTTPRequestHandler):
 def serve_console(
     app: BrowserSkillApp,
     *,
-    port: int = 8765,
+    port: int = DEFAULT_CONSOLE_PORT,
     open_browser: bool = True,
 ) -> None:
     server = ConsoleServer(app, port=port)
@@ -666,6 +675,11 @@ def serve_console(
         print(server.prior_instance_note)
     if server.port_fallback_note:
         print(server.port_fallback_note)
-    print("无需 token；仅本机可访问。若页面仍要求令牌或版本不对，关掉旧标签页后打开上面地址。")
+    if _is_legacy_console_at(8765):
+        print(
+            "【重要】旧控制台仍在 http://127.0.0.1:8765/（会出现「令牌/未授权」）。"
+            "请不要再打开 8765，只使用上面这一行新地址。"
+        )
+    print("无需 token；仅本机可访问。页面右上角应显示版本号。")
     print("关闭黑色窗口即停止服务。")
     server.serve_forever(open_browser=open_browser)

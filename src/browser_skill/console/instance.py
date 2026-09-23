@@ -16,6 +16,11 @@ from dataclasses import dataclass
 from http import HTTPStatus
 from typing import Any
 
+DEFAULT_CONSOLE_PORT = 8771
+"""Default loopback port for new consoles (8765 kept for legacy clean-up only)."""
+
+LEGACY_CONSOLE_PORTS = (8765,)
+
 
 @dataclass(frozen=True)
 class PriorInstanceResult:
@@ -180,8 +185,14 @@ def _wait_port_free(port: int, *, attempts: int = 40) -> bool:
 
 
 def _terminate_pid(pid: int) -> None:
+    if pid in {0, 4}:
+        return
     if sys.platform == "win32":
-        subprocess.run(["taskkill", "/PID", str(pid), "/F"], capture_output=True, timeout=10)
+        subprocess.run(
+            ["taskkill", "/PID", str(pid), "/F", "/T"],
+            capture_output=True,
+            timeout=15,
+        )
         return
     try:
         os.kill(pid, signal.SIGTERM)
@@ -193,6 +204,67 @@ def _terminate_pid(pid: int) -> None:
         time.sleep(0.1)
     with contextlib.suppress(OSError):
         os.kill(pid, signal.SIGKILL)
+
+
+def _find_ub_console_pids(*, except_pid: int | None = None) -> list[int]:
+    pids: list[int] = []
+    if sys.platform == "win32":
+        try:
+            output = subprocess.check_output(
+                [
+                    "powershell",
+                    "-NoProfile",
+                    "-Command",
+                    "Get-CimInstance Win32_Process | "
+                    "Where-Object { $_.CommandLine -and "
+                    "($_.CommandLine -like '*invoke.py*') -and "
+                    "($_.CommandLine -match ' ui(\\s|$)') } | "
+                    "Select-Object -ExpandProperty ProcessId",
+                ],
+                text=True,
+                errors="replace",
+                timeout=20,
+            )
+            pids = [int(line.strip()) for line in output.splitlines() if line.strip().isdigit()]
+        except subprocess.SubprocessError:
+            return []
+    else:
+        try:
+            output = subprocess.check_output(
+                ["ps", "-ax", "-o", "pid=,command="],
+                text=True,
+                errors="replace",
+                timeout=10,
+            )
+        except subprocess.SubprocessError:
+            return []
+        for line in output.splitlines():
+            parts = line.strip().split(None, 1)
+            if len(parts) != 2:
+                continue
+            try:
+                pid = int(parts[0])
+            except ValueError:
+                continue
+            cmd = parts[1]
+            if _is_ub_console_commandline(cmd):
+                pids.append(pid)
+    if except_pid is not None:
+        pids = [pid for pid in pids if pid != except_pid]
+    return sorted(set(pids))
+
+
+def kill_other_ub_console_processes(*, except_pid: int | None = None) -> list[int]:
+    stopped: list[int] = []
+    for pid in _find_ub_console_pids(except_pid=except_pid):
+        _terminate_pid(pid)
+        stopped.append(pid)
+    return stopped
+
+
+def _is_legacy_console_at(port: int) -> bool:
+    base = f"http://127.0.0.1:{port}/"
+    return _legacy_token_console_at(base) or _legacy_ui_at(base)
 
 
 def _terminate_listeners(port: int, *, except_pid: int | None = None) -> list[int]:
@@ -245,7 +317,13 @@ def stop_prior_console_on_port(host: str, port: int) -> PriorInstanceResult:
             ),
         )
 
-    stopped_pids = _terminate_listeners(port, except_pid=my_pid)
+    stopped_pids: list[int] = []
+    for _attempt in range(5):
+        stopped_pids = _terminate_listeners(port, except_pid=my_pid)
+        if _wait_port_free(port, attempts=30):
+            break
+        time.sleep(0.25)
+
     if _wait_port_free(port):
         if legacy:
             return PriorInstanceResult(
@@ -292,3 +370,40 @@ def ensure_loopback_port_free(host: str, port: int) -> PriorInstanceResult:
     }:
         return PriorInstanceResult(stopped=False)
     return stop_prior_console_on_port(host, port)
+
+
+def prepare_console_listen(host: str, port: int) -> PriorInstanceResult:
+    """Kill stale consoles on legacy ports and other invoke.py ui processes, then take `port`."""
+    if os.environ.get("UNIVERSAL_BROWSER_CONSOLE_KEEP_OLD", "").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+    }:
+        return PriorInstanceResult(stopped=False)
+
+    notes: list[str] = []
+    my_pid = os.getpid()
+    for legacy_port in LEGACY_CONSOLE_PORTS:
+        if legacy_port == port:
+            continue
+        if not _pids_listening_on_loopback(legacy_port) and not _is_legacy_console_at(legacy_port):
+            continue
+        prior = stop_prior_console_on_port(host, legacy_port)
+        if prior.message:
+            notes.append(prior.message)
+
+    others = kill_other_ub_console_processes(except_pid=my_pid)
+    if others:
+        notes.append(
+            "已结束本机其它 Universal Browser 控制台进程 "
+            f"（PID {', '.join(str(p) for p in others)}）。"
+        )
+        time.sleep(0.3)
+
+    main = stop_prior_console_on_port(host, port)
+    if notes:
+        combined = " ".join(n for n in notes if n)
+        if main.message:
+            combined = main.message + " " + combined
+        return PriorInstanceResult(stopped=main.stopped or bool(others), message=combined.strip())
+    return main

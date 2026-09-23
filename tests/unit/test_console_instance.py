@@ -133,7 +133,7 @@ def test_stop_prior_clears_legacy_token_console(monkeypatch: pytest.MonkeyPatch)
     monkeypatch.setattr(console_instance, "_legacy_token_console_at", lambda _base: True)
     monkeypatch.setattr(console_instance, "_legacy_ui_at", lambda _base: False)
     monkeypatch.setattr(console_instance, "_meta_at", lambda _base: None)
-    monkeypatch.setattr(console_instance, "_wait_port_free", lambda _port: True)
+    monkeypatch.setattr(console_instance, "_wait_port_free", lambda _port, **_: True)
     stopped: list[int] = []
     monkeypatch.setattr(console_instance, "_terminate_pid", lambda pid: stopped.append(pid))
 

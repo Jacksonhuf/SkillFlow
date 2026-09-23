@@ -303,7 +303,7 @@ def local_console(
     root: Annotated[Path, typer.Option("--root")] = Path("templates"),
     runs_root: Annotated[Path, typer.Option("--runs-root")] = Path("runs"),
     executable: Annotated[str, typer.Option(help="chrome-use executable")] = "chrome-use",
-    port: Annotated[int, typer.Option(help="Port (0 = random free port)")] = 8765,
+    port: Annotated[int, typer.Option(help="Port (default 8771; 0 = random)")] = 8771,
     no_browser: Annotated[bool, typer.Option("--no-browser")] = False,
 ) -> None:
     """Open the local web console (binds to 127.0.0.1 only)."""

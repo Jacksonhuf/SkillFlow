@@ -29,8 +29,13 @@ pause
 exit /b 2
 
 :ub_found
-echo Starting Universal Browser console... A browser tab opens automatically.
-echo If an older black window is still running, it will be closed so you get the new version.
+echo Closing stale console on port 8765 if any...
+for /f "tokens=5" %%p in ('netstat -ano ^| findstr ":8765" ^| findstr "LISTENING"') do (
+  if not "%%p"=="0" taskkill /F /T /PID %%p >nul 2>&1
+)
+ping -n 2 127.0.0.1 >nul
+echo Starting Universal Browser console on port 8771...
+echo Do NOT use old http://127.0.0.1:8765/ tabs - they may still ask for a token.
 echo Keep this window open while you use the console. Close it to stop.
 echo Using: %PYCMD%
 %PYCMD% "%INVOKE%" ui %*

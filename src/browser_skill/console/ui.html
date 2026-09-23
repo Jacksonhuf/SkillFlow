@@ -158,6 +158,29 @@
 (function () {
   const $ = (id) => document.getElementById(id);
   const esc = (s) => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+
+  async function assertLiveConsole() {
+    const res = await fetch('/api/meta');
+    if (res.status === 401) {
+      throw new Error(
+        '你打开的是旧版控制台地址（8765），或浏览器缓存了旧页面。请关闭所有 127.0.0.1 标签页，'
+        + '只使用黑色窗口里打印的 http://127.0.0.1:8771/ 地址（带 ?v= 版本号）。'
+      );
+    }
+    const body = await res.json();
+    const ver = body && body.meta && body.meta.version;
+    const expected = window.__UB_EXPECTED_VERSION__;
+    if (expected && ver && ver !== expected) {
+      throw new Error('控制台版本不匹配（页面 ' + ver + '，期望 ' + expected + '）。请关闭旧标签页，从黑色窗口复制新地址打开。');
+    }
+  }
+
+  function showFatal(msg) {
+    document.body.innerHTML = '<main style="max-width:720px;margin:48px auto;padding:24px;font-family:sans-serif">'
+      + '<h2>无法加载控制台</h2><p>' + esc(msg) + '</p>'
+      + '<p>请关闭本页，回到<strong>最新</strong>黑色窗口，复制其中的 <code>http://127.0.0.1:8771/...</code> 地址到浏览器打开。</p></main>';
+  }
+
   const fmtState = (s) => { const cls = s === 'COMPLETED' ? 'ok' : (s === 'PARTIAL' || s === 'WAIT_USER_AUTH') ? 'warn' : (s === 'FAILED' || s === 'CANCELLED') ? 'bad' : ''; return `<span class="badge ${cls}">${esc(s || '-')}</span>`; };
 
   async function api(path, opts = {}) {
@@ -406,9 +429,18 @@
     const m = await api('/api/meta'); $('metaOut').classList.remove('hidden'); $('metaOut').textContent = JSON.stringify(m.meta, null, 2);
   };
 
-  loadTemplates();
-  loadSetup();
-  api('/api/meta').then(m => { if (m && m.meta && m.meta.version) $('verTag').textContent = '· v' + m.meta.version; }).catch(() => {});
+  async function boot() {
+    try {
+      await assertLiveConsole();
+    } catch (e) {
+      showFatal(e.message);
+      return;
+    }
+    loadTemplates();
+    loadSetup();
+    api('/api/meta').then(m => { if (m && m.meta && m.meta.version) $('verTag').textContent = '· v' + m.meta.version; }).catch(() => {});
+  }
+  boot();
 })();
 </script>
 </body>

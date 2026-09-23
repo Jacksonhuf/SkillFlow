@@ -21,7 +21,7 @@
 
 ## 本地界面（可选，同一引擎）
 
-- 用户希望「用界面操作」时，告知运行 `py scripts\invoke.py ui` 或双击 `open-console.bat`，浏览器打开 `http://127.0.0.1:8765/`（仅本机，无 token）。
+- 用户希望「用界面操作」时，告知运行 `py scripts\invoke.py ui` 或双击 `open-console.bat`，浏览器打开 `http://127.0.0.1:8771/`（仅本机，无 token）。
 - 界面里的运行、Teach、续跑与 Agent 调用的是同一套 `BrowserSkillApp`，`run_id` 与 `runs/` 产物互通。
 - 界面仅绑定 127.0.0.1，不要暴露到公网或代理到外网。
 
