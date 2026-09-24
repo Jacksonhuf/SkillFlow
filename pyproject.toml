@@ -58,5 +58,9 @@ module = ["yaml"]
 ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
+module = ["playwright", "playwright.*"]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
 module = ["browser_skill.cli"]
 ignore_errors = true
