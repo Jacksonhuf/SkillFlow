@@ -601,6 +601,78 @@ class TemplateDraftInput(StrictModel):
     page_hints: list[str] = Field(default_factory=list, max_length=20)
 
 
+class UrlVariableSuggestion(StrictModel):
+    """A URL path segment / query value that looks like the business id of the page."""
+
+    name: str = Field(pattern=r"^[a-z][a-z0-9_]{0,63}$")
+    sample: str
+    position: str
+    """``path[<index>]`` or ``query:<key>``."""
+    confidence: float = Field(ge=0.0, le=1.0)
+    selected: bool = False
+
+
+class UrlAnalysis(StrictModel):
+    url: str
+    host: str
+    template_suggestion: str
+    variables: list[UrlVariableSuggestion] = Field(default_factory=list)
+
+
+ProbeSource = Literal["url", "dom", "table", "network"]
+
+
+class ProbeFieldCandidate(StrictModel):
+    key: str = Field(pattern=r"^[a-z][a-z0-9_]{1,63}$")
+    name: str = Field(min_length=1)
+    sample: str = ""
+    source: ProbeSource
+    strategy: Literal["semantic", "label_value", "table_header"] = "label_value"
+    type: FieldType = FieldType.STRING
+    confidence: float = Field(default=0.5, ge=0.0, le=1.0)
+    endpoint_hint: str | None = Field(default=None, max_length=500)
+    json_path: str | None = Field(default=None, max_length=500)
+    aliases: list[str] = Field(default_factory=list)
+
+
+class ProbeAttachmentCandidate(StrictModel):
+    key: str = Field(pattern=r"^[a-z][a-z0-9_]{1,63}$")
+    name: str = Field(min_length=1)
+    count: int = Field(default=1, ge=1)
+    types: list[str] = Field(default_factory=list)
+    sample_href: str | None = None
+    confidence: float = Field(default=0.5, ge=0.0, le=1.0)
+
+
+class UrlProbeReport(StrictModel):
+    url_analysis: UrlAnalysis
+    page_title: str = ""
+    auth_state: AuthState = AuthState.UNKNOWN
+    fields: list[ProbeFieldCandidate] = Field(default_factory=list)
+    attachments: list[ProbeAttachmentCandidate] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+    network_exchanges: int = Field(default=0, ge=0)
+
+
+class ProbeDraftInput(StrictModel):
+    """What the wizard sends back after the user ticked fields/attachments from a probe."""
+
+    template_id: str = Field(pattern=r"^[a-z][a-z0-9_]{2,63}$")
+    name: str = Field(min_length=1, max_length=100)
+    description: str = Field(default="", max_length=300)
+    sample_url: HttpUrl
+    url_template: str | None = Field(default=None, max_length=2000)
+    driver_variable: str = Field(pattern=r"^[a-z][a-z0-9_]{0,63}$")
+    driver_prompt: str | None = Field(default=None, max_length=200)
+    driver_regex: str | None = Field(default=None, max_length=200)
+    fields: list[ProbeFieldCandidate] = Field(min_length=1)
+    attachments: list[ProbeAttachmentCandidate] = Field(default_factory=list)
+    record_key: list[str] = Field(default_factory=list)
+    required_keys: list[str] = Field(default_factory=list)
+    run: dict[str, Any] = Field(default_factory=dict)
+    page_hints: list[str] = Field(default_factory=list, max_length=20)
+
+
 class SampleInference(StrictModel):
     fields: list[FieldSpec] = Field(min_length=1)
     attachment_columns: list[str] = Field(default_factory=list)
@@ -652,6 +724,8 @@ class SkillRequest(StrictModel):
         "publish",
         "repair",
         "probe",
+        "probe_url",
+        "create_from_probe",
         "validate_acceptance",
     ] = "start"
     selector: str | int | None = None
@@ -660,8 +734,10 @@ class SkillRequest(StrictModel):
     version: int | None = Field(default=None, ge=1)
     variables: dict[str, Any] = Field(default_factory=dict)
     current_url: str | None = None
+    url: str | None = Field(default=None, max_length=2000)
     sample_path: Path | None = None
     draft: TemplateDraftInput | None = None
+    probe_draft: ProbeDraftInput | None = None
     learned: LearnedSpec | None = None
     confirmed: bool = False
     acceptance_bundle_path: Path | None = None

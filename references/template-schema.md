@@ -59,6 +59,17 @@ See `templates/inventory_feedback/1.yaml` for a complete example and
   first unfinished item. Events: `item_started`, `item_finished`, `item_failed`,
   `item_deferred`, `batch_finished`. `concurrency` is accepted but items currently run
   sequentially.
+- Detail-page field acquisition order: structured elements/records → learned network mapping
+  (`preferred_source: network`, `endpoint_hint` may contain `{variable}` placeholders such as
+  `/api/orders/{order_no}`, `json_path` like `$.data.amount`) → label/value pairs parsed from
+  the page text (`订单号：ORD-1`, tab-separated cells, or a label line followed by a value line).
+- Creating one from a page: `probe_url` (`{action: "probe_url", url}`) opens the URL in the
+  user's session and returns `url_analysis` (suggested `url_template` + variables with
+  confidence), `fields` (source `url | dom | table | network`, sample value, type, confidence)
+  and `attachments` (grouped by name, count, types). `create_from_probe`
+  (`{action: "create_from_probe", probe_draft}`) compiles the ticked candidates into a
+  `detail_batch` draft: driver variable `multiple: true`, record key = driver, attachments
+  named `{driver}_{original_name}`, learned mappings for network/dom candidates.
 
 The host Agent platform renders template selection and variable collection. Template files must not
 contain platform-specific UI component identifiers.

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import re
 from pathlib import Path
 from typing import Any
 
@@ -62,10 +63,10 @@ class AttachmentDownloader:
                         )
                     )
                     continue
-                original = safe_filename(f"{spec.key}.bin")
                 element = self._find_element(snapshot, spec.semantic, record_key)
-                if element and element.get("filename"):
-                    original = safe_filename(str(element["filename"]))
+                original = safe_filename(
+                    self._original_name(element) or f"{spec.key}.bin", fallback=f"{spec.key}.bin"
+                )
                 values = {**(record or {}), "original_name": original}
                 name = spec.filename_pattern
                 for key, value in values.items():
@@ -124,6 +125,22 @@ class AttachmentDownloader:
             await adapter.list_downloads()
             await asyncio.sleep(0.15)
         return path.is_file() and path.stat().st_size > 0
+
+    @staticmethod
+    def _original_name(element: dict[str, Any] | None) -> str | None:
+        """Best-effort original filename: explicit ``filename``, else an href/text with a suffix."""
+        if not element:
+            return None
+        if element.get("filename"):
+            return str(element["filename"])
+        for key in ("text", "name", "title", "href"):
+            raw = str(element.get(key) or "").strip()
+            if not raw:
+                continue
+            tail = raw.split("?", 1)[0].split("#", 1)[0].rstrip("/").rsplit("/", 1)[-1]
+            if re.search(r"\.[A-Za-z0-9]{2,5}$", tail):
+                return tail
+        return None
 
     @staticmethod
     def _find_element(

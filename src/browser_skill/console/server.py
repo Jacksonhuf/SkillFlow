@@ -62,6 +62,7 @@ _SYNC_ACTIONS = {
     "metrics",
     "analyze_sample",
     "create",
+    "create_from_probe",
     "publish",
     "validate_acceptance",
 }

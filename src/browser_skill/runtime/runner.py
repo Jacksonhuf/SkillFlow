@@ -9,7 +9,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from browser_skill.acquire.network import NetworkExtractor, NetworkRecordSource
+from browser_skill.acquire.network import NetworkExtractor, NetworkRecordSource, parse_exchanges
 from browser_skill.acquire.vision import NullVisionProvider, VisionFallback, VisionProvider
 from browser_skill.browser.base import BrowserAdapter
 from browser_skill.errors import ErrorCode, SkillError
@@ -27,6 +27,7 @@ from browser_skill.models import (
     Checkpoint,
     DownloadedFile,
     DownloadStatus,
+    NetworkExchange,
     RunContext,
     RunMode,
     RunState,
@@ -503,7 +504,12 @@ class Runner:
         snapshot = await self._apply_workflow(
             template, values, snapshot, dialogs_supported=capabilities.dialogs
         )
-        records = extract_item_records(template, driver, item.value, snapshot)
+        exchanges: list[NetworkExchange] = []
+        if capabilities.network and NetworkExtractor.network_field_mappings(template):
+            listing = await self.adapter.network_requests()
+            if listing.ok:
+                exchanges = parse_exchanges(listing.data)
+        records = extract_item_records(template, driver, item.value, snapshot, exchanges)
         files: list[DownloadedFile] = []
         if template.target.attachments and records:
             files = await self.downloader.collect(
@@ -658,6 +664,9 @@ class Runner:
                 if current.url:
                     self.policy.require_url_allowed(current.url, template)
         return current
+
+    async def ensure_browser_ready(self) -> BrowserCapabilities:
+        return await self._ensure_browser_ready()
 
     async def _ensure_browser_ready(self) -> BrowserCapabilities:
         status = await self.adapter.status()
