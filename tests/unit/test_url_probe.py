@@ -161,13 +161,78 @@ def test_probe_merges_dom_network_and_url_candidates() -> None:
     assert by_key["updated_at"].type == FieldType.DATE
     assert by_key["tags"].sample == "a, b"
     assert "lines" not in by_key  # arrays of objects are sub-records, out of P3 scope
-    assert "code" in by_key  # low-value keys are still offered; the user unticks them
+    assert "code" not in by_key  # response-envelope keys are never offered
+    # recommended = URL variable, colon pairs from the page, JSON values visible on the page
+    assert {k for k, v in by_key.items() if v.recommended} == {
+        "order_no",
+        "customer_name",
+        "amount",
+        "updated_at",
+    }
+    assert by_key["tags"].recommended is False  # JSON-only value: folded into "more"
+    # recommended candidates come first (after the URL variable), extras last
+    recommended_flags = [item.recommended for item in report.fields]
+    assert recommended_flags == sorted(recommended_flags, reverse=True)
     assert [item.name for item in report.attachments] == ["合同", "发票"]
     invoice = report.attachments[1]
     assert invoice.count == 2
     assert invoice.types == ["jpg", "pdf"]
     assert invoice.key == "invoice"
     assert any("展开" in warning for warning in report.warnings)
+
+
+def test_probe_ignores_responses_that_do_not_belong_to_the_record() -> None:
+    record = {
+        "url": "https://portal.example.com/api/orders/ORD-2024-0917",
+        "content_type": "application/json",
+        "body": {"code": 0, "data": {"amount": 1200.0, "remark": "急单"}},
+    }
+    menu = {
+        "url": "https://portal.example.com/api/menu",
+        "content_type": "application/json",
+        "body": {"code": 0, "data": {"menuName": "订单管理", "permission": "order:view"}},
+    }
+    me = {
+        "url": "https://portal.example.com/api/me",
+        "content_type": "application/json",
+        "body": {"data": {"userName": "operator", "roleName": "财务"}, "traceId": "abc"},
+    }
+    adapter = FakeBrowserAdapter(
+        {
+            "snapshot": [_detail_snapshot()],
+            "network": [CommandResult(ok=True, operation="network", data=[record, menu, me])],
+        }
+    )
+    caps = BrowserCapabilities(snapshot=True, network=True)
+
+    report = asyncio.run(UrlProber().probe(adapter, SAMPLE_URL, capabilities=caps))
+
+    names = {item.name for item in report.fields}
+    assert "remark" in names  # from the response that carries the order number
+    assert not names & {"menu_name", "permission", "user_name", "role_name", "trace_id"}
+    assert report.network_exchanges == 3  # counted, just not mined for fields
+
+
+def test_probe_without_url_variable_keeps_every_response() -> None:
+    body = {"data": {"menuName": "订单管理"}}
+    exchange = {
+        "url": "https://x.example/api/menu",
+        "content_type": "application/json",
+        "body": body,
+    }
+    snapshot = _detail_snapshot(url="https://x.example/detail", elements=[])
+    adapter = FakeBrowserAdapter(
+        {
+            "snapshot": [snapshot],
+            "network": [CommandResult(ok=True, operation="network", data=[exchange])],
+        }
+    )
+    caps = BrowserCapabilities(snapshot=True, network=True)
+
+    report = asyncio.run(UrlProber().probe(adapter, "https://x.example/detail", capabilities=caps))
+
+    menu = next(item for item in report.fields if item.name == "menu_name")
+    assert menu.recommended is False
 
 
 def test_probe_without_network_capability_warns_and_uses_text() -> None:

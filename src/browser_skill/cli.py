@@ -375,22 +375,32 @@ def probe_url(
             f"  {mark} {item['name']} = {item['sample']}  [dim]{item['position']} · "
             f"{round(float(item['confidence']) * 100)}%[/dim]"
         )
-    table = Table(box=box.SIMPLE_HEAVY, title="字段候选", border_style="#6366f1")
+    table = Table(
+        box=box.SIMPLE_HEAVY, title="字段候选（✓ = 推荐，页面上可见）", border_style="#6366f1"
+    )
+    table.add_column("", justify="center")
     table.add_column("key", style="bold")
     table.add_column("名称")
     table.add_column("示例")
     table.add_column("来源", justify="center")
     table.add_column("置信度", justify="right")
-    for item in probe.get("fields") or []:
+    fields = probe.get("fields") or []
+    for item in fields:
+        recommended = bool(item.get("recommended"))
         table.add_row(
+            "[green]✓[/green]" if recommended else "[dim]·[/dim]",
             str(item["key"]),
             str(item["name"]),
             str(item.get("sample") or ""),
             str(item["source"]),
             f"{round(float(item['confidence']) * 100)}%",
+            style=None if recommended else "dim",
         )
     if table.row_count:
         console.print(table)
+        extras = sum(1 for item in fields if not item.get("recommended"))
+        if extras:
+            console.print(f"  [dim]{extras} 个候选仅来自接口返回或猜测配对，默认不建议选用。[/dim]")
     for item in probe.get("attachments") or []:
         console.print(
             f"  [cyan]附件[/cyan] {item['name']} × {item['count']}  "

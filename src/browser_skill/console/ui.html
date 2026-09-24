@@ -117,7 +117,12 @@
       <table><thead><tr><th></th><th>变量名（可改）</th><th>示例值</th><th>位置</th><th>置信度</th></tr></thead><tbody id="wzVarRows"></tbody></table>
       <label>URL 模板：运行时把 {变量} 换成每个编号；不勾选变量时需直接提供完整地址</label><input id="wzUrlTemplate">
       <h5 style="margin-top:14px">字段 <span class="muted">（勾选要导出的列；主键用于命名附件和去重）</span></h5>
+      <div class="row" style="margin:4px 0 8px"><span id="wzFieldSummary" class="muted"></span><button class="btn secondary" id="wzOnlyRec" type="button" style="padding:2px 10px">只留推荐</button><button class="btn secondary" id="wzNone" type="button" style="padding:2px 10px">全不选</button></div>
       <table><thead><tr><th></th><th>名称（可改）</th><th>示例值</th><th>来源</th><th>类型</th><th>主键</th></tr></thead><tbody id="wzFieldRows"></tbody></table>
+      <details id="wzMore" class="hidden" style="margin-top:8px"><summary class="muted" id="wzMoreSummary"></summary>
+        <p class="muted" style="margin:6px 0">这些值只出现在接口返回里、或只是根据上下行猜测的配对，多数是系统字段或噪音；确认业务上确实需要时再勾选。</p>
+        <table><thead><tr><th></th><th>名称（可改）</th><th>示例值</th><th>来源</th><th>类型</th><th>主键</th></tr></thead><tbody id="wzMoreRows"></tbody></table>
+      </details>
       <h5 style="margin-top:14px">附件</h5>
       <table><thead><tr><th></th><th>附件名（可改）</th><th>数量</th><th>类型</th></tr></thead><tbody id="wzAttRows"></tbody></table>
       <div class="row"><button class="btn" id="wzNextBtn">下一步</button><button class="btn secondary" id="wzBackBtn1">重新探测</button></div>
@@ -475,13 +480,23 @@
       <td><input data-var-name="${i}" value="${esc(v.name)}" style="max-width:200px"></td>
       <td><code>${esc(v.sample)}</code></td><td class="muted">${esc(v.position)}</td><td>${Math.round(v.confidence * 100)}%</td></tr>`).join('')
       : '<tr><td colspan="5" class="muted">地址里没有识别出编号；运行时请直接粘贴每条记录的完整地址。</td></tr>';
-    $('wzFieldRows').innerHTML = wz.fields.map((f, i) => `<tr>
+    const fieldRow = (f, i) => `<tr>
       <td><input type="checkbox" data-f-sel="${i}" ${f.selected ? 'checked' : ''} style="width:auto"></td>
       <td><input data-f-name="${i}" value="${esc(f.name)}" style="max-width:220px"></td>
       <td><code>${esc(f.sample)}</code></td>
       <td><span class="badge">${esc({ url: '地址变量', dom: '页面文字', network: '接口数据', table: '表格' }[f.source] || f.source)}</span> <span class="muted">${Math.round(f.confidence * 100)}%</span></td>
       <td class="muted">${esc(f.type)}</td>
-      <td><input type="radio" name="wzKey" data-f-key="${i}" ${f.isKey ? 'checked' : ''} style="width:auto"></td></tr>`).join('') || '<tr><td colspan="6" class="muted">没有字段候选。</td></tr>';
+      <td><input type="radio" name="wzKey" data-f-key="${i}" ${f.isKey ? 'checked' : ''} style="width:auto"></td></tr>`;
+    // Recommended candidates (visible on the page) are the main list; the rest is folded away
+    const mainRows = wz.fields.map((f, i) => f.recommended ? fieldRow(f, i) : '').join('');
+    const moreRows = wz.fields.map((f, i) => f.recommended ? '' : fieldRow(f, i)).join('');
+    const moreCount = wz.fields.filter(f => !f.recommended).length;
+    $('wzFieldRows').innerHTML = mainRows || (moreCount ? '<tr><td colspan="6" class="muted">页面文字里没有识别出「标签：值」形式的字段；请在下方「更多候选」里挑选。</td></tr>' : '<tr><td colspan="6" class="muted">没有字段候选。</td></tr>');
+    $('wzMoreRows').innerHTML = moreRows;
+    $('wzMore').classList.toggle('hidden', moreCount === 0);
+    $('wzMoreSummary').textContent = `更多候选（${moreCount} 项，默认不勾选）`;
+    const selCount = wz.fields.filter(f => f.selected).length;
+    $('wzFieldSummary').textContent = wz.fields.length ? `已勾选 ${selCount} / ${wz.fields.length} 个字段` : '';
     $('wzAttRows').innerHTML = wz.atts.map((a, i) => `<tr>
       <td><input type="checkbox" data-a-sel="${i}" ${a.selected ? 'checked' : ''} style="width:auto"></td>
       <td><input data-a-name="${i}" value="${esc(a.name)}" style="max-width:220px"></td>
@@ -489,7 +504,7 @@
     if (!$('wzUrlTemplate').dataset.edited) $('wzUrlTemplate').value = wzRenderTemplate();
     document.querySelectorAll('[data-var-sel]').forEach(el => el.onchange = () => { wz.vars[el.dataset.varSel].selected = el.checked; wzRender(); });
     document.querySelectorAll('[data-var-name]').forEach(el => el.onchange = () => { const v = wz.vars[el.dataset.varName]; const old = v.name; v.name = slug(el.value) || old; wz.fields.filter(f => f.source === 'url' && f.key === old).forEach(f => { f.key = v.name; }); wzRender(); });
-    document.querySelectorAll('[data-f-sel]').forEach(el => el.onchange = () => { wz.fields[el.dataset.fSel].selected = el.checked; });
+    document.querySelectorAll('[data-f-sel]').forEach(el => el.onchange = () => { wz.fields[el.dataset.fSel].selected = el.checked; $('wzFieldSummary').textContent = `已勾选 ${wz.fields.filter(f => f.selected).length} / ${wz.fields.length} 个字段`; });
     document.querySelectorAll('[data-f-name]').forEach(el => el.onchange = () => { wz.fields[el.dataset.fName].name = el.value.trim() || wz.fields[el.dataset.fName].name; });
     document.querySelectorAll('[data-f-key]').forEach(el => el.onchange = () => { wz.fields.forEach((f, i) => { f.isKey = String(i) === el.dataset.fKey; if (f.isKey) f.selected = true; }); wzRender(); });
     document.querySelectorAll('[data-a-sel]').forEach(el => el.onchange = () => { wz.atts[el.dataset.aSel].selected = el.checked; });
@@ -507,13 +522,22 @@
     wz.probe = p; wz.created = null; wz.testRun = null; delete $('wzUrlTemplate').dataset.edited;
     wz.vars = p.url_analysis.variables.map(v => ({ ...v }));
     const firstVar = wz.vars.find(v => v.selected);
-    let ticked = 0;
-    wz.fields = p.fields.map(f => { const sel = f.source === 'url' || (f.confidence >= 0.75 && ticked++ < 15); return { ...f, selected: sel, isKey: !!firstVar && f.source === 'url' && f.key === firstVar.name }; });
+    wz.fields = p.fields.map(f => ({ ...f, recommended: wzIsRecommended(f), isKey: !!firstVar && f.source === 'url' && f.key === firstVar.name }));
+    wzApplyRecommended();
     if (!wz.fields.some(f => f.isKey) && wz.fields.length) { wz.fields[0].isKey = true; wz.fields[0].selected = true; }
     wz.atts = p.attachments.map(a => ({ ...a, selected: true }));
-    $('wzProbeStatus').innerHTML = `<div class="notice ok">探测完成：${p.fields.length} 个字段候选、${p.attachments.length} 个附件候选${p.page_title ? ' · 页面「' + esc(p.page_title) + '」' : ''}</div>`;
+    const rec = wz.fields.filter(f => f.recommended).length, more = wz.fields.length - rec;
+    $('wzProbeStatus').innerHTML = `<div class="notice ok">探测完成：推荐 ${rec} 个字段（已勾选）${more ? '，另有 ' + more + ' 个候选折叠在「更多候选」' : ''}；${p.attachments.length} 个附件候选${p.page_title ? ' · 页面「' + esc(p.page_title) + '」' : ''}</div>`;
     wzRender(); wzShow(2);
   };
+  // Servers that predate the `recommended` flag: fall back to source/confidence.
+  function wzIsRecommended(f) {
+    if (typeof f.recommended === 'boolean') return f.recommended;
+    return f.source === 'url' || f.source === 'table' || (f.source === 'dom' && f.confidence >= 0.8);
+  }
+  function wzApplyRecommended() { wz.fields.forEach(f => { f.selected = f.recommended || f.isKey; }); }
+  $('wzOnlyRec').onclick = () => { wzApplyRecommended(); wzRender(); };
+  $('wzNone').onclick = () => { wz.fields.forEach(f => { f.selected = f.isKey; }); wzRender(); };
   $('wzBackBtn1').onclick = () => wzShow(1);
   $('wzBackBtn2').onclick = () => wzShow(2);
   $('wzNextBtn').onclick = () => {
