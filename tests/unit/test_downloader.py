@@ -85,3 +85,75 @@ def test_downloader_marks_download_failed_after_poll_budget(tmp_path: Path, temp
     assert adapter.polls == 1
     assert files[0].status == "failed"
     assert files[0].relative_path == ""
+
+
+def _multi_snapshot() -> BrowserSnapshot:
+    return BrowserSnapshot(
+        elements=[
+            {"record_key": "SN1", "text": "凭证一.pdf", "ref": "@d1"},
+            {"record_key": "SN1", "text": "凭证二.pdf", "ref": "@d2"},
+            {"record_key": "SN1", "text": "凭证.pdf", "ref": "@d3", "href": "/f/a.pdf"},
+            {"record_key": "SN1", "text": "凭证.pdf", "ref": "@d4", "href": "/f/b.pdf"},
+        ]
+    )
+
+
+def test_downloader_takes_only_first_match_unless_multiple(tmp_path: Path, template_data) -> None:
+    from browser_skill.models import BrowserTemplate
+
+    template = BrowserTemplate.model_validate(template_data)
+    adapter = FakeBrowserAdapter()
+
+    files = asyncio.run(
+        AttachmentDownloader().collect(
+            adapter, template, _multi_snapshot(), [{"sample_id": "S1", "sn": "SN1"}], tmp_path
+        )
+    )
+
+    assert [item.relative_path for item in files] == ["attachments/evidence/SN1_凭证一.pdf"]
+
+
+def test_downloader_downloads_every_match_for_multiple_and_dedupes_names(
+    tmp_path: Path, template_data
+) -> None:
+    from browser_skill.models import BrowserTemplate
+
+    template_data["target"]["attachments"][0]["multiple"] = True
+    template = BrowserTemplate.model_validate(template_data)
+    adapter = FakeBrowserAdapter()
+
+    files = asyncio.run(
+        AttachmentDownloader().collect(
+            adapter, template, _multi_snapshot(), [{"sample_id": "S1", "sn": "SN1"}], tmp_path
+        )
+    )
+
+    assert [item.status for item in files] == ["ok"] * 4
+    assert [item.relative_path for item in files] == [
+        "attachments/evidence/SN1_凭证一.pdf",
+        "attachments/evidence/SN1_凭证二.pdf",
+        "attachments/evidence/SN1_凭证.pdf",
+        "attachments/evidence/SN1_凭证_2.pdf",
+    ]
+    targets = [call[1][0] for call in adapter.calls if call[0] == "download"]
+    assert targets == ["@d1", "@d2", "@d3", "@d4"]
+
+
+def test_downloader_multiple_honours_max_count(tmp_path: Path, template_data) -> None:
+    from browser_skill.models import BrowserTemplate
+
+    template_data["target"]["attachments"][0]["multiple"] = True
+    template_data["target"]["attachments"][0]["max_count"] = 2
+    template = BrowserTemplate.model_validate(template_data)
+
+    files = asyncio.run(
+        AttachmentDownloader().collect(
+            FakeBrowserAdapter(),
+            template,
+            _multi_snapshot(),
+            [{"sample_id": "S1", "sn": "SN1"}],
+            tmp_path,
+        )
+    )
+
+    assert len(files) == 2

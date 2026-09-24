@@ -46,14 +46,15 @@ class AttachmentDownloader:
                 expected = [(None, None)]
             if spec.max_count is not None:
                 expected = expected[: spec.max_count]
+            used_paths: set[Path] = set()
             for record_key, record in expected:
-                target = await self._resolve_download_target(
+                targets = await self._resolve_download_targets(
                     adapter,
                     snapshot,
                     spec,
                     record_key,
                 )
-                if target is None:
+                if not targets:
                     downloaded.append(
                         DownloadedFile(
                             record_key=record_key,
@@ -63,52 +64,96 @@ class AttachmentDownloader:
                         )
                     )
                     continue
-                element = self._find_element(snapshot, spec.semantic, record_key)
-                original = safe_filename(
-                    self._original_name(element) or f"{spec.key}.bin", fallback=f"{spec.key}.bin"
-                )
-                values = {**(record or {}), "original_name": original}
-                name = spec.filename_pattern
-                for key, value in values.items():
-                    name = name.replace("{" + str(key) + "}", str(value))
-                name = safe_filename(name, fallback=original)
-                relative = Path(safe_relative_subdir(spec.destination_subdir)) / name
-                path = workspace / relative
-                path.parent.mkdir(parents=True, exist_ok=True)
-                result = await adapter.download(target, path)
-                complete = await self._wait_for_file(adapter, path) if result.ok else False
-                status = DownloadStatus.OK if complete else DownloadStatus.FAILED
-                if (
-                    status == DownloadStatus.OK
-                    and spec.file_types
-                    and path.suffix.lower().lstrip(".") not in spec.file_types
-                ):
-                    status = DownloadStatus.REJECTED
-                    path.unlink(missing_ok=True)
-                downloaded.append(
-                    DownloadedFile(
-                        record_key=record_key,
-                        attachment_key=spec.key,
-                        relative_path=relative.as_posix() if path.exists() else "",
-                        original_name=original,
-                        size=path.stat().st_size if path.exists() else 0,
-                        sha256=file_sha256(path) if status == DownloadStatus.OK else None,
-                        status=status,
+                for target, element in targets:
+                    downloaded.append(
+                        await self._download_one(
+                            adapter,
+                            spec,
+                            record_key,
+                            record,
+                            target,
+                            element,
+                            workspace,
+                            used_paths,
+                        )
                     )
-                )
         return downloaded
 
-    async def _resolve_download_target(
+    async def _download_one(
+        self,
+        adapter: BrowserAdapter,
+        spec: AttachmentSpec,
+        record_key: str | None,
+        record: dict[str, Any] | None,
+        target: str,
+        element: dict[str, Any] | None,
+        workspace: Path,
+        used_paths: set[Path],
+    ) -> DownloadedFile:
+        original = safe_filename(
+            self._original_name(element) or f"{spec.key}.bin", fallback=f"{spec.key}.bin"
+        )
+        values = {**(record or {}), "original_name": original}
+        name = spec.filename_pattern
+        for key, value in values.items():
+            name = name.replace("{" + str(key) + "}", str(value))
+        name = safe_filename(name, fallback=original)
+        relative = self._unique_relative(
+            Path(safe_relative_subdir(spec.destination_subdir)) / name, used_paths
+        )
+        path = workspace / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
+        result = await adapter.download(target, path)
+        complete = await self._wait_for_file(adapter, path) if result.ok else False
+        status = DownloadStatus.OK if complete else DownloadStatus.FAILED
+        if (
+            status == DownloadStatus.OK
+            and spec.file_types
+            and path.suffix.lower().lstrip(".") not in spec.file_types
+        ):
+            status = DownloadStatus.REJECTED
+            path.unlink(missing_ok=True)
+        return DownloadedFile(
+            record_key=record_key,
+            attachment_key=spec.key,
+            relative_path=relative.as_posix() if path.exists() else "",
+            original_name=original,
+            size=path.stat().st_size if path.exists() else 0,
+            sha256=file_sha256(path) if status == DownloadStatus.OK else None,
+            status=status,
+        )
+
+    @staticmethod
+    def _unique_relative(relative: Path, used_paths: set[Path]) -> Path:
+        """Avoid overwriting when several files of one attachment render the same name."""
+        candidate = relative
+        counter = 2
+        while candidate in used_paths:
+            candidate = relative.with_name(f"{relative.stem}_{counter}{relative.suffix}")
+            counter += 1
+        used_paths.add(candidate)
+        return candidate
+
+    async def _resolve_download_targets(
         self,
         adapter: BrowserAdapter,
         snapshot: BrowserSnapshot,
         spec: AttachmentSpec,
         record_key: str | None,
-    ) -> str | None:
-        element = self._find_element(snapshot, spec.semantic, record_key)
-        if element is not None:
+    ) -> list[tuple[str, dict[str, Any] | None]]:
+        """Return ``(target, element)`` pairs; several when the spec allows multiple files."""
+        elements = self._find_elements(snapshot, spec.semantic, record_key)
+        if not spec.multiple:
+            elements = elements[:1]
+        elif spec.max_count is not None:
+            elements = elements[: spec.max_count]
+        targets: list[tuple[str, dict[str, Any] | None]] = []
+        for element in elements:
             value = element.get("target") or element.get("ref") or element.get("text")
-            return str(value) if value else None
+            if value:
+                targets.append((str(value), element))
+        if targets:
+            return targets
         located = await self.locator.locate(
             adapter,
             snapshot,
@@ -116,7 +161,7 @@ class AttachmentDownloader:
             record_key=record_key,
             required=False,
         )
-        return located.target if located else None
+        return [(located.target, None)] if located else []
 
     async def _wait_for_file(self, adapter: BrowserAdapter, path: Path) -> bool:
         for _ in range(self.completion_polls):
@@ -143,16 +188,17 @@ class AttachmentDownloader:
         return None
 
     @staticmethod
-    def _find_element(
+    def _find_elements(
         snapshot: BrowserSnapshot, semantics: list[str], record_key: str | None
-    ) -> dict[str, Any] | None:
+    ) -> list[dict[str, Any]]:
+        matches: list[dict[str, Any]] = []
         for element in snapshot.elements:
             text = " ".join(str(value) for value in element.values()).casefold()
             if record_key and element.get("record_key") not in {None, record_key}:
                 continue
             if any(semantic.casefold() in text for semantic in semantics):
-                return element
-        return None
+                matches.append(element)
+        return matches
 
     @staticmethod
     def _record_key(template: BrowserTemplate, record: dict[str, Any]) -> str | None:

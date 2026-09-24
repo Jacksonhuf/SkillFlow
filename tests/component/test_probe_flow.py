@@ -30,6 +30,8 @@ def _detail(order_no: str, customer: str, amount: str) -> BrowserSnapshot:
         text=f"退出登录\n订单号：{order_no}\n客户名称：{customer}\n金额：{amount}\n",
         elements=[
             {"ref": f"@c-{order_no}", "role": "link", "text": "合同.pdf", "href": "/f/c.pdf"},
+            {"ref": f"@i1-{order_no}", "role": "link", "text": "发票_1.pdf", "href": "/f/i1.pdf"},
+            {"ref": f"@i2-{order_no}", "role": "link", "text": "发票_2.pdf", "href": "/f/i2.pdf"},
         ],
     )
 
@@ -85,9 +87,11 @@ def test_probe_create_and_batch_run(tmp_path: Path) -> None:
     assert by_key["order_no"]["source"] == "url"
     assert by_key["customer_name"]["source"] == "network"
     assert by_key["amount"]["source"] == "network"
-    assert probe["attachments"][0]["name"] == "合同"
+    attachments = {item["name"]: item for item in probe["attachments"]}
+    assert attachments["合同"]["count"] == 1
+    assert attachments["发票"]["count"] == 2
 
-    # The wizard: user keeps order_no / customer_name / amount and the contract attachment
+    # The wizard: user keeps order_no / customer_name / amount and both attachments
     created = asyncio.run(
         app.handle(
             SkillRequest(
@@ -125,8 +129,11 @@ def test_probe_create_and_batch_run(tmp_path: Path) -> None:
     )
 
     assert tested.ok is True, tested.message
-    assert tested.state == RunState.COMPLETED
-    assert tested.data["items"]["ok"] == 2
+    # item 2 has no invoice link: optional attachment missing → partial, not failed
+    assert tested.state == RunState.PARTIAL
+    assert tested.data["items"]["ok"] == 1
+    assert tested.data["items"]["partial"] == 1
+    assert tested.data["items"]["failed"] == 0
     run_dir = tmp_path / "runs" / str(tested.run_id)
     result = json.loads((run_dir / "order_files.json").read_text(encoding="utf-8"))
     records = {item["order_no"]: item for item in result["records"]}
@@ -136,6 +143,9 @@ def test_probe_create_and_batch_run(tmp_path: Path) -> None:
     assert records["ORD-0002"]["amount"] == 88.5
     names = sorted(path.name for path in (run_dir / "attachments" / "contract").iterdir())
     assert names == ["ORD-0001_合同.pdf", "ORD-0002_合同.pdf"]
+    assert template.target.attachments[1].multiple is True
+    invoices = sorted(path.name for path in (run_dir / "attachments" / "invoice").iterdir())
+    assert invoices == ["ORD-0001_发票_1.pdf", "ORD-0001_发票_2.pdf"]
 
 
 def test_probe_url_requires_url_and_reports_login_page(tmp_path: Path) -> None:
