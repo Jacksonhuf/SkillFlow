@@ -109,6 +109,8 @@ run:
   on_item_error: continue      # continue | stop
   dedupe_values: true
   max_items: 500
+  accept_full_urls: true       # 驱动值为完整 URL 时直接打开（host 必须在 allowed_hosts）
+  capture_tables: false        # 把详情页表格原样存为 tables/<主键>.json
 
 variables:
   order_no:
@@ -158,7 +160,7 @@ output:
 | 位置 | 变更 |
 |------|------|
 | `SystemSpec` | `url_template: str | None`；校验占位符均为已声明变量、host 在 `allowed_hosts` |
-| 新 `RunSpec` | `mode`、`driver_variable`、`concurrency`、`per_item_delay_ms`、`on_item_error`、`dedupe_values`、`max_items` |
+| 新 `RunSpec` | `mode`、`driver_variable`、`concurrency`、`per_item_delay_ms`、`on_item_error`、`dedupe_values`、`max_items`、`accept_full_urls`、`capture_tables` |
 | `VariableSpec` | `multiple: bool = False` |
 | `AttachmentSpec.filename_pattern` | 新占位符 `{index}`、`{ext}`（已有 `{original_name}`） |
 | `BrowserTemplate` | 校验：`mode == detail_batch` 时必须有 `url_template` 与 `driver_variable`，且 `driver_variable.multiple == true` |
@@ -189,8 +191,8 @@ run(template, variables={order_no: [v1, v2, ...]})
   ├─ 解析驱动值：去重 / 校验 regex / 截断 max_items
   ├─ AUTH_CHECK：open(entry_url) → 未登录 → WAIT_USER_AUTH（resume 后从第一个未完成项继续）
   ├─ for each value (按 concurrency 分批):
-  │     url = render(url_template, {order_no: value})
-  │     policy.require_url_allowed(url)
+  │     url = value if (accept_full_urls and is_http_url(value)) else render(url_template, {order_no: value})
+  │     policy.require_url_allowed(url)          # 渲染后 / 直传 URL 均校验 host 白名单
   │     open(url) → snapshot
   │     [可选 workflow.hints]
   │     record = extract_detail(fields)          # Network 优先 → DOM label/value
@@ -377,9 +379,9 @@ py scripts\invoke.py probe https://portal.example.com/orders/ORD-2024-0917/detai
 | 风险 | 对策 |
 |------|------|
 | 页面数据需点击后才出现 | 向导「高级」允许录一次点击为 `workflow.hints`；probe 提示「检测到展开按钮」 |
-| ID 在 URL 中不显式（如内部数字 id） | 支持两段：先给「列表页 + 搜索变量」找到详情链接（P3 后期），或用户直接提供详情 URL 列表 |
+| ID 在 URL 中不显式（如内部数字 id） | **已定（P1）**：驱动值可直接是完整 `http(s)` URL（host ∈ `allowed_hosts`），此时跳过 `url_template` 渲染；用户从列表页复制链接或导出一列 URL 即可。「列表页搜索 → 详情」作为后续增强 |
 | 站点风控 | 默认并发 1、延迟、随机抖动；失败可续跑 |
-| 详情页含子表 | 第一版仅附件多文件；子表字段列入后续（`sub_records`） |
+| 详情页含子表 | **已定**：第一版仅多附件；可选 `run.capture_tables: true` 把详情页表格原样存到 `runs/<run_id>/tables/<主键>.json`，后续 `sub_records` 直接升级 |
 | 登录过期于中途 | 项级 `auth_required` → 整体 `WAIT_USER_AUTH`，`resume` 继续 |
 
 ---
