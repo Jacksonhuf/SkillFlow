@@ -12,7 +12,9 @@ class DelayedDownloadAdapter(FakeBrowserAdapter):
         self.pending_path: Path | None = None
         self.polls = 0
 
-    async def download(self, target: str, path: Path) -> CommandResult:
+    async def download(
+        self, target: str, path: Path, *, timeout_ms: int | None = None
+    ) -> CommandResult:
         self.pending_path = path
         return CommandResult(ok=True, operation="download", data={"status": "pending"})
 

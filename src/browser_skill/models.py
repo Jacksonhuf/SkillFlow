@@ -139,6 +139,10 @@ class RunSpec(StrictModel):
     capture_tables: bool = False
     # Incremental runs: values already ``ok`` in an earlier run of this template are skipped
     skip_if_exists: bool = False
+    # Per-attachment Playwright ``expect_download`` cap (SPAs often never fire a browser download).
+    attachment_timeout_ms: int = Field(default=45_000, ge=5_000, le=120_000)
+    # Hard cap for one detail_batch item (open → extract → attachments); avoids infinite "执行中".
+    item_timeout_ms: int = Field(default=180_000, ge=30_000, le=600_000)
 
 
 class SignalSpec(StrictModel):

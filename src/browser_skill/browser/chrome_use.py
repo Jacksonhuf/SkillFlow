@@ -162,8 +162,11 @@ class ChromeUseAdapter:
     async def do_action(self, target: str, action: str) -> CommandResult:
         return await self._run(["do", target, action])
 
-    async def download(self, target: str, path: Path) -> CommandResult:
-        return await self._run(["download", target, str(path)], timeout=max(self.timeout, 120))
+    async def download(
+        self, target: str, path: Path, *, timeout_ms: int | None = None
+    ) -> CommandResult:
+        limit = timeout_ms if timeout_ms is not None else self.timeout
+        return await self._run(["download", target, str(path)], timeout=max(limit, 120))
 
     async def list_downloads(self) -> CommandResult:
         return await self._run(["downloads"])
@@ -285,7 +288,9 @@ class ChromeUseToolAdapter:
     async def do_action(self, target: str, action: str) -> CommandResult:
         return await self._call("do", target=target, action=action)
 
-    async def download(self, target: str, path: Path) -> CommandResult:
+    async def download(
+        self, target: str, path: Path, *, timeout_ms: int | None = None
+    ) -> CommandResult:
         return await self._call("download", target=target, path=str(path))
 
     async def list_downloads(self) -> CommandResult:

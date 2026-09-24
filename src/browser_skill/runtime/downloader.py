@@ -49,6 +49,7 @@ class AttachmentDownloader:
         workspace: Path,
         attachments: list[AttachmentSpec] | None = None,
     ) -> list[DownloadedFile]:
+        attachment_timeout_ms = template.run.attachment_timeout_ms
         downloaded: list[DownloadedFile] = []
         for spec in attachments if attachments is not None else template.target.attachments:
             expected: list[tuple[str | None, dict[str, Any] | None]]
@@ -88,6 +89,7 @@ class AttachmentDownloader:
                             workspace,
                             used_paths,
                             source=self._source_url(snapshot, element),
+                            attachment_timeout_ms=attachment_timeout_ms,
                         )
                     )
         return downloaded
@@ -104,6 +106,7 @@ class AttachmentDownloader:
         used_paths: set[Path],
         *,
         source: str | None = None,
+        attachment_timeout_ms: int = 45_000,
     ) -> DownloadedFile:
         original = safe_filename(
             self._original_name(element) or f"{spec.key}.bin", fallback=f"{spec.key}.bin"
@@ -126,7 +129,9 @@ class AttachmentDownloader:
             copied_from = cached.relative_to(workspace).as_posix()
             complete = True
         else:
-            result = await adapter.download(target, path)
+            result = await adapter.download(
+                target, path, timeout_ms=attachment_timeout_ms
+            )
             complete = await self._wait_for_file(adapter, path) if result.ok else False
         status = DownloadStatus.OK if complete else DownloadStatus.FAILED
         if (
