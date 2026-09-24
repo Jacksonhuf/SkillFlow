@@ -13,6 +13,7 @@ from browser_skill.models import (
     BrowserTemplate,
     DownloadedFile,
     DownloadStatus,
+    TableData,
 )
 from browser_skill.runtime.batch import (
     apply_incremental_skip,
@@ -74,6 +75,83 @@ def test_capture_tables_turns_each_row_into_a_record(template_data: dict[str, An
         {"customer": "ACME", "line": "1", "order_no": "ORD-0001"},
         {"customer": "ACME", "line": "2", "order_no": "ORD-0001"},
     ]
+
+
+def _learned_table_template(template_data: dict[str, Any]) -> BrowserTemplate:
+    template = _template(template_data, capture_tables=True)
+    data = template.model_dump(mode="json")
+    data["target"]["fields"] += [
+        {"key": "material_code", "name": "物料编码", "semantic": ["物料编码"], "source": "detail"},
+        {"key": "quantity", "name": "数量", "type": "integer", "semantic": ["数量"]},
+        {
+            "key": "row_no",
+            "name": "行号",
+            "type": "integer",
+            "required": True,
+            "semantic": ["行号"],
+        },
+    ]
+    data["target"]["record_key"] = ["order_no", "row_no"]
+    data["learned"]["table"] = {
+        "index": 1,
+        "title": "商品明细",
+        "headers": ["序号", "物料编码", "物料名称", "数量"],
+        "columns": {"material_code": 1, "quantity": 3},
+    }
+    return BrowserTemplate.model_validate(data)
+
+
+def test_learned_table_rows_become_records_with_page_fields_copied(
+    template_data: dict[str, Any],
+) -> None:
+    template = _learned_table_template(template_data)
+    snapshot = BrowserSnapshot(
+        text="客户：ACME\n",
+        tables=[
+            TableData(index=0, rows=[["客户", "ACME"], ["金额", "1"]]),
+            # the taught table moved and gained a column: still found by its headers
+            TableData(
+                index=1,
+                headers=["序号", "物料编码", "备注", "物料名称", "数量"],
+                rows=[["1", "M-001", "", "螺栓", "200"], ["2", "M-002", "x", "垫片", "50"]],
+            ),
+        ],
+    )
+
+    records = extract_item_records(template, "order_no", "ORD-0001", snapshot)
+
+    assert records == [
+        {
+            "customer": "ACME",
+            "material_code": "M-001",
+            "quantity": "200",
+            "row_no": 1,
+            "order_no": "ORD-0001",
+        },
+        {
+            "customer": "ACME",
+            "material_code": "M-002",
+            "quantity": "50",
+            "row_no": 2,
+            "order_no": "ORD-0001",
+        },
+    ]
+
+
+def test_learned_table_missing_on_page_falls_back_to_single_record(
+    template_data: dict[str, Any],
+) -> None:
+    template = _learned_table_template(template_data)
+    snapshot = BrowserSnapshot(
+        text="客户：ACME\n",
+        tables=[TableData(index=0, headers=["付款日期", "金额"], rows=[["2024-01-01", "1"]])],
+    )
+
+    records = extract_item_records(template, "order_no", "ORD-0001", snapshot)
+
+    assert records == [{"customer": "ACME", "order_no": "ORD-0001"}]
+    # ...which the classifier then reports as failed because row_no is required
+    assert classify_item(template, records, []).status == BatchItemStatus.FAILED
 
 
 def test_capture_tables_without_rows_falls_back_to_single_record(

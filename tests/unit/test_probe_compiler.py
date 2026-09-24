@@ -138,6 +138,82 @@ def test_required_keys_and_run_overrides_are_applied() -> None:
     assert template.variables["order_no"].validation.regex == r"ORD-\d{4}-\d{4}"
 
 
+def _table_selection() -> dict[str, Any]:
+    return {
+        "index": 1,
+        "title": "商品明细",
+        "headers": ["序号", "物料编码", "物料名称", "数量", "单价"],
+        "columns": [
+            {
+                "key": "material_code",
+                "name": "物料编码",
+                "sample": "M-001",
+                "source": "table",
+                "strategy": "table_header",
+                "column": 1,
+            },
+            {
+                "key": "quantity",
+                "name": "数量",
+                "sample": "200",
+                "source": "table",
+                "strategy": "table_header",
+                "type": "integer",
+                "column": 3,
+            },
+        ],
+    }
+
+
+def test_selected_table_turns_rows_into_records() -> None:
+    template = ProbeDraftCompiler().compile(_draft(table=_table_selection()), version=1)
+
+    assert template.run.capture_tables is True
+    keys = [field.key for field in template.target.fields]
+    assert keys == ["order_no", "customer_name", "amount", "material_code", "quantity", "row_no"]
+    by_key = {field.key: field for field in template.target.fields}
+    assert by_key["row_no"].required is True
+    assert by_key["row_no"].type == "integer"
+    assert by_key["material_code"].required is False
+    assert template.target.record_key == ["order_no", "row_no"]
+    assert template.learned.field_mappings["material_code"].strategy == "table_header"
+    learned = template.learned.table
+    assert learned is not None
+    assert learned.index == 1
+    assert learned.title == "商品明细"
+    assert learned.headers == ["序号", "物料编码", "物料名称", "数量", "单价"]
+    assert learned.columns == {"material_code": 1, "quantity": 3}
+    assert template.output.columns == keys
+
+
+def test_table_only_draft_without_page_fields_is_accepted() -> None:
+    template = ProbeDraftCompiler().compile(
+        _draft(fields=[], table=_table_selection(), driver_prompt="订单号"), version=1
+    )
+
+    assert [field.key for field in template.target.fields] == [
+        "order_no",
+        "material_code",
+        "quantity",
+        "row_no",
+    ]
+
+
+def test_table_column_clashing_with_page_field_is_rejected() -> None:
+    selection = _table_selection()
+    selection["columns"][0]["key"] = "amount"
+
+    with pytest.raises(SkillError) as raised:
+        ProbeDraftCompiler().compile(_draft(table=selection), version=1)
+
+    assert "重名" in raised.value.message
+
+
+def test_draft_needs_fields_or_a_table() -> None:
+    with pytest.raises(ValueError):
+        _draft(fields=[])
+
+
 def test_missing_url_template_means_full_urls_only() -> None:
     template = ProbeDraftCompiler().compile(_draft(url_template=None), version=1)
 

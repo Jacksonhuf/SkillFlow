@@ -287,6 +287,19 @@ run(template, variables={order_no: [v1, v2, ...]})
 
 后续方向（未做）：在目标页上鼠标点选字段（Pick Mode，依赖 Playwright 引擎的页内注入）。
 
+### 5.5 记录行：把详情页里的表格每行输出为一条记录（v0.3.14）
+
+用户反馈：给一个详情页地址，本意是抓「明细行」，模板却只抓到了表头（标签：值）信息。根因：Playwright 快照只把**第一个**表格拍成表头/单元格元素，`snapshot.records` 在真实浏览器里永远为空 → 探测看不到多行表格，运行期 `capture_tables` 也拿不到行。
+
+改造：
+
+1. **快照带全部表格**：`playwright_page.js` 输出 `tables[]`（`index/title/headers/rows`，最多 6 个、每个 500 行）。标题取 `caption` 或最近的上方标题；element-ui / antd 那种「表头一个 `<table>`、表体一个 `<table>`」的拆分表自动合并；隐藏表跳过。`BrowserSnapshot.tables: list[TableData]`；chrome-use 等无 `tables` 的快照由 `columnheader/cell` 元素推导。
+2. **表格分类**（`acquire/tables.py`）：两列且左列像标签的「键值表」不是记录行（已走 label/value）；有表头 + ≥1 行数据的「网格」才是候选。
+3. **探测**：`UrlProbeReport.tables[]`（`ProbeTableCandidate`：标题、表头、列候选、行数、前 3 行预览、`recommended` = 有表头且 ≥2 行）。表格列**不再**混进页面字段列表。
+4. **向导**：步骤 2 新增「记录行」区：单选「不需要记录行」或某个表格（默认选推荐且行数最多的），选中后勾选要导出的列（可改名）、展开预览；页面字段区改名为「页面字段（表头信息，每条记录都会带上）」。高级设置里的 `capture_tables` 勾选框移除，由是否选表格决定。
+5. **编译**：`ProbeDraftInput.table: ProbeTableSelection`（`index/title/headers/columns`）→ `run.capture_tables=true`、列字段（`table_header` 映射）、自动加 `row_no`（行号，必填，并入 `record_key`）、`learned.table = LearnedTable{index,title,headers,columns}`。`fields` 可为空（只要表格行）。
+6. **运行**：按 `learned.table.headers` 的重合度（≥50%）找表，找不到再按位置；每列按表头文本定位（精确 → 包含 → 教学时的列位置）；每行合并页面字段并盖上 `row_no`；附件按页面只下载一次（以首条记录命名）。找不到表时退回单条记录，因缺 `row_no` 判为该项失败。
+
 ---
 
 ## 6. 控制台 UI（新建模板页重做）

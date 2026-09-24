@@ -71,30 +71,72 @@
     out.elements.push(item);
   }
 
-  const tables = Array.from(document.querySelectorAll("table,[role='grid'],[role='table'],[role='treegrid']")).filter(visible).slice(0, args.maxTables);
-  tables.forEach((tbl, tableIndex) => {
-    const rows = Array.from(tbl.querySelectorAll("tr,[role='row']")).filter(r => r.closest("table,[role='grid'],[role='table'],[role='treegrid']") === tbl);
-    let dataRow = 0;
+  const TABLE_SEL = "table,[role='grid'],[role='table'],[role='treegrid']";
+  const cellText = (c) => (c.innerText || "").trim().replace(/\s+/g, " ");
+  const isHeaderCell = (c) => c.tagName.toLowerCase() === "th" || c.getAttribute("role") === "columnheader";
+  // Read one table into { headers, rows }. Nested tables belong to their own element.
+  const readTable = (tbl) => {
+    const rows = Array.from(tbl.querySelectorAll("tr,[role='row']")).filter(r => r.closest(TABLE_SEL) === tbl);
+    const headers = [];
+    const data = [];
     for (const tr of rows) {
       const cells = Array.from(tr.children).filter(c => /^(td|th)$/i.test(c.tagName) || ["cell","gridcell","columnheader","rowheader"].includes(c.getAttribute("role")));
       if (!cells.length) continue;
-      const isHeader = cells.every(c => c.tagName.toLowerCase() === "th" || c.getAttribute("role") === "columnheader");
-      if (isHeader) {
-        if (tableIndex > 0) continue;  // only the first table maps headers -> template fields
-        cells.forEach((c, col) => {
-          if (out.elements.length >= MAX) return;
-          out.elements.push({ role: "columnheader", column_index: col, text: (c.innerText || "").trim().slice(0, 200), table_index: tableIndex });
-        });
+      const texts = cells.map(cellText);
+      if (cells.every(isHeaderCell) || (tr.closest("thead") && !tr.closest("tbody"))) {
+        if (!headers.length) headers.push(...texts.map(t => t.slice(0, 200)));
         continue;
       }
-      if (tableIndex > 0) continue;
-      dataRow += 1;
-      cells.forEach((c, col) => {
-        if (out.elements.length >= MAX) return;
-        out.elements.push({ role: "cell", row_index: dataRow, column_index: col, text: (c.innerText || "").trim().slice(0, 500), table_index: tableIndex });
-      });
+      if (data.length >= args.maxRows) break;
+      data.push(texts.map(t => t.slice(0, 500)));
     }
-  });
+    return { headers, rows: data };
+  };
+  // Caption or the nearest heading-like text above the table, so the user can tell tables apart.
+  const tableTitle = (tbl) => {
+    const cap = tbl.querySelector("caption");
+    if (cap && cellText(cap)) return cellText(cap).slice(0, 100);
+    let node = tbl;
+    for (let hops = 0; node && hops < 6; hops += 1) {
+      let sib = node.previousElementSibling;
+      for (let n = 0; sib && n < 4; n += 1) {
+        if (!sib.matches(TABLE_SEL) && !sib.querySelector(TABLE_SEL)) {
+          const h = sib.matches("h1,h2,h3,h4,h5,h6,legend,[class*='title'],[class*='header']") ? sib : sib.querySelector("h1,h2,h3,h4,h5,h6,legend,[class*='title'],[class*='header']");
+          const t = h ? cellText(h) : (sib.children.length <= 2 ? cellText(sib) : "");
+          if (t && t.length <= 60) return t;
+        }
+        sib = sib.previousElementSibling;
+      }
+      node = node.parentElement;
+    }
+    return "";
+  };
+  const allTables = Array.from(document.querySelectorAll(TABLE_SEL)).filter(t => visible(t) && !t.parentElement.closest(TABLE_SEL));
+  out.tables = [];
+  let pending = null;  // header-only table waiting for its body table (element-ui / antd split tables)
+  for (const tbl of allTables) {
+    if (out.tables.length >= args.maxTables) break;
+    const read = readTable(tbl);
+    let title = "";
+    if (pending && !read.headers.length && read.rows.length) {
+      read.headers = pending.headers;
+      title = pending.title;
+      pending = null;
+    } else if (read.headers.length && !read.rows.length) {
+      pending = { headers: read.headers, title: tableTitle(tbl) };
+      continue;
+    }
+    if (!read.rows.length) continue;
+    const width = Math.max(read.headers.length, ...read.rows.map(r => r.length));
+    if (width < 2) continue;
+    out.tables.push({ index: out.tables.length, title: title || tableTitle(tbl), headers: read.headers, rows: read.rows });
+  }
+  // Legacy: the first table also goes out as columnheader/cell elements for list-mode templates.
+  const first = out.tables[0];
+  if (first) {
+    first.headers.forEach((text, col) => { if (out.elements.length < MAX) out.elements.push({ role: "columnheader", column_index: col, text: text, table_index: 0 }); });
+    first.rows.forEach((row, r) => row.forEach((text, col) => { if (out.elements.length < MAX) out.elements.push({ role: "cell", row_index: r + 1, column_index: col, text: text, table_index: 0 }); }));
+  }
   document.documentElement.setAttribute(REF + "-counter", String(counter));
   return out;
 },

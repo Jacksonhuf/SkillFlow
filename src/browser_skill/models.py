@@ -307,10 +307,24 @@ class LearnedMapping(StrictModel):
     json_path: str | None = Field(default=None, max_length=500)
 
 
+class LearnedTable(StrictModel):
+    """Which table on the detail page holds the record rows (``run.capture_tables``).
+
+    ``headers`` identify the table across items (position may shift); ``columns`` maps each row
+    field key to the column position seen at teach time, used only when header matching fails.
+    """
+
+    index: int = Field(default=0, ge=0)
+    title: str = Field(default="", max_length=100)
+    headers: list[str] = Field(default_factory=list)
+    columns: dict[str, int] = Field(default_factory=dict)
+
+
 class LearnedSpec(StrictModel):
     page_hints: list[str] = Field(default_factory=list)
     field_mappings: dict[str, LearnedMapping] = Field(default_factory=dict)
     attachment_mappings: dict[str, LearnedMapping] = Field(default_factory=dict)
+    table: LearnedTable | None = None
     validated_at: datetime | None = None
 
 
@@ -473,12 +487,22 @@ class CommandResult(StrictModel):
     duration_ms: int = 0
 
 
+class TableData(StrictModel):
+    """One rendered table: header texts and data rows as cell texts, in document order."""
+
+    index: int = Field(ge=0)
+    title: str = ""
+    headers: list[str] = Field(default_factory=list)
+    rows: list[list[str]] = Field(default_factory=list)
+
+
 class BrowserSnapshot(StrictModel):
     url: str = ""
     title: str = ""
     text: str = ""
     elements: list[dict[str, Any]] = Field(default_factory=list)
     records: list[dict[str, Any]] = Field(default_factory=list)
+    tables: list[TableData] = Field(default_factory=list)
 
 
 class AuthState(StrEnum):
@@ -643,6 +667,8 @@ class ProbeFieldCandidate(StrictModel):
     # True when the value is visibly on the page (or is the URL variable itself); the wizard
     # ticks these by default and folds the rest into "more candidates".
     recommended: bool = False
+    # Table columns only: position inside the table at teach time
+    column: int | None = Field(default=None, ge=0)
 
 
 class ProbeAttachmentCandidate(StrictModel):
@@ -654,14 +680,36 @@ class ProbeAttachmentCandidate(StrictModel):
     confidence: float = Field(default=0.5, ge=0.0, le=1.0)
 
 
+class ProbeTableCandidate(StrictModel):
+    """A grid on the sample page that could supply the record rows."""
+
+    index: int = Field(ge=0)
+    title: str = ""
+    headers: list[str] = Field(default_factory=list)
+    columns: list[ProbeFieldCandidate] = Field(default_factory=list)
+    row_count: int = Field(default=0, ge=0)
+    preview: list[list[str]] = Field(default_factory=list)
+    recommended: bool = False
+
+
 class UrlProbeReport(StrictModel):
     url_analysis: UrlAnalysis
     page_title: str = ""
     auth_state: AuthState = AuthState.UNKNOWN
     fields: list[ProbeFieldCandidate] = Field(default_factory=list)
     attachments: list[ProbeAttachmentCandidate] = Field(default_factory=list)
+    tables: list[ProbeTableCandidate] = Field(default_factory=list)
     warnings: list[str] = Field(default_factory=list)
     network_exchanges: int = Field(default=0, ge=0)
+
+
+class ProbeTableSelection(StrictModel):
+    """The grid the user picked as record rows, with the columns to keep."""
+
+    index: int = Field(ge=0)
+    title: str = Field(default="", max_length=100)
+    headers: list[str] = Field(default_factory=list)
+    columns: list[ProbeFieldCandidate] = Field(min_length=1)
 
 
 class ProbeDraftInput(StrictModel):
@@ -675,12 +723,19 @@ class ProbeDraftInput(StrictModel):
     driver_variable: str = Field(pattern=r"^[a-z][a-z0-9_]{0,63}$")
     driver_prompt: str | None = Field(default=None, max_length=200)
     driver_regex: str | None = Field(default=None, max_length=200)
-    fields: list[ProbeFieldCandidate] = Field(min_length=1)
+    fields: list[ProbeFieldCandidate] = Field(default_factory=list)
     attachments: list[ProbeAttachmentCandidate] = Field(default_factory=list)
+    table: ProbeTableSelection | None = None
     record_key: list[str] = Field(default_factory=list)
     required_keys: list[str] = Field(default_factory=list)
     run: dict[str, Any] = Field(default_factory=dict)
     page_hints: list[str] = Field(default_factory=list, max_length=20)
+
+    @model_validator(mode="after")
+    def _needs_something_to_collect(self) -> ProbeDraftInput:
+        if not self.fields and self.table is None:
+            raise ValueError("至少选择一个字段，或选择一个表格作为记录行")
+        return self
 
 
 class SampleInference(StrictModel):

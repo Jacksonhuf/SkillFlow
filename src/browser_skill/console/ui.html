@@ -116,13 +116,15 @@
       <h5>地址里会变化的部分（变量）</h5>
       <table><thead><tr><th></th><th>变量名（可改）</th><th>示例值</th><th>位置</th><th>置信度</th></tr></thead><tbody id="wzVarRows"></tbody></table>
       <label>URL 模板：运行时把 {变量} 换成每个编号；不勾选变量时需直接提供完整地址</label><input id="wzUrlTemplate">
-      <h5 style="margin-top:14px">字段 <span class="muted">（勾选要导出的列；主键用于命名附件和去重）</span></h5>
+      <h5 style="margin-top:14px">页面字段 <span class="muted">（表头信息：订单号、客户等，每条记录都会带上；主键用于命名附件和去重）</span></h5>
       <div class="row" style="margin:4px 0 8px"><span id="wzFieldSummary" class="muted"></span><button class="btn secondary" id="wzOnlyRec" type="button" style="padding:2px 10px">只留推荐</button><button class="btn secondary" id="wzNone" type="button" style="padding:2px 10px">全不选</button></div>
       <table><thead><tr><th></th><th>名称（可改）</th><th>示例值</th><th>来源</th><th>类型</th><th>主键</th></tr></thead><tbody id="wzFieldRows"></tbody></table>
       <details id="wzMore" class="hidden" style="margin-top:8px"><summary class="muted" id="wzMoreSummary"></summary>
         <p class="muted" style="margin:6px 0">这些值只出现在接口返回里、或只是根据上下行猜测的配对，多数是系统字段或噪音；确认业务上确实需要时再勾选。</p>
         <table><thead><tr><th></th><th>名称（可改）</th><th>示例值</th><th>来源</th><th>类型</th><th>主键</th></tr></thead><tbody id="wzMoreRows"></tbody></table>
       </details>
+      <h5 style="margin-top:14px">记录行 <span class="muted">（页面里的表格：选一个作为记录行，每行输出一条记录，页面字段自动带到每行）</span></h5>
+      <div id="wzTableList"></div>
       <h5 style="margin-top:14px">附件</h5>
       <table><thead><tr><th></th><th>附件名（可改）</th><th>数量</th><th>类型</th></tr></thead><tbody id="wzAttRows"></tbody></table>
       <div class="row"><button class="btn" id="wzNextBtn">下一步</button><button class="btn secondary" id="wzBackBtn1">重新探测</button></div>
@@ -136,8 +138,7 @@
       <div id="wzAdv" class="hidden">
         <label>每条之间等待（毫秒）</label><input id="wzDelay" type="number" value="300" min="0">
         <label>某一条失败时</label><select id="wzOnErr"><option value="continue">继续其余（结果标记为部分成功，可只重跑失败项）</option><option value="stop">立即停止</option></select>
-        <label style="display:flex;gap:6px;align-items:center;margin-top:10px"><input type="checkbox" id="wzTables" style="width:auto">详情页里的表格，每行作为一条记录</label>
-        <label style="display:flex;gap:6px;align-items:center;margin-top:6px"><input type="checkbox" id="wzSkipDone" style="width:auto">增量：以前已成功采集过的编号自动跳过（适合每日补数）</label>
+        <label style="display:flex;gap:6px;align-items:center;margin-top:10px"><input type="checkbox" id="wzSkipDone" style="width:auto">增量：以前已成功采集过的编号自动跳过（适合每日补数）</label>
       </div>
       <div class="row"><button class="btn" id="wzCreateBtn">创建草稿</button><button class="btn secondary" id="wzBackBtn2">上一步</button><span id="wzCreateInfo" class="muted"></span></div>
       <div id="wzTest" class="hidden">
@@ -449,7 +450,7 @@
   $('refreshRuns').onclick = loadRuns;
 
   // ---- 新建模板向导（给一个 URL → 勾选 → 试跑 → 发布）
-  const wz = { probe: null, vars: [], fields: [], atts: [], created: null, testRun: null };
+  const wz = { probe: null, vars: [], fields: [], atts: [], tables: [], tableIndex: -1, created: null, testRun: null };
   const validKey = (s) => /^[a-z][a-z0-9_]{0,63}$/.test(s);
   const slug = (s) => String(s || '').toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '').replace(/^[^a-z]+/, '');
   function wzShow(step) {
@@ -497,6 +498,7 @@
     $('wzMoreSummary').textContent = `更多候选（${moreCount} 项，默认不勾选）`;
     const selCount = wz.fields.filter(f => f.selected).length;
     $('wzFieldSummary').textContent = wz.fields.length ? `已勾选 ${selCount} / ${wz.fields.length} 个字段` : '';
+    wzRenderTables();
     $('wzAttRows').innerHTML = wz.atts.map((a, i) => `<tr>
       <td><input type="checkbox" data-a-sel="${i}" ${a.selected ? 'checked' : ''} style="width:auto"></td>
       <td><input data-a-name="${i}" value="${esc(a.name)}" style="max-width:220px"></td>
@@ -509,6 +511,31 @@
     document.querySelectorAll('[data-f-key]').forEach(el => el.onchange = () => { wz.fields.forEach((f, i) => { f.isKey = String(i) === el.dataset.fKey; if (f.isKey) f.selected = true; }); wzRender(); });
     document.querySelectorAll('[data-a-sel]').forEach(el => el.onchange = () => { wz.atts[el.dataset.aSel].selected = el.checked; });
     document.querySelectorAll('[data-a-name]').forEach(el => el.onchange = () => { wz.atts[el.dataset.aName].name = el.value.trim() || wz.atts[el.dataset.aName].name; });
+  }
+  // Record rows: one radio group over the grids found on the page (+ "no table"), columns per grid.
+  function wzRenderTables() {
+    const box = $('wzTableList');
+    if (!wz.tables.length) {
+      box.innerHTML = '<p class="muted" style="margin:4px 0">页面上没有识别出多行表格；每个地址产出一条记录。若表格需要点「展开」才出现，请先在 Chrome 里展开后重新探测。</p>';
+      return;
+    }
+    const none = `<label style="display:flex;gap:6px;align-items:center;margin:4px 0"><input type="radio" name="wzTbl" data-tbl-sel="-1" ${wz.tableIndex === -1 ? 'checked' : ''} style="width:auto">不需要记录行（每个地址一条记录，只导出页面字段）</label>`;
+    box.innerHTML = none + wz.tables.map((t, i) => {
+      const on = wz.tableIndex === i;
+      const cols = t.columns.map((c, j) => `<label style="display:inline-flex;gap:4px;align-items:center;margin:2px 10px 2px 0"><input type="checkbox" data-tbl-col="${i}:${j}" ${c.selected ? 'checked' : ''} style="width:auto"><input data-tbl-col-name="${i}:${j}" value="${esc(c.name)}" style="width:120px;padding:2px 6px"></label>`).join('');
+      const head = t.headers.map(h => `<th>${esc(h)}</th>`).join('');
+      const body = (t.preview || []).map(r => `<tr>${t.headers.map((_, k) => `<td>${esc(r[k] == null ? '' : r[k])}</td>`).join('')}</tr>`).join('');
+      return `<div class="card" style="padding:10px 12px;margin:6px 0;border:1px solid ${on ? '#6366f1' : '#e5e7eb'}">
+        <label style="display:flex;gap:6px;align-items:center"><input type="radio" name="wzTbl" data-tbl-sel="${i}" ${on ? 'checked' : ''} style="width:auto">
+          <b>${esc(t.title || ('表格 ' + (t.index + 1)))}</b><span class="muted">${t.row_count} 行 × ${t.headers.length} 列${t.recommended ? ' · 推荐' : ''}</span></label>
+        <div class="${on ? '' : 'hidden'}" style="margin-top:8px">
+          <div class="muted" style="margin-bottom:4px">要导出的列（可改名）：</div><div>${cols}</div>
+          <details style="margin-top:6px"><summary class="muted">预览前 ${(t.preview || []).length} 行</summary><table style="margin-top:4px"><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table></details>
+        </div></div>`;
+    }).join('');
+    box.querySelectorAll('[data-tbl-sel]').forEach(el => el.onchange = () => { wz.tableIndex = Number(el.dataset.tblSel); wzRenderTables(); });
+    box.querySelectorAll('[data-tbl-col]').forEach(el => el.onchange = () => { const [i, j] = el.dataset.tblCol.split(':').map(Number); wz.tables[i].columns[j].selected = el.checked; });
+    box.querySelectorAll('[data-tbl-col-name]').forEach(el => el.onchange = () => { const [i, j] = el.dataset.tblColName.split(':').map(Number); const c = wz.tables[i].columns[j]; c.name = el.value.trim() || c.name; });
   }
   $('wzUrlTemplate').oninput = () => { $('wzUrlTemplate').dataset.edited = '1'; };
   $('wzProbeBtn').onclick = async () => {
@@ -526,8 +553,13 @@
     wzApplyRecommended();
     if (!wz.fields.some(f => f.isKey) && wz.fields.length) { wz.fields[0].isKey = true; wz.fields[0].selected = true; }
     wz.atts = p.attachments.map(a => ({ ...a, selected: true }));
+    wz.tables = (p.tables || []).map(t => ({ ...t, columns: t.columns.map(c => ({ ...c, selected: true })) }));
+    // Default: the recommended grid with the most rows becomes the record rows
+    const best = wz.tables.findIndex(t => t.recommended);
+    wz.tableIndex = best;
     const rec = wz.fields.filter(f => f.recommended).length, more = wz.fields.length - rec;
-    $('wzProbeStatus').innerHTML = `<div class="notice ok">探测完成：推荐 ${rec} 个字段（已勾选）${more ? '，另有 ' + more + ' 个候选折叠在「更多候选」' : ''}；${p.attachments.length} 个附件候选${p.page_title ? ' · 页面「' + esc(p.page_title) + '」' : ''}</div>`;
+    const tbl = best >= 0 ? `；已选「${esc(wz.tables[best].title || '表格 ' + (wz.tables[best].index + 1))}」作为记录行（${wz.tables[best].row_count} 行）` : (wz.tables.length ? `；发现 ${wz.tables.length} 个表格，可选作记录行` : '');
+    $('wzProbeStatus').innerHTML = `<div class="notice ok">探测完成：推荐 ${rec} 个页面字段（已勾选）${more ? '，另有 ' + more + ' 个候选折叠在「更多候选」' : ''}${tbl}；${p.attachments.length} 个附件候选${p.page_title ? ' · 页面「' + esc(p.page_title) + '」' : ''}</div>`;
     wzRender(); wzShow(2);
   };
   // Servers that predate the `recommended` flag: fall back to source/confidence.
@@ -540,8 +572,21 @@
   $('wzNone').onclick = () => { wz.fields.forEach(f => { f.selected = f.isKey; }); wzRender(); };
   $('wzBackBtn1').onclick = () => wzShow(1);
   $('wzBackBtn2').onclick = () => wzShow(2);
+  function wzSelectedTable() {
+    const t = wz.tables[wz.tableIndex];
+    if (!t) return null;
+    const columns = t.columns.filter(c => c.selected).map(c => ({ key: c.key, name: c.name, sample: c.sample, source: c.source, strategy: c.strategy, type: c.type, confidence: c.confidence, aliases: c.aliases || [], column: c.column }));
+    return { index: t.index, title: t.title || '', headers: t.headers, columns };
+  }
   $('wzNextBtn').onclick = () => {
-    if (!wz.fields.some(f => f.selected)) { alert('请至少勾选一个字段'); return; }
+    const table = wzSelectedTable();
+    if (table && !table.columns.length) { alert('记录行至少要勾选一列'); return; }
+    if (!wz.fields.some(f => f.selected) && !table) { alert('请至少勾选一个字段，或选择一个表格作为记录行'); return; }
+    if (table) {
+      const pageKeys = new Set(wz.fields.filter(f => f.selected).map(f => f.key));
+      const clash = table.columns.find(c => pageKeys.has(c.key));
+      if (clash) { alert(`表格列「${clash.name}」与页面字段重名（${clash.key}），请改名或取消其中一个`); return; }
+    }
     const bad = wz.vars.filter(v => v.selected && !validKey(v.name));
     if (bad.length) { alert('变量名只能是小写字母、数字、下划线，且以字母开头'); return; }
     if (!$('wzId').value) { try { const u = new URL(wz.probe.url_analysis.url); const seg = u.pathname.split('/').filter(Boolean)[0] || 'detail'; $('wzId').value = slug(seg + '_batch').slice(0, 40) || 'detail_batch'; } catch (e) { /* keep empty */ } }
@@ -560,8 +605,8 @@
       template_id: $('wzId').value.trim(), name: $('wzName').value.trim(), description: $('wzDesc').value.trim(),
       sample_url: wz.probe.url_analysis.url, url_template: urlTemplate, driver_variable: driver,
       driver_prompt: selVars.length ? (wz.fields.find(f => f.source === 'url' && f.key === driver) || {}).name || null : '详情页地址',
-      fields, attachments, record_key: keyField ? [keyField.key] : [],
-      run: { per_item_delay_ms: Number($('wzDelay').value) || 0, on_item_error: $('wzOnErr').value, capture_tables: $('wzTables').checked, skip_if_exists: $('wzSkipDone').checked },
+      fields, attachments, table: wzSelectedTable(), record_key: keyField ? [keyField.key] : [],
+      run: { per_item_delay_ms: Number($('wzDelay').value) || 0, on_item_error: $('wzOnErr').value, skip_if_exists: $('wzSkipDone').checked },
     };
   }
   $('wzCreateBtn').onclick = async () => {

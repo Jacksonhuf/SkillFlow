@@ -401,6 +401,16 @@ def probe_url(
         extras = sum(1 for item in fields if not item.get("recommended"))
         if extras:
             console.print(f"  [dim]{extras} 个候选仅来自接口返回或猜测配对，默认不建议选用。[/dim]")
+    for item in probe.get("tables") or []:
+        mark = "[green]✓[/green]" if item.get("recommended") else "[dim]·[/dim]"
+        title = item.get("title") or f"表格 {int(item['index']) + 1}"
+        console.print(
+            f"  {mark} [cyan]记录行候选[/cyan] {title}  "
+            f"[dim]{item['row_count']} 行 × {len(item.get('headers') or [])} 列[/dim]"
+        )
+        console.print(
+            "      列: " + "、".join(f"{c['name']}({c['key']})" for c in item.get("columns") or [])
+        )
     for item in probe.get("attachments") or []:
         console.print(
             f"  [cyan]附件[/cyan] {item['name']} × {item['count']}  "

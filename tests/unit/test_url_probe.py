@@ -12,6 +12,7 @@ from browser_skill.models import (
     BrowserSnapshot,
     CommandResult,
     FieldType,
+    TableData,
 )
 from browser_skill.runtime.url_probe import (
     UrlProber,
@@ -233,6 +234,46 @@ def test_probe_without_url_variable_keeps_every_response() -> None:
 
     menu = next(item for item in report.fields if item.name == "menu_name")
     assert menu.recommended is False
+
+
+def test_probe_offers_grids_as_table_candidates_but_not_key_value_tables() -> None:
+    kv = TableData(index=0, rows=[["订单号", "ORD-2024-0917"], ["客户名称", "张三贸易"]])
+    lines = TableData(
+        index=1,
+        title="商品明细",
+        headers=["序号", "物料编码", "物料名称", "数量", "单价"],
+        rows=[
+            ["1", "M-001", "螺栓 M8", "200", "0.35"],
+            ["2", "M-002", "垫片", "200", "0.10"],
+            ["3", "M-003", "螺母 M8", "200", "0.20"],
+        ],
+    )
+    log = TableData(index=2, title="操作日志", headers=["时间", "操作"], rows=[["09:00", "创建"]])
+    adapter = FakeBrowserAdapter({"snapshot": [_detail_snapshot(tables=[kv, lines, log])]})
+
+    report = asyncio.run(
+        UrlProber().probe(adapter, SAMPLE_URL, capabilities=BrowserCapabilities(snapshot=True))
+    )
+
+    assert [item.title for item in report.tables] == ["商品明细", "操作日志"]
+    lines_candidate = report.tables[0]
+    assert lines_candidate.recommended is True
+    assert lines_candidate.row_count == 3
+    assert lines_candidate.headers == ["序号", "物料编码", "物料名称", "数量", "单价"]
+    assert [item.key for item in lines_candidate.columns] == [
+        "seq_no",
+        "material_code",
+        "material_name",
+        "quantity",
+        "unit_price",
+    ]
+    assert lines_candidate.columns[1].sample == "M-001"
+    assert lines_candidate.columns[1].column == 1
+    assert lines_candidate.columns[3].type == FieldType.INTEGER
+    assert lines_candidate.preview[0] == ["1", "M-001", "螺栓 M8", "200", "0.35"]
+    assert report.tables[1].recommended is False  # a single row is not enough to recommend
+    # table columns no longer leak into the flat page-field list
+    assert not any(item.source == "table" for item in report.fields)
 
 
 def test_probe_without_network_capability_warns_and_uses_text() -> None:
