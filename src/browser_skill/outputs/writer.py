@@ -161,6 +161,7 @@ class OutputWriter:
             "checkpoint_count": len(checkpoints),
             "state_durations_ms": state_durations,
             "validation": report.model_dump(mode="json") if report else None,
+            "items": context.batch.stats() if context.batch else None,
             "error": error,
             "artifacts": artifacts or {},
         }

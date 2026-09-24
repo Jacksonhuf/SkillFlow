@@ -32,5 +32,55 @@ See `templates/inventory_feedback/1.yaml` for a complete example and
   and `json_path` (`$.data.list[*].orderNo`); Run reads the browser's observed JSON exchange first
   and falls back to DOM/table extraction when the exchange is missing.
 
+## URL batch (detail_batch) templates
+
+- `run.mode: detail_batch` runs one detail page per value of `run.driver_variable`; the default
+  `run.mode: list` keeps the classic single-entry workflow. Other `run` knobs: `concurrency`,
+  `per_item_delay_ms`, `on_item_error` (`continue | stop`), `dedupe_values`, `max_items`,
+  `accept_full_urls`, `capture_tables`, `skip_if_exists` (incremental runs: values that finished
+  `ok` in an earlier run of the same template are marked `skipped` and not visited).
+- `system.url_template` is an absolute http(s) URL with `{variable}` placeholders (never in the
+  host part); its host must be in `allowed_hosts` and every placeholder must be a declared
+  variable. Values are URL-encoded when rendered.
+- The driver variable must set `multiple: true`. Multi-value input accepts a JSON array or text
+  split on newlines / commas / semicolons. A value that is itself a full `http(s)` URL is opened
+  directly (when `accept_full_urls`), skips the variable regex, and still has to pass the
+  `allowed_hosts` policy check.
+- `filename_pattern` placeholders for attachments: any record field key (the driver value is
+  always stamped on each record) and `{original_name}`.
+- Runtime: after the login check on `entry_url` the Runner opens each planned URL in turn
+  (`per_item_delay_ms` with ±30% jitter between items), extracts one record per page (or one
+  per table row with `capture_tables`), downloads the declared attachments, and records the
+  item in `runs/<run_id>/batch.json` (`pending | ok | partial | failed | skipped`, `reason`,
+  `error`; the file also carries `template_id` so later incremental runs can find it).
+  A record missing a required field, or a required attachment that did not download, marks
+  the item `failed` and keeps it out of the result; optional gaps mark it `partial`. Any
+  failed item makes the run `PARTIAL` with `summary.items.failed_values`; `on_item_error: stop`
+  fails the run at the first failure; all items failing is a `FAILED` run. If a detail page
+  shows the login screen the run pauses in `WAIT_USER_AUTH` and `resume` continues with the
+  first unfinished item. Events: `item_started`, `item_finished`, `item_failed`,
+  `item_deferred`, `items_skipped`, `batch_finished`.
+- `skip_if_exists`: skipped items get `reason: done_in:<run_id>`; their records stay in the
+  earlier run's output (this run only contains what it visited). When every value was already
+  done the run completes with zero records regardless of `min_records`.
+- Attachment de-duplication: within one run, a link whose absolute `href` was already fetched is
+  copied from the first file instead of being downloaded again (`DownloadedFile.copied_from`
+  points at the original). Links without a document URL (`javascript:`, `#`, `blob:`) are
+  always downloaded.
+- `concurrency` is accepted but items run sequentially: the browser adapters expose one active
+  page (`open` / `snapshot` / `download` all act on it), so multi-tab execution needs per-page
+  handles in both the Playwright and chrome-use adapters first.
+- Detail-page field acquisition order: structured elements/records → learned network mapping
+  (`preferred_source: network`, `endpoint_hint` may contain `{variable}` placeholders such as
+  `/api/orders/{order_no}`, `json_path` like `$.data.amount`) → label/value pairs parsed from
+  the page text (`订单号：ORD-1`, tab-separated cells, or a label line followed by a value line).
+- Creating one from a page: `probe_url` (`{action: "probe_url", url}`) opens the URL in the
+  user's session and returns `url_analysis` (suggested `url_template` + variables with
+  confidence), `fields` (source `url | dom | table | network`, sample value, type, confidence)
+  and `attachments` (grouped by name, count, types). `create_from_probe`
+  (`{action: "create_from_probe", probe_draft}`) compiles the ticked candidates into a
+  `detail_batch` draft: driver variable `multiple: true`, record key = driver, attachments
+  named `{driver}_{original_name}`, learned mappings for network/dom candidates.
+
 The host Agent platform renders template selection and variable collection. Template files must not
 contain platform-specific UI component identifiers.

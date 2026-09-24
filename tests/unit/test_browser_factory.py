@@ -46,6 +46,7 @@ def test_unknown_engine_is_rejected() -> None:
 
 
 def test_playwright_capabilities_and_sessions_without_connecting() -> None:
+    pytest.importorskip("playwright")
     import asyncio
 
     adapter = PlaywrightAdapter(cdp_url="http://127.0.0.1:1")

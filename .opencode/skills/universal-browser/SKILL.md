@@ -33,14 +33,17 @@ When no host platform injects a browser tool, run the bundled script yourself—
 1. `py scripts\\invoke.py start` — template menu JSON (bootstrap runs automatically).
 2. `py scripts\\invoke.py run <template_id> --var name=value` — execute; output is JSON under `runs/`.
 3. If state is `WAIT_USER_AUTH`, tell the user to log in in the Chrome window that opened (once), then `py scripts\\invoke.py resume <run_id>`.
+4. Batch templates (`run.mode: detail_batch`) take **many** values for their driver variable: repeat `--var order_no=…`, or `--var-file orders.csv --var-column 订单号`. Report `data.items` (`ok / partial / failed / failed_values`) and offer to re-run only `failed_values`. `py scripts\\invoke.py probe <detail-url>` analyses one detail page (URL variables, field and attachment candidates) for `create_from_probe`. Details: `references/agent-execution.zh.md`.
 
 `doctor` and `--no-auto-install-chrome-use` are **maintainer / operator** flags only, not user steps.
 
 ## Local console (optional UI, same engine)
 
 `py scripts\\invoke.py ui` starts a **127.0.0.1-only** web console (token in the printed URL): template
-cards with variable forms, run history with artifact download (`result`, `manifest.json`, `report.md`),
-a Teach wizard (sample → draft → discover → test → publish) and environment diagnostics. It calls the same
+cards with variable forms (multi-line / CSV import for batch templates, per-item progress, retry failed),
+run history with artifact download (`result`, `manifest.json`, `report.md`), a **new-template wizard**
+(paste one detail URL → probe → tick fields/attachments → test → publish; the legacy sample-based Teach
+flow stays behind a toggle) and environment diagnostics. It calls the same
 `BrowserSkillApp` actions as the Agent, so results are identical. Scheduled runs on the user's machine:
 `scripts\windows\Register-ScheduledRun.ps1` (Windows Task Scheduler → `invoke.py run`).
 

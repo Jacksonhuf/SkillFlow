@@ -18,6 +18,7 @@ from browser_skill.browser.chrome_use import ChromeUseToolAdapter
 from browser_skill.browser.factory import build_adapter
 from browser_skill.errors import SkillError
 from browser_skill.interaction.template_menu import TemplateMenu
+from browser_skill.interaction.value_files import apply_values_file
 from browser_skill.interaction.variables import VariableResolver
 from browser_skill.models import BrowserTemplate, RunState
 from browser_skill.platform.acceptance import validate_acceptance_bundle
@@ -224,9 +225,7 @@ def probe_platform(
 @app.command("validate-acceptance")
 def validate_acceptance(
     bundle: Annotated[Path, typer.Argument(help="Acceptance evidence bundle JSON")],
-    require_sign_off: Annotated[
-        bool, typer.Option(help="Require approved sign_off block")
-    ] = False,
+    require_sign_off: Annotated[bool, typer.Option(help="Require approved sign_off block")] = False,
 ) -> None:
     """Validate the structure of an internal-platform acceptance evidence bundle."""
     result = validate_acceptance_bundle(bundle, require_sign_off=require_sign_off)
@@ -238,10 +237,60 @@ def validate_acceptance(
         raise typer.Exit(2)
 
 
+VarOption = Annotated[
+    list[str] | None,
+    typer.Option("--var", help="name=value; repeat the same name for several batch values"),
+]
+VarFileOption = Annotated[
+    Path | None,
+    typer.Option("--var-file", help="Text/CSV/TSV/XLSX with one value per line or column"),
+]
+VarColumnOption = Annotated[
+    str | None,
+    typer.Option("--var-column", help="Header or 1-based index inside --var-file"),
+]
+VarNameOption = Annotated[
+    str | None,
+    typer.Option("--var-name", help="Variable filled from --var-file (default: batch driver)"),
+]
+
+
+def _supplied_variables(
+    template: BrowserTemplate,
+    variable: list[str] | None,
+    var_file: Path | None,
+    var_column: str | None,
+    var_name: str | None,
+) -> dict[str, Any]:
+    supplied = parse_variables(variable or [])
+    if var_file is not None:
+        apply_values_file(template, supplied, var_file, column=var_column, name=var_name)
+    return supplied
+
+
+def _print_batch_summary(data: dict[str, Any]) -> None:
+    items = data.get("items")
+    if not isinstance(items, dict):
+        return
+    console.print(
+        f"  [cyan]↳[/cyan] 批量：共 {items.get('total', 0)} 条 · 成功 {items.get('ok', 0)}"
+        f" · 部分 {items.get('partial', 0)} · 失败 {items.get('failed', 0)}"
+    )
+    failed = items.get("failed_values") or []
+    if failed:
+        shown = ", ".join(str(value) for value in failed[:20])
+        more = f" …(+{len(failed) - 20})" if len(failed) > 20 else ""
+        console.print(f"  [yellow]失败的编号：[/yellow]{shown}{more}")
+        console.print("  [dim]只重跑失败项：再次运行并用 --var 传入以上编号[/dim]")
+
+
 @app.command()
 def run(
     selector: str,
-    variable: Annotated[list[str] | None, typer.Option("--var", help="Runtime name=value")] = None,
+    variable: VarOption = None,
+    var_file: VarFileOption = None,
+    var_column: VarColumnOption = None,
+    var_name: VarNameOption = None,
     root: Annotated[Path, typer.Option("--root")] = Path("templates"),
     runs_root: Annotated[Path, typer.Option("--runs-root")] = Path("runs"),
     executable: Annotated[str, typer.Option(help="chrome-use executable")] = "chrome-use",
@@ -255,7 +304,7 @@ def run(
             console.print("[cyan]请选择 Teach 流程创建模板。[/cyan]")
             raise typer.Exit()
         template = store.load(template_id)
-        supplied = parse_variables(variable or [])
+        supplied = _supplied_variables(template, variable, var_file, var_column, var_name)
         resolver = VariableResolver()
         for name in resolver.missing(template, supplied):
             spec = template.variables[name]
@@ -269,9 +318,7 @@ def run(
         )
         with console.status("[bold #818cf8]正在执行并校验业务结果…[/bold #818cf8]", spinner="dots"):
             response = asyncio.run(
-                Runner(_adapter(executable), runs_root).run(
-                    template, supplied, dry_run=dry_run
-                )
+                Runner(_adapter(executable), runs_root).run(template, supplied, dry_run=dry_run)
             )
         color = (
             "green"
@@ -291,11 +338,73 @@ def run(
         if response.data.get("artifacts"):
             for name, path in response.data["artifacts"].items():
                 console.print(f"  [cyan]↳[/cyan] {name}: {path}")
+        _print_batch_summary(response.data)
         if not response.ok:
             raise typer.Exit(2)
     except (SkillError, ValueError) as exc:
         console.print(Panel(str(exc), title="[red]无法执行[/red]", border_style="red"))
         raise typer.Exit(2) from exc
+
+
+@app.command("probe")
+def probe_url(
+    url: Annotated[str, typer.Argument(help="A detail page URL you are logged in to")],
+    executable: Annotated[str, typer.Option(help="chrome-use executable")] = "chrome-use",
+    runs_root: Annotated[Path, typer.Option("--runs-root")] = Path("runs"),
+    as_json: Annotated[bool, typer.Option("--json", help="Print the raw probe JSON")] = False,
+) -> None:
+    """Analyse one detail-page URL: URL variables, field and attachment candidates."""
+    from browser_skill.app import BrowserSkillApp
+    from browser_skill.models import SkillRequest
+
+    skill_app = BrowserSkillApp(Path("templates"), runs_root, _adapter(executable))
+    with console.status("[bold #818cf8]正在打开页面并分析…[/bold #818cf8]", spinner="dots"):
+        response = asyncio.run(skill_app.handle(SkillRequest(action="probe_url", url=url)))
+    if as_json:
+        console.print_json(json.dumps(response.model_dump(mode="json"), ensure_ascii=False))
+        raise typer.Exit(0 if response.ok else 2)
+    probe = response.data.get("probe") or {}
+    color = "green" if response.ok else "yellow"
+    console.print(Panel(f"[bold {color}]{response.message}[/bold {color}]", border_style=color))
+    analysis = probe.get("url_analysis") or {}
+    if analysis.get("template_suggestion"):
+        console.print(f"[bold]URL 模板[/bold]  {analysis['template_suggestion']}")
+    for item in analysis.get("variables") or []:
+        mark = "✓" if item.get("selected") else "·"
+        console.print(
+            f"  {mark} {item['name']} = {item['sample']}  [dim]{item['position']} · "
+            f"{round(float(item['confidence']) * 100)}%[/dim]"
+        )
+    table = Table(box=box.SIMPLE_HEAVY, title="字段候选", border_style="#6366f1")
+    table.add_column("key", style="bold")
+    table.add_column("名称")
+    table.add_column("示例")
+    table.add_column("来源", justify="center")
+    table.add_column("置信度", justify="right")
+    for item in probe.get("fields") or []:
+        table.add_row(
+            str(item["key"]),
+            str(item["name"]),
+            str(item.get("sample") or ""),
+            str(item["source"]),
+            f"{round(float(item['confidence']) * 100)}%",
+        )
+    if table.row_count:
+        console.print(table)
+    for item in probe.get("attachments") or []:
+        console.print(
+            f"  [cyan]附件[/cyan] {item['name']} × {item['count']}  "
+            f"[dim]{', '.join(item.get('types') or []) or '未知类型'}[/dim]"
+        )
+    for warning in probe.get("warnings") or []:
+        console.print(f"  [yellow]![/yellow] {warning}")
+    if response.ok:
+        console.print(
+            "[dim]下一步：在本地界面「新建模板」里粘贴同一地址，勾选字段后创建；"
+            "或用 --json 取候选并调用 create_from_probe。[/dim]"
+        )
+    else:
+        raise typer.Exit(2)
 
 
 @app.command("ui")
@@ -317,7 +426,10 @@ def local_console(
 @app.command("test")
 def test_template(
     selector: str,
-    variable: Annotated[list[str] | None, typer.Option("--var")] = None,
+    variable: VarOption = None,
+    var_file: VarFileOption = None,
+    var_column: VarColumnOption = None,
+    var_name: VarNameOption = None,
     root: Annotated[Path, typer.Option("--root")] = Path("templates"),
     runs_root: Annotated[Path, typer.Option("--runs-root")] = Path("runs"),
     executable: Annotated[str, typer.Option(help="chrome-use executable")] = "chrome-use",
@@ -329,21 +441,20 @@ def test_template(
         if template_id is None:
             raise typer.BadParameter("Select a template, not the create item")
         template = store.load(template_id, require_published=False)
-        supplied = parse_variables(variable or [])
+        supplied = _supplied_variables(template, variable, var_file, var_column, var_name)
         resolver = VariableResolver()
         for name in resolver.missing(template, supplied):
             spec = template.variables[name]
             supplied[name] = typer.prompt(spec.prompt, hide_input=spec.sensitive)
         with console.status("[bold #818cf8]正在执行完整 Test Run…[/bold #818cf8]"):
-            response = asyncio.run(
-                Runner(_adapter(executable), runs_root).run(template, supplied)
-            )
+            response = asyncio.run(Runner(_adapter(executable), runs_root).run(template, supplied))
         console.print(
             Panel(
                 f"{response.message}\n[dim]Run ID: {response.run_id} · {response.state}[/dim]",
                 border_style="green" if response.ok else "red",
             )
         )
+        _print_batch_summary(response.data)
         if not response.ok:
             raise typer.Exit(2)
     except (SkillError, ValueError) as exc:

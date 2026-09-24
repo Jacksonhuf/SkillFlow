@@ -20,6 +20,7 @@ import os
 import sys
 import traceback
 from pathlib import Path
+from typing import Any
 
 
 def _skill_root() -> Path:
@@ -66,6 +67,34 @@ def _bootstrap() -> None:
     os.environ.setdefault("UNIVERSAL_BROWSER_SKILL_ROOT", str(root))
 
 
+def _add_variable_options(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument(
+        "--var",
+        action="append",
+        default=[],
+        help="name=value; repeat the same name to pass several values to a batch template",
+    )
+    parser.add_argument(
+        "--var-file",
+        type=Path,
+        help="Text/CSV/TSV/XLSX file with one value per line (or one column) for a batch run",
+    )
+    parser.add_argument(
+        "--var-column",
+        help="Column header or 1-based index inside --var-file (default: first column)",
+    )
+    parser.add_argument(
+        "--var-name",
+        help="Variable filled from --var-file (default: the template's batch driver variable)",
+    )
+
+
+def _print_response(response: Any) -> int:
+    payload = response.model_dump(mode="json")
+    print(json.dumps(payload, ensure_ascii=False, indent=2))
+    return 0 if payload.get("ok") else 1
+
+
 def main(argv: list[str] | None = None) -> int:
     _bootstrap()
     from browser_skill.app import parse_variables
@@ -105,7 +134,16 @@ def main(argv: list[str] | None = None) -> int:
 
     run_p = sub.add_parser("run", help="Run a published template")
     run_p.add_argument("selector", help="Template id, menu index, or name")
-    run_p.add_argument("--var", action="append", default=[], help="name=value")
+    _add_variable_options(run_p)
+
+    test_p = sub.add_parser("test", help="Test-run a draft template (keeps publish evidence)")
+    test_p.add_argument("selector", help="Template id, menu index, or name")
+    _add_variable_options(test_p)
+
+    probe_p = sub.add_parser(
+        "probe", help="Analyse one detail-page URL: variables, field and attachment candidates"
+    )
+    probe_p.add_argument("url", help="A detail page URL you are logged in to")
 
     resume_p = sub.add_parser("resume", help="Resume after Chrome login")
     resume_p.add_argument("run_id")
@@ -190,17 +228,21 @@ def main(argv: list[str] | None = None) -> int:
             response = await app.handle(SkillRequest(action="start"))
             print(json.dumps(response.model_dump(mode="json"), ensure_ascii=False, indent=2))
             return 0 if response.ok else 1
-        if args.command == "run":
-            variables = parse_variables(args.var)
+        if args.command in {"run", "test"}:
             response = await app.handle(
                 SkillRequest(
-                    action="run",
+                    action=args.command,
                     selector=args.selector,
-                    variables=variables,
+                    variables=parse_variables(args.var),
+                    values_file=args.var_file,
+                    values_column=args.var_column,
+                    values_variable=args.var_name,
                 )
             )
-            print(json.dumps(response.model_dump(mode="json"), ensure_ascii=False, indent=2))
-            return 0 if response.ok else 1
+            return _print_response(response)
+        if args.command == "probe":
+            response = await app.handle(SkillRequest(action="probe_url", url=args.url))
+            return _print_response(response)
         if args.command == "resume":
             response = await app.handle(
                 SkillRequest(
@@ -209,8 +251,7 @@ def main(argv: list[str] | None = None) -> int:
                     variables=parse_variables(args.var),
                 )
             )
-            print(json.dumps(response.model_dump(mode="json"), ensure_ascii=False, indent=2))
-            return 0 if response.ok else 1
+            return _print_response(response)
         return 2
 
     async def dispatch_and_close() -> int:

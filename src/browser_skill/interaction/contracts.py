@@ -261,6 +261,34 @@ def platform_probe_interaction(report: Any) -> SkillInteraction:
     )
 
 
+def url_probe_interaction(report: Any) -> SkillInteraction:
+    """Candidate checklist for the URL-batch wizard (step 2)."""
+    selected = [item for item in report.url_analysis.variables if item.selected]
+    variables = "、".join(f"{item.name}={item.sample}" for item in selected) or "未识别"
+    fields = "、".join(item.name for item in report.fields[:12]) or "未识别"
+    attachments = "、".join(item.name for item in report.attachments) or "未识别"
+    if report.auth_state == "unauthenticated":
+        title = "请先登录后重新探测"
+        actions = ["retry_probe_url", "cancel_template"]
+    else:
+        title = "请勾选要采集的字段和附件"
+        actions = ["create_from_probe", "retry_probe_url", "cancel_template"]
+    text = (
+        f"URL 变量：{variables}\n"
+        f"字段候选（{len(report.fields)}）：{fields}\n"
+        f"附件候选（{len(report.attachments)}）：{attachments}"
+    )
+    if report.warnings:
+        text += "\n提示：" + " ".join(report.warnings)
+    return SkillInteraction(
+        kind=InteractionKind.TARGET_REVIEW,
+        title=title,
+        text=text,
+        actions=actions,
+        data=report.model_dump(mode="json"),
+    )
+
+
 def metrics_interaction(report: Any) -> SkillInteraction:
     completed = report.state_counts.get("COMPLETED", 0)
     failed = report.state_counts.get("FAILED", 0)

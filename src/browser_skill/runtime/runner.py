@@ -1,13 +1,16 @@
 from __future__ import annotations
 
+import asyncio
+import contextlib
 import json
+import random
 import secrets
 from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from browser_skill.acquire.network import NetworkExtractor, NetworkRecordSource
+from browser_skill.acquire.network import NetworkExtractor, NetworkRecordSource, parse_exchanges
 from browser_skill.acquire.vision import NullVisionProvider, VisionFallback, VisionProvider
 from browser_skill.browser.base import BrowserAdapter
 from browser_skill.errors import ErrorCode, SkillError
@@ -16,19 +19,35 @@ from browser_skill.interaction.variables import VariableResolver
 from browser_skill.models import (
     AcquisitionSource,
     AuthState,
+    BatchItemState,
+    BatchItemStatus,
+    BatchProgress,
     BrowserCapabilities,
     BrowserSnapshot,
     BrowserTemplate,
     Checkpoint,
+    DownloadedFile,
+    DownloadStatus,
+    NetworkExchange,
     RunContext,
+    RunMode,
     RunState,
     SkillResponse,
+    ValidationReport,
 )
 from browser_skill.outputs.writer import OutputWriter, RunWorkspace
 from browser_skill.pipeline.analyze import AnalysisProvider
 from browser_skill.pipeline.orchestrator import analyze_failed_run, finalize_pipeline
 from browser_skill.pipeline.process import apply_processing
 from browser_skill.runtime.auth import AuthClassifier
+from browser_skill.runtime.batch import (
+    ItemOutcome,
+    apply_incremental_skip,
+    build_progress,
+    classify_item,
+    extract_item_records,
+    previously_completed_values,
+)
 from browser_skill.runtime.capability_requirements import ensure_template_runtime_capabilities
 from browser_skill.runtime.detail import DetailCollector
 from browser_skill.runtime.downloader import AttachmentDownloader
@@ -37,9 +56,15 @@ from browser_skill.runtime.locator import LocatorService
 from browser_skill.runtime.policy import ActionPolicy
 from browser_skill.runtime.run_store import RunStore
 from browser_skill.runtime.state_machine import can_transition
+from browser_skill.runtime.url_batch import plan_batch_items
 from browser_skill.runtime.validator import ResultValidator
 
 EventHook = Callable[[dict[str, Any]], Awaitable[None]]
+ProgressListener = Callable[[dict[str, Any]], None]
+
+
+class _SessionExpired(Exception):
+    """Raised inside the batch loop when a detail page shows the login screen."""
 
 
 class Runner:
@@ -75,6 +100,8 @@ class Runner:
         self.output_writer = output_writer or OutputWriter()
         self.policy = policy or ActionPolicy()
         self.run_store = RunStore(runs_root)
+        # Optional sync observer for execution events (console job progress); never raises
+        self.progress_listener: ProgressListener | None = None
 
     async def run(
         self,
@@ -84,6 +111,8 @@ class Runner:
         dry_run: bool = False,
     ) -> SkillResponse:
         values = self.variables.resolve(template, supplied_variables)
+        # Plan detail_batch URLs before touching the browser so bad values fail fast
+        batch = self._plan_batch(template, values)
         run_id = f"run_{datetime.now(UTC):%Y%m%dT%H%M%SZ}_{secrets.token_hex(4)}"
         workspace = RunWorkspace(self.runs_root, run_id)
         context = RunContext(
@@ -93,9 +122,14 @@ class Runner:
             template_snapshot=template,
             variables=values,
             workspace=workspace.path,
+            batch=batch,
         )
         self._event(
-            workspace, context, "run_created", variables=self.variables.redacted(template, values)
+            workspace,
+            context,
+            "run_created",
+            variables=self.variables.redacted(template, values),
+            **({"items": len(batch.items)} if batch else {}),
         )
         try:
             self._transition(workspace, context, RunState.INPUT_READY)
@@ -142,91 +176,8 @@ class Runner:
                     state=RunState.WAIT_USER_AUTH,
                     data={"auth_state": auth_state.value},
                 )
-            self._transition(workspace, context, RunState.NAVIGATING, page_url=snapshot.url)
-            snapshot = await self._apply_workflow(
-                template,
-                values,
-                snapshot,
-                dialogs_supported=capabilities.dialogs,
-            )
-            self._transition(workspace, context, RunState.EXTRACTING, page_url=snapshot.url)
-            context.records, context.pagination_complete, snapshot = await self._collect_records(
+            return await self._execute_after_auth(
                 workspace, context, template, snapshot, capabilities
-            )
-            needs_detail = any(field.source == "detail" for field in template.target.fields) or any(
-                item.source == "detail" for item in template.target.attachments
-            )
-            if template.target.attachments or needs_detail:
-                self._transition(workspace, context, RunState.DOWNLOADING, page_url=snapshot.url)
-                list_attachments = [
-                    item for item in template.target.attachments if item.source == "list"
-                ]
-                if list_attachments:
-                    context.downloaded_files = await self.downloader.collect(
-                        self.adapter,
-                        template,
-                        snapshot,
-                        context.records,
-                        workspace.path,
-                        attachments=list_attachments,
-                    )
-                if needs_detail:
-                    detail_result = await self.detail_collector.collect(
-                        self.adapter, template, snapshot, context.records, workspace.path
-                    )
-                    context.records = detail_result.records
-                    context.downloaded_files.extend(detail_result.files)
-                    snapshot = detail_result.snapshot
-                    self._event(
-                        workspace,
-                        context,
-                        "detail_collection_finished",
-                        record_count=len(detail_result.records),
-                        file_count=len(detail_result.files),
-                        failed_record_count=len(detail_result.failed_record_keys),
-                    )
-            context.records = apply_processing(template, context.records)
-            self._report_vision(workspace, context)
-            self._transition(workspace, context, RunState.VALIDATING)
-            report = self.validator.validate(
-                template,
-                context.records,
-                context.downloaded_files,
-                pagination_complete=context.pagination_complete,
-            )
-            if not report.ok:
-                analysis = await analyze_failed_run(
-                    context, report, analysis_provider=self.analysis_provider
-                )
-                raise SkillError(
-                    ErrorCode.VALIDATION_FAILED,
-                    "Business-result validation failed",
-                    stage="VALIDATING",
-                    repairable=True,
-                    details={"validation": report.model_dump(mode="json"), "analysis": analysis},
-                )
-            self._transition(workspace, context, RunState.WRITING_OUTPUT)
-            final_state = RunState.PARTIAL if report.partial else RunState.COMPLETED
-            context.state = final_state
-            context.finished_at = datetime.now(UTC)
-            artifacts = self.output_writer.write(context, report)
-            pipeline_data = await finalize_pipeline(
-                context, report, artifacts, analysis_provider=self.analysis_provider
-            )
-            self.output_writer.write_summary(context, report=report, artifacts=artifacts)
-            self._persist_context(workspace, context)
-            self._event(workspace, context, "run_finished", artifacts=artifacts)
-            return SkillResponse(
-                ok=True,
-                message="任务完成" if final_state == RunState.COMPLETED else "任务产生部分结果",
-                run_id=run_id,
-                state=final_state,
-                data={
-                    "artifacts": artifacts,
-                    "validation": report.model_dump(mode="json"),
-                    "execution_contract": contract_payload(),
-                    "pipeline": pipeline_data.get("pipeline"),
-                },
             )
         except SkillError as exc:
             context.state = (
@@ -285,90 +236,13 @@ class Runner:
                     state=context.state,
                     data={"auth_state": auth_state.value},
                 )
-            template = context.template_snapshot
-            self._transition(workspace, context, RunState.NAVIGATING, page_url=snapshot.url)
-            snapshot = await self._apply_workflow(
-                template,
-                context.variables,
+            return await self._execute_after_auth(
+                workspace,
+                context,
+                context.template_snapshot,
                 snapshot,
-                dialogs_supported=capabilities.dialogs,
-            )
-            self._transition(workspace, context, RunState.EXTRACTING, page_url=snapshot.url)
-            context.records, context.pagination_complete, snapshot = await self._collect_records(
-                workspace, context, template, snapshot, capabilities
-            )
-            needs_detail = any(field.source == "detail" for field in template.target.fields) or any(
-                item.source == "detail" for item in template.target.attachments
-            )
-            if template.target.attachments or needs_detail:
-                self._transition(workspace, context, RunState.DOWNLOADING, page_url=snapshot.url)
-                list_attachments = [
-                    item for item in template.target.attachments if item.source == "list"
-                ]
-                if list_attachments:
-                    context.downloaded_files = await self.downloader.collect(
-                        self.adapter,
-                        template,
-                        snapshot,
-                        context.records,
-                        workspace.path,
-                        attachments=list_attachments,
-                    )
-                if needs_detail:
-                    detail_result = await self.detail_collector.collect(
-                        self.adapter, template, snapshot, context.records, workspace.path
-                    )
-                    context.records = detail_result.records
-                    context.downloaded_files.extend(detail_result.files)
-                    snapshot = detail_result.snapshot
-                    self._event(
-                        workspace,
-                        context,
-                        "detail_collection_finished",
-                        record_count=len(detail_result.records),
-                        file_count=len(detail_result.files),
-                        failed_record_count=len(detail_result.failed_record_keys),
-                    )
-            context.records = apply_processing(template, context.records)
-            self._report_vision(workspace, context)
-            self._transition(workspace, context, RunState.VALIDATING)
-            report = self.validator.validate(
-                template,
-                context.records,
-                context.downloaded_files,
-                pagination_complete=context.pagination_complete,
-            )
-            if not report.ok:
-                analysis = await analyze_failed_run(
-                    context, report, analysis_provider=self.analysis_provider
-                )
-                raise SkillError(
-                    ErrorCode.VALIDATION_FAILED,
-                    "Business-result validation failed",
-                    stage="VALIDATING",
-                    repairable=True,
-                    details={"validation": report.model_dump(mode="json"), "analysis": analysis},
-                )
-            self._transition(workspace, context, RunState.WRITING_OUTPUT)
-            context.state = RunState.PARTIAL if report.partial else RunState.COMPLETED
-            context.finished_at = datetime.now(UTC)
-            artifacts = self.output_writer.write(context, report)
-            pipeline_data = await finalize_pipeline(
-                context, report, artifacts, analysis_provider=self.analysis_provider
-            )
-            self.output_writer.write_summary(context, report=report, artifacts=artifacts)
-            self._persist_context(workspace, context)
-            self._event(workspace, context, "run_finished", artifacts=artifacts)
-            return SkillResponse(
-                ok=True,
-                message="认证后已恢复并完成任务",
-                run_id=context.run_id,
-                state=context.state,
-                data={
-                    "artifacts": artifacts,
-                    "validation": report.model_dump(mode="json"),
-                    "pipeline": pipeline_data.get("pipeline"),
-                },
+                capabilities,
+                resumed=True,
             )
         except SkillError as exc:
             context.state = (
@@ -385,6 +259,315 @@ class Runner:
                 state=context.state,
                 data={"error": exc.as_dict()},
             )
+
+    async def _execute_after_auth(
+        self,
+        workspace: RunWorkspace,
+        context: RunContext,
+        template: BrowserTemplate,
+        snapshot: BrowserSnapshot,
+        capabilities: BrowserCapabilities,
+        *,
+        resumed: bool = False,
+    ) -> SkillResponse:
+        """Shared NAVIGATING → output pipeline for fresh and resumed runs."""
+        self._transition(workspace, context, RunState.NAVIGATING, page_url=snapshot.url)
+        if template.run.mode == RunMode.DETAIL_BATCH:
+            self._transition(workspace, context, RunState.EXTRACTING, page_url=snapshot.url)
+            paused = await self._run_batch(workspace, context, template, capabilities)
+            if paused is not None:
+                return paused
+        else:
+            snapshot = await self._apply_workflow(
+                template,
+                context.variables,
+                snapshot,
+                dialogs_supported=capabilities.dialogs,
+            )
+            self._transition(workspace, context, RunState.EXTRACTING, page_url=snapshot.url)
+            await self._collect_list_mode(workspace, context, template, snapshot, capabilities)
+        context.records = apply_processing(template, context.records)
+        self._report_vision(workspace, context)
+        self._transition(workspace, context, RunState.VALIDATING)
+        stats = context.batch.stats() if context.batch is not None else None
+        all_skipped = bool(stats and stats["total"] and stats["skipped"] == stats["total"])
+        if all_skipped:
+            # Nothing was (or had to be) collected: earlier runs already hold every value.
+            report = ValidationReport(ok=True, record_count=0, download_count=0)
+        else:
+            report = self.validator.validate(
+                template,
+                context.records,
+                context.downloaded_files,
+                pagination_complete=context.pagination_complete,
+            )
+        if not report.ok:
+            analysis = await analyze_failed_run(
+                context, report, analysis_provider=self.analysis_provider
+            )
+            details: dict[str, Any] = {
+                "validation": report.model_dump(mode="json"),
+                "analysis": analysis,
+            }
+            if context.batch is not None:
+                details["items"] = context.batch.stats()
+            raise SkillError(
+                ErrorCode.VALIDATION_FAILED,
+                "Business-result validation failed",
+                stage="VALIDATING",
+                repairable=True,
+                details=details,
+            )
+        self._transition(workspace, context, RunState.WRITING_OUTPUT)
+        batch_failures = bool(context.batch and context.batch.stats()["failed"])
+        final_state = RunState.PARTIAL if report.partial or batch_failures else RunState.COMPLETED
+        context.state = final_state
+        context.finished_at = datetime.now(UTC)
+        artifacts = self.output_writer.write(context, report)
+        pipeline_data = await finalize_pipeline(
+            context, report, artifacts, analysis_provider=self.analysis_provider
+        )
+        self.output_writer.write_summary(context, report=report, artifacts=artifacts)
+        self._persist_context(workspace, context)
+        self._event(workspace, context, "run_finished", artifacts=artifacts)
+        if all_skipped:
+            message = f"全部 {stats['total'] if stats else 0} 条此前已采集，本次无需重跑"
+        elif resumed:
+            message = "认证后已恢复并完成任务"
+        elif final_state == RunState.COMPLETED:
+            message = "任务完成"
+        else:
+            message = "任务产生部分结果"
+        if stats and stats["skipped"] and not all_skipped:
+            message += f"（跳过 {stats['skipped']} 条此前已采集）"
+        data: dict[str, Any] = {
+            "artifacts": artifacts,
+            "validation": report.model_dump(mode="json"),
+            "execution_contract": contract_payload(),
+            "pipeline": pipeline_data.get("pipeline"),
+        }
+        if context.batch is not None:
+            data["items"] = context.batch.stats()
+        return SkillResponse(
+            ok=True,
+            message=message,
+            run_id=context.run_id,
+            state=final_state,
+            data=data,
+        )
+
+    async def _collect_list_mode(
+        self,
+        workspace: RunWorkspace,
+        context: RunContext,
+        template: BrowserTemplate,
+        snapshot: BrowserSnapshot,
+        capabilities: BrowserCapabilities,
+    ) -> None:
+        context.records, context.pagination_complete, snapshot = await self._collect_records(
+            workspace, context, template, snapshot, capabilities
+        )
+        needs_detail = any(field.source == "detail" for field in template.target.fields) or any(
+            item.source == "detail" for item in template.target.attachments
+        )
+        if not template.target.attachments and not needs_detail:
+            return
+        self._transition(workspace, context, RunState.DOWNLOADING, page_url=snapshot.url)
+        list_attachments = [item for item in template.target.attachments if item.source == "list"]
+        if list_attachments:
+            context.downloaded_files = await self.downloader.collect(
+                self.adapter,
+                template,
+                snapshot,
+                context.records,
+                workspace.path,
+                attachments=list_attachments,
+            )
+        if needs_detail:
+            detail_result = await self.detail_collector.collect(
+                self.adapter, template, snapshot, context.records, workspace.path
+            )
+            context.records = detail_result.records
+            context.downloaded_files.extend(detail_result.files)
+            self._event(
+                workspace,
+                context,
+                "detail_collection_finished",
+                record_count=len(detail_result.records),
+                file_count=len(detail_result.files),
+                failed_record_count=len(detail_result.failed_record_keys),
+            )
+
+    def _plan_batch(
+        self, template: BrowserTemplate, values: dict[str, Any]
+    ) -> BatchProgress | None:
+        if template.run.mode != RunMode.DETAIL_BATCH:
+            return None
+        driver_values = self.variables.driver_values(template, values)
+        items = plan_batch_items(template, values, driver_values, policy=self.policy)
+        batch = build_progress(template, items)
+        if template.run.skip_if_exists:
+            completed = previously_completed_values(self.runs_root, template.template_id)
+            apply_incremental_skip(batch, completed)
+        return batch
+
+    async def _run_batch(
+        self,
+        workspace: RunWorkspace,
+        context: RunContext,
+        template: BrowserTemplate,
+        capabilities: BrowserCapabilities,
+    ) -> SkillResponse | None:
+        """Visit one detail page per driver value; returns a pause response if login expired.
+
+        Items already ``ok``/``partial`` (from a run that paused for auth) are skipped, so the
+        records and files they contributed are kept from ``run.json`` rather than re-fetched.
+        """
+        batch = context.batch
+        if batch is None:
+            batch = self._plan_batch(template, context.variables)
+            assert batch is not None
+            context.batch = batch
+        self._persist_batch(workspace, context)
+        skipped = [item for item in batch.items if item.status == BatchItemStatus.SKIPPED]
+        if skipped:
+            self._event(
+                workspace,
+                context,
+                "items_skipped",
+                count=len(skipped),
+                values=[item.value for item in skipped[:50]],
+            )
+        pending = [item for item in batch.items if not item.done]
+        for position, item in enumerate(pending):
+            self._check_cancelled(workspace, context)
+            self._event(
+                workspace, context, "item_started", index=item.index, value=item.value, url=item.url
+            )
+            try:
+                outcome = await self._process_batch_item(
+                    workspace,
+                    template,
+                    context.variables,
+                    batch.driver_variable,
+                    item,
+                    capabilities,
+                )
+            except _SessionExpired:
+                self._transition(workspace, context, RunState.WAIT_USER_AUTH, page_url=item.url)
+                self._event(
+                    workspace, context, "item_deferred", index=item.index, reason="auth_required"
+                )
+                return SkillResponse(
+                    ok=False,
+                    message="批量执行中登录已失效，请在 Chrome 中重新登录后使用此 run_id 恢复。",
+                    run_id=context.run_id,
+                    state=RunState.WAIT_USER_AUTH,
+                    data={"auth_state": AuthState.UNAUTHENTICATED.value, "items": batch.stats()},
+                )
+            except SkillError as exc:
+                if exc.code == ErrorCode.RUN_CANCELLED:
+                    raise
+                outcome = ItemOutcome(
+                    status=BatchItemStatus.FAILED, reason=exc.code.value, error=exc.as_dict()
+                )
+            item.status = outcome.status
+            item.reason = outcome.reason
+            item.error = outcome.error
+            item.record_count = len(outcome.records)
+            item.file_count = sum(file.status == DownloadStatus.OK for file in outcome.files)
+            item.finished_at = datetime.now(UTC)
+            context.records.extend(outcome.records)
+            context.downloaded_files.extend(outcome.files)
+            self._persist_batch(workspace, context)
+            self._event(
+                workspace,
+                context,
+                "item_failed" if item.status == BatchItemStatus.FAILED else "item_finished",
+                index=item.index,
+                value=item.value,
+                status=item.status.value,
+                reason=item.reason,
+                record_count=item.record_count,
+                file_count=item.file_count,
+            )
+            if item.status == BatchItemStatus.FAILED and template.run.on_item_error == "stop":
+                raise SkillError(
+                    ErrorCode.FIELD_MAPPING_FAILED
+                    if outcome.error is None
+                    else ErrorCode(outcome.error["code"]),
+                    f"批量项 {item.value} 失败，模板配置为失败即停止",
+                    stage="EXTRACTING",
+                    details={"items": batch.stats(), "item": item.model_dump(mode="json")},
+                )
+            if position + 1 < len(pending) and template.run.per_item_delay_ms:
+                await asyncio.sleep(self._item_delay_seconds(template.run.per_item_delay_ms))
+        stats = batch.stats()
+        self._event(workspace, context, "batch_finished", **stats)
+        if stats["failed"] == stats["total"] and stats["total"]:
+            raise SkillError(
+                ErrorCode.VALIDATION_FAILED,
+                "所有批量项均失败，未产生任何记录",
+                stage="EXTRACTING",
+                repairable=True,
+                details={"items": stats},
+            )
+        return None
+
+    async def _process_batch_item(
+        self,
+        workspace: RunWorkspace,
+        template: BrowserTemplate,
+        values: dict[str, Any],
+        driver: str,
+        item: BatchItemState,
+        capabilities: BrowserCapabilities,
+    ) -> ItemOutcome:
+        opened = await self.adapter.open(item.url)
+        if not opened.ok:
+            raise SkillError(ErrorCode.PAGE_NOT_FOUND, "无法打开详情页", stage="item")
+        snapshot = await self.adapter.snapshot(interactive=True)
+        if snapshot.url:
+            self.policy.require_url_allowed(snapshot.url, template)
+        if self.auth.classify(template.auth, snapshot) == AuthState.UNAUTHENTICATED:
+            raise _SessionExpired
+        snapshot = await self._apply_workflow(
+            template, values, snapshot, dialogs_supported=capabilities.dialogs
+        )
+        exchanges: list[NetworkExchange] = []
+        if capabilities.network and NetworkExtractor.network_field_mappings(template):
+            listing = await self.adapter.network_requests()
+            if listing.ok:
+                exchanges = parse_exchanges(listing.data)
+        records = extract_item_records(template, driver, item.value, snapshot, exchanges)
+        files: list[DownloadedFile] = []
+        if template.target.attachments and records:
+            files = await self.downloader.collect(
+                self.adapter, template, snapshot, records, workspace.path
+            )
+        return classify_item(template, records, files)
+
+    @staticmethod
+    def _item_delay_seconds(delay_ms: int) -> float:
+        # ±30% jitter so batches do not hit the site with a fixed rhythm
+        return delay_ms / 1000 * random.uniform(0.7, 1.3)
+
+    def _persist_batch(self, workspace: RunWorkspace, context: RunContext) -> None:
+        if context.batch is not None:
+            payload = context.batch.model_dump(mode="json")
+            payload["stats"] = context.batch.stats()
+            workspace.atomic_json("batch.json", payload)
+        self._persist_context(workspace, context)
+
+    def _check_cancelled(self, workspace: RunWorkspace, context: RunContext) -> None:
+        if not self.run_store.cancellation_requested(context.run_id):
+            return
+        context.state = RunState.CANCELLED
+        context.finished_at = datetime.now(UTC)
+        self._persist_context(workspace, context)
+        raise SkillError(
+            ErrorCode.RUN_CANCELLED, "Run was cancelled by the user", stage=context.state.value
+        )
 
     def _report_vision(self, workspace: RunWorkspace, context: RunContext) -> None:
         if not self.vision.attempts:
@@ -512,6 +695,9 @@ class Runner:
                     self.policy.require_url_allowed(current.url, template)
         return current
 
+    async def ensure_browser_ready(self) -> BrowserCapabilities:
+        return await self._ensure_browser_ready()
+
     async def _ensure_browser_ready(self) -> BrowserCapabilities:
         status = await self.adapter.status()
         if not status.ok:
@@ -571,15 +757,7 @@ class Runner:
         *,
         page_url: str | None = None,
     ) -> None:
-        if self.run_store.cancellation_requested(context.run_id):
-            context.state = RunState.CANCELLED
-            context.finished_at = datetime.now(UTC)
-            self._persist_context(workspace, context)
-            raise SkillError(
-                ErrorCode.RUN_CANCELLED,
-                "Run was cancelled by the user",
-                stage=context.state.value,
-            )
+        self._check_cancelled(workspace, context)
         if not can_transition(context.state, state):
             raise SkillError(
                 ErrorCode.VALIDATION_FAILED,
@@ -592,20 +770,20 @@ class Runner:
         self._persist_context(workspace, context)
         self._event(workspace, context, "state_changed")
 
-    @staticmethod
-    def _event(workspace: RunWorkspace, context: RunContext, event: str, **data: Any) -> None:
-        workspace.append_jsonl(
-            "execution.jsonl",
-            {
-                "timestamp": datetime.now(UTC).isoformat(),
-                "run_id": context.run_id,
-                "template_id": context.template_id,
-                "template_version": context.template_version,
-                "state": context.state.value,
-                "event": event,
-                **data,
-            },
-        )
+    def _event(self, workspace: RunWorkspace, context: RunContext, event: str, **data: Any) -> None:
+        payload = {
+            "timestamp": datetime.now(UTC).isoformat(),
+            "run_id": context.run_id,
+            "template_id": context.template_id,
+            "template_version": context.template_version,
+            "state": context.state.value,
+            "event": event,
+            **data,
+        }
+        workspace.append_jsonl("execution.jsonl", payload)
+        if self.progress_listener is not None:
+            with contextlib.suppress(Exception):
+                self.progress_listener(payload)
 
     def _persist_context(self, workspace: RunWorkspace, context: RunContext) -> None:
         payload = context.model_dump(mode="json")

@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import re
 from datetime import UTC, date, datetime
 from enum import StrEnum
 from pathlib import Path
 from typing import Any, Literal
+from urllib.parse import urlsplit
 
 from pydantic import BaseModel, ConfigDict, Field, HttpUrl, field_validator, model_validator
 
@@ -84,16 +86,59 @@ class OutputFormat(StrEnum):
     FILES_ONLY = "files-only"
 
 
+_URL_PLACEHOLDER = re.compile(r"\{([a-z][a-z0-9_]*)\}")
+
+
 class SystemSpec(StrictModel):
     entry_url: HttpUrl
     preferred_tab_url_contains: str | None = None
     allowed_hosts: list[str] = Field(default_factory=list)
+    url_template: str | None = Field(default=None, max_length=2000)
+    """Detail-page address with ``{variable}`` placeholders (detail_batch templates)."""
 
     @model_validator(mode="after")
     def default_allowed_host(self) -> SystemSpec:
         if not self.allowed_hosts and self.entry_url.host:
             self.allowed_hosts = [self.entry_url.host]
+        if self.url_template is not None:
+            parsed = urlsplit(self.url_template)
+            if parsed.scheme not in {"http", "https"} or not parsed.hostname:
+                raise ValueError("url_template must be an absolute http(s) URL")
+            if _URL_PLACEHOLDER.search(parsed.netloc):
+                raise ValueError("url_template placeholders are not allowed in the host part")
+            if parsed.hostname not in self.allowed_hosts:
+                raise ValueError("url_template host must be listed in allowed_hosts")
         return self
+
+    def url_template_variables(self) -> list[str]:
+        if not self.url_template:
+            return []
+        seen: list[str] = []
+        for name in _URL_PLACEHOLDER.findall(self.url_template):
+            if name not in seen:
+                seen.append(name)
+        return seen
+
+
+class RunMode(StrEnum):
+    LIST = "list"
+    DETAIL_BATCH = "detail_batch"
+
+
+class RunSpec(StrictModel):
+    """How a template is executed. Defaults reproduce the classic list workflow."""
+
+    mode: RunMode = RunMode.LIST
+    driver_variable: str | None = None
+    concurrency: int = Field(default=1, ge=1, le=4)
+    per_item_delay_ms: int = Field(default=300, ge=0, le=60_000)
+    on_item_error: Literal["continue", "stop"] = "continue"
+    dedupe_values: bool = True
+    max_items: int = Field(default=500, ge=1, le=10_000)
+    accept_full_urls: bool = True
+    capture_tables: bool = False
+    # Incremental runs: values already ``ok`` in an earlier run of this template are skipped
+    skip_if_exists: bool = False
 
 
 class SignalSpec(StrictModel):
@@ -131,6 +176,8 @@ class VariableSpec(StrictModel):
     options: list[str] = Field(default_factory=list)
     validation: VariableValidation | None = None
     sensitive: bool = False
+    multiple: bool = False
+    """Accept a list of values (pasted lines / CSV column); used by detail_batch drivers."""
 
     @model_validator(mode="after")
     def enum_requires_options(self) -> VariableSpec:
@@ -348,6 +395,7 @@ class BrowserTemplate(StrictModel):
     system: SystemSpec
     auth: AuthSpec
     variables: dict[str, VariableSpec] = Field(default_factory=dict)
+    run: RunSpec = Field(default_factory=RunSpec)
     target: TargetSpec
     workflow: WorkflowSpec = Field(default_factory=WorkflowSpec)
     learned: LearnedSpec = Field(default_factory=LearnedSpec)
@@ -368,6 +416,23 @@ class BrowserTemplate(StrictModel):
             raise ValueError(f"attachment mappings reference unknown keys: {sorted(unknown)}")
         if unknown := set(self.output.columns) - field_keys:
             raise ValueError(f"output columns reference unknown keys: {sorted(unknown)}")
+        if unknown := set(self.system.url_template_variables()) - set(self.variables):
+            raise ValueError(f"url_template references undeclared variables: {sorted(unknown)}")
+        if self.run.mode == RunMode.DETAIL_BATCH:
+            driver = self.run.driver_variable
+            if not driver:
+                raise ValueError("detail_batch templates require run.driver_variable")
+            spec = self.variables.get(driver)
+            if spec is None:
+                raise ValueError(f"run.driver_variable references unknown variable: {driver}")
+            if not spec.multiple:
+                raise ValueError("run.driver_variable must be declared with multiple: true")
+            if not self.system.url_template and not self.run.accept_full_urls:
+                raise ValueError(
+                    "detail_batch templates need system.url_template or accept_full_urls"
+                )
+        elif self.run.driver_variable is not None:
+            raise ValueError("run.driver_variable is only valid when run.mode is detail_batch")
         return self
 
 
@@ -437,6 +502,8 @@ class DownloadedFile(StrictModel):
     size: int = Field(default=0, ge=0)
     sha256: str | None = None
     status: DownloadStatus
+    # Set when the same source URL was already fetched in this run and the bytes were copied
+    copied_from: str | None = None
 
 
 class ValidationIssue(StrictModel):
@@ -463,6 +530,51 @@ class Checkpoint(StrictModel):
     record_offset: int = 0
 
 
+class BatchItemStatus(StrEnum):
+    PENDING = "pending"
+    OK = "ok"
+    PARTIAL = "partial"
+    FAILED = "failed"
+    # Not visited in this run because an earlier run of the same template already got it
+    SKIPPED = "skipped"
+
+
+class BatchItemState(StrictModel):
+    """Durable per-value progress of a detail_batch run (persisted in batch.json)."""
+
+    index: int = Field(ge=0)
+    value: str
+    url: str
+    status: BatchItemStatus = BatchItemStatus.PENDING
+    record_count: int = Field(default=0, ge=0)
+    file_count: int = Field(default=0, ge=0)
+    reason: str | None = None
+    error: dict[str, Any] | None = None
+    finished_at: datetime | None = None
+
+    @property
+    def done(self) -> bool:
+        return self.status in {BatchItemStatus.OK, BatchItemStatus.PARTIAL, BatchItemStatus.SKIPPED}
+
+
+class BatchProgress(StrictModel):
+    driver_variable: str
+    template_id: str | None = None
+    items: list[BatchItemState] = Field(default_factory=list)
+
+    def stats(self) -> dict[str, Any]:
+        counts = {status.value: 0 for status in BatchItemStatus}
+        for item in self.items:
+            counts[item.status.value] += 1
+        return {
+            "total": len(self.items),
+            **counts,
+            "failed_values": [
+                item.value for item in self.items if item.status == BatchItemStatus.FAILED
+            ],
+        }
+
+
 class RunContext(StrictModel):
     run_id: str
     template_id: str
@@ -475,6 +587,7 @@ class RunContext(StrictModel):
     records: list[dict[str, Any]] = Field(default_factory=list)
     downloaded_files: list[DownloadedFile] = Field(default_factory=list)
     checkpoints: list[Checkpoint] = Field(default_factory=list)
+    batch: BatchProgress | None = None
     pagination_complete: bool = True
     repair_attempts: int = 0
     recovery_run_id: str | None = None
@@ -492,6 +605,78 @@ class TemplateDraftInput(StrictModel):
     attachments: list[AttachmentSpec] = Field(default_factory=list)
     variables: dict[str, VariableSpec] = Field(default_factory=dict)
     record_key: list[str] = Field(default_factory=list)
+    page_hints: list[str] = Field(default_factory=list, max_length=20)
+
+
+class UrlVariableSuggestion(StrictModel):
+    """A URL path segment / query value that looks like the business id of the page."""
+
+    name: str = Field(pattern=r"^[a-z][a-z0-9_]{0,63}$")
+    sample: str
+    position: str
+    """``path[<index>]`` or ``query:<key>``."""
+    confidence: float = Field(ge=0.0, le=1.0)
+    selected: bool = False
+
+
+class UrlAnalysis(StrictModel):
+    url: str
+    host: str
+    template_suggestion: str
+    variables: list[UrlVariableSuggestion] = Field(default_factory=list)
+
+
+ProbeSource = Literal["url", "dom", "table", "network"]
+
+
+class ProbeFieldCandidate(StrictModel):
+    key: str = Field(pattern=r"^[a-z][a-z0-9_]{1,63}$")
+    name: str = Field(min_length=1)
+    sample: str = ""
+    source: ProbeSource
+    strategy: Literal["semantic", "label_value", "table_header"] = "label_value"
+    type: FieldType = FieldType.STRING
+    confidence: float = Field(default=0.5, ge=0.0, le=1.0)
+    endpoint_hint: str | None = Field(default=None, max_length=500)
+    json_path: str | None = Field(default=None, max_length=500)
+    aliases: list[str] = Field(default_factory=list)
+
+
+class ProbeAttachmentCandidate(StrictModel):
+    key: str = Field(pattern=r"^[a-z][a-z0-9_]{1,63}$")
+    name: str = Field(min_length=1)
+    count: int = Field(default=1, ge=1)
+    types: list[str] = Field(default_factory=list)
+    sample_href: str | None = None
+    confidence: float = Field(default=0.5, ge=0.0, le=1.0)
+
+
+class UrlProbeReport(StrictModel):
+    url_analysis: UrlAnalysis
+    page_title: str = ""
+    auth_state: AuthState = AuthState.UNKNOWN
+    fields: list[ProbeFieldCandidate] = Field(default_factory=list)
+    attachments: list[ProbeAttachmentCandidate] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+    network_exchanges: int = Field(default=0, ge=0)
+
+
+class ProbeDraftInput(StrictModel):
+    """What the wizard sends back after the user ticked fields/attachments from a probe."""
+
+    template_id: str = Field(pattern=r"^[a-z][a-z0-9_]{2,63}$")
+    name: str = Field(min_length=1, max_length=100)
+    description: str = Field(default="", max_length=300)
+    sample_url: HttpUrl
+    url_template: str | None = Field(default=None, max_length=2000)
+    driver_variable: str = Field(pattern=r"^[a-z][a-z0-9_]{0,63}$")
+    driver_prompt: str | None = Field(default=None, max_length=200)
+    driver_regex: str | None = Field(default=None, max_length=200)
+    fields: list[ProbeFieldCandidate] = Field(min_length=1)
+    attachments: list[ProbeAttachmentCandidate] = Field(default_factory=list)
+    record_key: list[str] = Field(default_factory=list)
+    required_keys: list[str] = Field(default_factory=list)
+    run: dict[str, Any] = Field(default_factory=dict)
     page_hints: list[str] = Field(default_factory=list, max_length=20)
 
 
@@ -546,6 +731,8 @@ class SkillRequest(StrictModel):
         "publish",
         "repair",
         "probe",
+        "probe_url",
+        "create_from_probe",
         "validate_acceptance",
     ] = "start"
     selector: str | int | None = None
@@ -553,9 +740,15 @@ class SkillRequest(StrictModel):
     run_id: str | None = None
     version: int | None = Field(default=None, ge=1)
     variables: dict[str, Any] = Field(default_factory=dict)
+    # Batch runs: read one column of driver values from a text/CSV/TSV/XLSX file.
+    values_file: Path | None = None
+    values_column: str | None = None
+    values_variable: str | None = None
     current_url: str | None = None
+    url: str | None = Field(default=None, max_length=2000)
     sample_path: Path | None = None
     draft: TemplateDraftInput | None = None
+    probe_draft: ProbeDraftInput | None = None
     learned: LearnedSpec | None = None
     confirmed: bool = False
     acceptance_bundle_path: Path | None = None

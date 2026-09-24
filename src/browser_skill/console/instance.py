@@ -37,9 +37,10 @@ def _meta_at(base_url: str, *, timeout: float = 1.5) -> dict[str, Any] | None:
         return None
     except (OSError, TimeoutError, urllib.error.URLError, json.JSONDecodeError):
         return None
-    if not body.get("ok") or "meta" not in body:
+    if not isinstance(body, dict) or not body.get("ok"):
         return None
-    return body["meta"]
+    meta = body.get("meta")
+    return meta if isinstance(meta, dict) else None
 
 
 def _legacy_token_console_at(base_url: str, *, timeout: float = 1.5) -> bool:

@@ -20,9 +20,11 @@ from browser_skill.interaction.contracts import (
     sample_review_interaction,
     template_menu_interaction,
     template_review_interaction,
+    url_probe_interaction,
     variable_form_interaction,
 )
 from browser_skill.interaction.template_menu import TemplateMenu
+from browser_skill.interaction.value_files import apply_values_file
 from browser_skill.interaction.variables import VariableResolver
 from browser_skill.models import (
     AuthState,
@@ -40,6 +42,7 @@ from browser_skill.platform.acceptance import validate_acceptance_bundle
 from browser_skill.platform.probe import probe_adapter
 from browser_skill.runtime.auto_repair import AutoRepairService
 from browser_skill.runtime.lifecycle import TemplateLifecycleService
+from browser_skill.runtime.probe_compiler import ProbeDraftCompiler
 from browser_skill.runtime.recovery import RunRecoveryService
 from browser_skill.runtime.repair import RepairService
 from browser_skill.runtime.run_store import RunStore
@@ -48,6 +51,7 @@ from browser_skill.runtime.sample_alignment import SampleAligner
 from browser_skill.runtime.sample_analyzer import SampleAnalyzer
 from browser_skill.runtime.teach import TeachCompiler
 from browser_skill.runtime.teach_explorer import TeachExplorer
+from browser_skill.runtime.url_probe import UrlProber
 from browser_skill.telemetry.metrics import RunMetricsAggregator
 from browser_skill.templates.store import TemplateStore
 
@@ -185,6 +189,48 @@ class BrowserSkillApp:
                 message="平台能力探针已完成" if probe_report.ready else "平台能力探针未通过",
                 data={
                     "probe": probe_report.model_dump(mode="json"),
+                    "interaction": interaction.model_dump(mode="json"),
+                },
+            )
+        if request.action == "probe_url":
+            if not request.url:
+                return SkillResponse(ok=False, message="探测需要 url")
+            capabilities = await self.runner.ensure_browser_ready()
+            probe = await UrlProber(auth=self.runner.auth).probe(
+                self.adapter, request.url, capabilities=capabilities
+            )
+            interaction = url_probe_interaction(probe)
+            authenticated = probe.auth_state != AuthState.UNAUTHENTICATED
+            return SkillResponse(
+                ok=authenticated,
+                message=(
+                    f"探测完成：{len(probe.fields)} 个字段候选、{len(probe.attachments)} 个附件候选"
+                    if authenticated
+                    else "页面需要登录，请在 Chrome 中登录后重新探测"
+                ),
+                data={
+                    "probe": probe.model_dump(mode="json"),
+                    "interaction": interaction.model_dump(mode="json"),
+                },
+            )
+        if request.action == "create_from_probe":
+            if request.probe_draft is None:
+                return SkillResponse(ok=False, message="创建模板需要 probe_draft")
+            probe_draft = request.probe_draft
+            draft = ProbeDraftCompiler().compile(
+                probe_draft, version=self.store.next_version(probe_draft.template_id)
+            )
+            path = self.store.save(draft)
+            interaction = template_review_interaction(draft, mode="teach")
+            return SkillResponse(
+                ok=True,
+                message="模板草稿已创建，请用示例值试跑",
+                data={
+                    "template_id": draft.template_id,
+                    "version": draft.version,
+                    "relative_path": path.relative_to(self.store.root).as_posix(),
+                    "driver_variable": draft.run.driver_variable,
+                    "url_template": draft.system.url_template,
                     "interaction": interaction.model_dump(mode="json"),
                 },
             )
@@ -434,6 +480,14 @@ class BrowserSkillApp:
             require_published=request.action != "test",
         )
         if request.action in {"run", "test"}:
+            if request.values_file is not None:
+                apply_values_file(
+                    template,
+                    request.variables,
+                    request.values_file,
+                    column=request.values_column,
+                    name=request.values_variable,
+                )
             missing = VariableResolver().missing(template, request.variables)
             if missing:
                 interaction = variable_form_interaction(template, missing)
@@ -486,6 +540,7 @@ class BrowserSkillApp:
 
 
 def parse_variables(items: list[str]) -> dict[str, Any]:
+    """Parse repeated ``name=value`` options; a name given more than once becomes a list."""
     values: dict[str, Any] = {}
     for item in items:
         if "=" not in item:
@@ -493,5 +548,9 @@ def parse_variables(items: list[str]) -> dict[str, Any]:
         key, value = item.split("=", 1)
         if not key:
             raise ValueError("变量名称不能为空")
-        values[key] = value
+        if key in values:
+            previous = values[key]
+            values[key] = [*previous, value] if isinstance(previous, list) else [previous, value]
+        else:
+            values[key] = value
     return values
