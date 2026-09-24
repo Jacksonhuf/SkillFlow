@@ -44,6 +44,64 @@ _COMMON_QUERY_KEYS = {"tab", "lang", "locale", "page", "size", "sort", "order", 
 _FILE_EXTENSIONS = ("pdf", "xlsx", "xls", "docx", "doc", "csv", "zip", "jpg", "jpeg", "png")
 _DOWNLOAD_WORDS = ("下载", "附件", "凭证", "发票", "合同", "download", "attachment")
 _EXPAND_WORDS = ("展开更多", "查看更多", "加载更多", "展开", "更多", "show more", "load more")
+# Response-envelope / paging / tracing keys: never business data, so never offered as fields.
+# Compared after camelCase→snake_case folding (``pageSize`` → ``page_size``).
+_JSON_NOISE_KEYS = frozenset(
+    {
+        "code",
+        "msg",
+        "message",
+        "success",
+        "ok",
+        "error",
+        "errors",
+        "err_code",
+        "err_msg",
+        "error_code",
+        "error_msg",
+        "result_code",
+        "result_msg",
+        "status_code",
+        "total",
+        "total_count",
+        "total_pages",
+        "total_page",
+        "page",
+        "page_no",
+        "page_num",
+        "page_number",
+        "page_size",
+        "page_index",
+        "size",
+        "current",
+        "pages",
+        "offset",
+        "limit",
+        "has_next",
+        "has_more",
+        "has_previous",
+        "timestamp",
+        "time_stamp",
+        "server_time",
+        "trace_id",
+        "request_id",
+        "req_id",
+        "span_id",
+        "token",
+        "access_token",
+        "refresh_token",
+        "sign",
+        "signature",
+        "nonce",
+        "version",
+        "api_version",
+        "cost",
+        "elapsed",
+        "duration_ms",
+    }
+)
+# Recommended DOM pairs: colon/tab pairs only; "label line + value line" guesses (0.5) are not.
+_RECOMMEND_DOM_CONFIDENCE = 0.8
 
 _GLOSSARY: dict[str, str] = {
     "订单号": "order_no",
@@ -290,6 +348,32 @@ def _json_key_label(path: str) -> str:
     return re.sub(r"([a-z0-9])([A-Z])", r"\1_\2", last).casefold()
 
 
+def _is_noise_path(path: str) -> bool:
+    """``$.code`` / ``$.data.pageSize`` / ``$.meta.traceId`` are envelope keys, not fields."""
+    return _json_key_label(path) in _JSON_NOISE_KEYS
+
+
+def _mentions_sample(exchange: NetworkExchange, samples: dict[str, UrlVariableSuggestion]) -> bool:
+    haystack = exchange.url + " " + str(exchange.body)
+    return any(sample in haystack for sample in samples)
+
+
+def relevant_exchanges(
+    exchanges: list[NetworkExchange], samples: dict[str, UrlVariableSuggestion]
+) -> list[NetworkExchange]:
+    """Keep only the responses that belong to *this* record.
+
+    A detail page also loads menus, permissions, the current user and dictionaries. When the
+    URL carries a business id and at least one response mentions it (in the request URL or in
+    the body), only those responses are used; the rest is noise. Without such a signal every
+    response is kept so the user still sees something to pick from.
+    """
+    if not samples:
+        return exchanges
+    matching = [item for item in exchanges if _mentions_sample(item, samples)]
+    return matching or exchanges
+
+
 class UrlProber:
     """Open one detail URL and describe what could be extracted from it."""
 
@@ -387,10 +471,15 @@ class UrlProber:
             folded = candidate.name.casefold()
             existing = seen_names.get(folded)
             if existing is not None:
-                if candidate.confidence > candidates[existing].confidence:
-                    used.discard(candidates[existing].key)
-                    candidate = candidate.model_copy(update={"key": candidates[existing].key})
-                    candidates[existing] = candidate
+                current = candidates[existing]
+                recommended = current.recommended or candidate.recommended
+                if candidate.confidence > current.confidence:
+                    used.discard(current.key)
+                    candidates[existing] = candidate.model_copy(
+                        update={"key": current.key, "recommended": recommended}
+                    )
+                elif recommended != current.recommended:
+                    candidates[existing] = current.model_copy(update={"recommended": True})
                 return
             seen_names[folded] = len(candidates)
             candidates.append(candidate)
@@ -410,6 +499,7 @@ class UrlProber:
                     strategy="semantic",
                     type=SampleAnalyzer._infer_type([variable.sample]),
                     confidence=variable.confidence,
+                    recommended=True,
                 )
             )
         for pair in pairs:
@@ -425,10 +515,11 @@ class UrlProber:
                     strategy="label_value",
                     type=SampleAnalyzer._infer_type([pair.value]),
                     confidence=pair.confidence,
+                    recommended=pair.confidence >= _RECOMMEND_DOM_CONFIDENCE,
                 )
             )
         value_to_label = {_comparable(pair.value): pair.label for pair in pairs}
-        for exchange in exchanges:
+        for exchange in relevant_exchanges(exchanges, samples):
             flat: list[tuple[str, Any]] = []
             _flatten(exchange.body, "$", 0, flat)
             body_text = str(exchange.body)
@@ -436,7 +527,7 @@ class UrlProber:
             endpoint_hint = generalize_endpoint(urlsplit(exchange.url).path or "/", samples)
             for path, raw in flat:
                 text = str(raw)
-                if not text or len(text) > 200 or text in samples:
+                if not text or len(text) > 200 or text in samples or _is_noise_path(path):
                     continue
                 label = value_to_label.get(_comparable(raw))
                 json_label = _json_key_label(path)
@@ -459,6 +550,9 @@ class UrlProber:
                         endpoint_hint=endpoint_hint,
                         json_path=path,
                         aliases=[json_label] if label and json_label != label else [],
+                        # Only JSON values that are also visible on the page are recommended;
+                        # the rest of the payload stays available under "more candidates".
+                        recommended=label is not None,
                     )
                 )
         for record in snapshot.records[:1]:
@@ -475,9 +569,12 @@ class UrlProber:
                         strategy="table_header",
                         type=SampleAnalyzer._infer_type([raw]),
                         confidence=0.75,
+                        recommended=True,
                     )
                 )
-        candidates.sort(key=lambda item: (item.source != "url", -item.confidence))
+        candidates.sort(
+            key=lambda item: (item.source != "url", not item.recommended, -item.confidence)
+        )
         return candidates[:_MAX_FIELDS]
 
     # ------------------------------------------------------------------ attachments

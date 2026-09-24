@@ -640,6 +640,9 @@ class ProbeFieldCandidate(StrictModel):
     endpoint_hint: str | None = Field(default=None, max_length=500)
     json_path: str | None = Field(default=None, max_length=500)
     aliases: list[str] = Field(default_factory=list)
+    # True when the value is visibly on the page (or is the URL variable itself); the wizard
+    # ticks these by default and folds the rest into "more candidates".
+    recommended: bool = False
 
 
 class ProbeAttachmentCandidate(StrictModel):

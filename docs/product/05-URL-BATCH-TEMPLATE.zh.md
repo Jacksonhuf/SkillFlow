@@ -277,6 +277,16 @@ run(template, variables={order_no: [v1, v2, ...]})
 - 过滤：值为空、与主键重复、明显噱头（导航文本、按钮文字）。
 - 类型推断复用 `SampleAnalyzer` 的规则（整数/小数/日期/文本）。
 
+### 5.4 降噪（v0.3.13）
+
+用户反馈候选过多。三条规则：
+
+1. **只挖本条记录的响应**：URL 里有业务编号时，只对「请求地址或响应体包含该编号」的 JSON 响应展平取键；菜单、权限、当前用户、字典等响应整体丢弃。一个响应都不匹配时才退回全量。
+2. **信封键黑名单**：`code/msg/message/success/total/page*/size/current/timestamp/traceId/requestId/token/sign/version…`（camelCase 折叠成 snake_case 后比对）永不进入候选。
+3. **`recommended` 标记**：URL 变量、页面「标签：值」（冒号/Tab 配对，置信度 ≥0.8）、表格列、与页面同值的接口字段为 `true`；仅存在于接口返回、或「上下行猜测」的配对为 `false`。向导默认只勾选 `recommended`，其余折叠到「更多候选」（默认不勾）；CLI `probe` 用 ✓ 标出推荐项。
+
+后续方向（未做）：在目标页上鼠标点选字段（Pick Mode，依赖 Playwright 引擎的页内注入）。
+
 ---
 
 ## 6. 控制台 UI（新建模板页重做）
