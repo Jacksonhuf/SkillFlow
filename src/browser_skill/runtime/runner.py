@@ -542,8 +542,11 @@ class Runner:
         records = extract_item_records(template, driver, item.value, snapshot, exchanges)
         files: list[DownloadedFile] = []
         if template.target.attachments and records:
+            # Attachments belong to the page, not to individual table rows: download once per
+            # item, named after the first record (which carries the driver value).
+            owners = records[:1] if template.run.capture_tables else records
             files = await self.downloader.collect(
-                self.adapter, template, snapshot, records, workspace.path
+                self.adapter, template, snapshot, owners, workspace.path
             )
         return classify_item(template, records, files)
 

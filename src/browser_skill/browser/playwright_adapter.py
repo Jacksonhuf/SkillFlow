@@ -26,12 +26,14 @@ from typing import Any
 
 from browser_skill.acquire.vision import parse_xy_target
 from browser_skill.errors import ErrorCode, SkillError
-from browser_skill.models import BrowserCapabilities, BrowserSnapshot, CommandResult
+from browser_skill.models import BrowserCapabilities, BrowserSnapshot, CommandResult, TableData
 
 _REF_ATTR = "data-ubs-ref"
 _REF_PREFIX = "@"
 _MAX_TEXT_CHARS = 20_000
 _MAX_ELEMENTS = 800
+_MAX_TABLES = 6
+_MAX_TABLE_ROWS = 500
 _MAX_NETWORK_ENTRIES = 300
 _MAX_BODY_BYTES = 2_000_000
 _SETTLE_GRACE_MS = 150
@@ -416,7 +418,8 @@ class PlaywrightAdapter:
                     "refAttr": _REF_ATTR,
                     "maxElements": _MAX_ELEMENTS if interactive else 0,
                     "maxText": _MAX_TEXT_CHARS,
-                    "maxTables": 3,
+                    "maxTables": _MAX_TABLES,
+                    "maxRows": _MAX_TABLE_ROWS,
                 },
             )
         except SkillError:
@@ -433,11 +436,13 @@ class PlaywrightAdapter:
         for element in elements:
             if "ref" in element and "target" not in element:
                 element["target"] = element["ref"]
+        tables = raw.get("tables", []) if isinstance(raw, dict) else []
         return BrowserSnapshot(
             url=str(raw.get("url", "")),
             title=str(raw.get("title", "")),
             text=str(raw.get("text", "")),
             elements=elements,
+            tables=[TableData.model_validate(item) for item in tables if isinstance(item, dict)],
         )
 
     async def find(self, description: str) -> CommandResult:

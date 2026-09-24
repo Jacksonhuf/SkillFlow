@@ -14,8 +14,10 @@ from browser_skill.models import (
     AuthSpec,
     BrowserTemplate,
     FieldSpec,
+    FieldType,
     LearnedMapping,
     LearnedSpec,
+    LearnedTable,
     LoginCheckSpec,
     OutputSpec,
     ProbeDraftInput,
@@ -33,6 +35,8 @@ from browser_skill.models import (
 )
 
 _PLACEHOLDER = re.compile(r"\{([a-z][a-z0-9_]*)\}")
+# Stamped on every table row so (driver, row_no) identifies a record even when rows repeat
+ROW_NO_KEY = "row_no"
 _ALLOWED_RUN_KEYS = {
     "concurrency",
     "per_item_delay_ms",
@@ -110,6 +114,55 @@ class ProbeDraftCompiler:
                     source=SourcePage.DETAIL,
                 ),
             )
+            seen.add(driver)
+
+        learned_table: LearnedTable | None = None
+        if draft.table is not None:
+            # Row fields: one record per table row; page fields above are copied onto each row.
+            columns: dict[str, int] = {}
+            for position, candidate in enumerate(draft.table.columns):
+                if candidate.key in seen:
+                    raise ValueError(f"表格列 {candidate.key} 与页面字段重名，请改名后再创建")
+                seen.add(candidate.key)
+                fields.append(
+                    FieldSpec(
+                        key=candidate.key,
+                        name=candidate.name,
+                        type=candidate.type,
+                        required=candidate.key in required,
+                        semantic=_unique([candidate.name, *candidate.aliases]),
+                        source=SourcePage.DETAIL,
+                    )
+                )
+                learned.field_mappings[candidate.key] = LearnedMapping(
+                    page=SourcePage.DETAIL,
+                    strategy="table_header",
+                    hints=_unique([candidate.name, *candidate.aliases]),
+                    confidence=candidate.confidence,
+                )
+                columns[candidate.key] = (
+                    candidate.column if candidate.column is not None else position
+                )
+            if ROW_NO_KEY not in seen:
+                fields.append(
+                    FieldSpec(
+                        key=ROW_NO_KEY,
+                        name="行号",
+                        type=FieldType.INTEGER,
+                        required=True,
+                        semantic=["行号", "序号"],
+                        source=SourcePage.DETAIL,
+                    )
+                )
+                seen.add(ROW_NO_KEY)
+            if ROW_NO_KEY not in record_key:
+                record_key.append(ROW_NO_KEY)
+            learned_table = LearnedTable(
+                index=draft.table.index,
+                title=draft.table.title[:100],
+                headers=list(draft.table.headers),
+                columns=columns,
+            )
         missing_keys = [key for key in record_key if key not in {field.key for field in fields}]
         if missing_keys:
             raise ValueError(f"record_key 引用了未选择的字段：{', '.join(missing_keys)}")
@@ -143,6 +196,8 @@ class ProbeDraftCompiler:
             raise ValueError(f"url_template 必须包含 {{{driver}}} 占位符")
 
         run_overrides = {k: v for k, v in draft.run.items() if k in _ALLOWED_RUN_KEYS}
+        if draft.table is not None:
+            run_overrides["capture_tables"] = True
         run = RunSpec(mode=RunMode.DETAIL_BATCH, driver_variable=driver, **run_overrides)
 
         first_segment = urlsplit(str(draft.sample_url)).path.strip("/").split("/")[0]
@@ -187,6 +242,7 @@ class ProbeDraftCompiler:
                 page_hints=list(draft.page_hints),
                 field_mappings=learned.field_mappings,
                 attachment_mappings=learned.attachment_mappings,
+                table=learned_table,
             ),
             validation=ValidationSpec(min_records=0),
             output=OutputSpec(

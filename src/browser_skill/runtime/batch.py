@@ -10,6 +10,7 @@ from typing import Any
 from urllib.parse import urlsplit
 
 from browser_skill.acquire.label_value import find_label_value, parse_label_values
+from browser_skill.acquire.tables import column_index, select_table, tables_from_snapshot
 from browser_skill.models import (
     AcquisitionSource,
     BatchItemState,
@@ -24,6 +25,7 @@ from browser_skill.models import (
     NetworkExchange,
 )
 from browser_skill.runtime.detail import DetailCollector
+from browser_skill.runtime.probe_compiler import ROW_NO_KEY
 from browser_skill.runtime.url_batch import BatchItem
 
 
@@ -168,19 +170,60 @@ def extract_item_records(
     reference it even when the page does not display it.
     """
     fields = list(template.target.fields)
-    if template.run.capture_tables and snapshot.records:
-        without_rows = snapshot.model_copy(update={"records": []})
-        page_level = page_field_values(template, fields, without_rows, exchanges)
-        keys = {item.key for item in fields}
-        records = []
-        for row in snapshot.records:
-            merged = {**page_level, **{key: row[key] for key in row if key in keys}}
-            merged.setdefault(driver, value)
-            records.append(merged)
-        return records
+    if template.run.capture_tables:
+        rows = table_rows(template, snapshot)
+        if rows is not None:
+            without_rows = snapshot.model_copy(update={"records": [], "tables": []})
+            row_keys = {key for row in rows for key in row}
+            page_fields = [item for item in fields if item.key not in row_keys]
+            page_level = page_field_values(template, page_fields, without_rows, exchanges)
+            records = []
+            for row in rows:
+                merged = {**page_level, **row}
+                merged.setdefault(driver, value)
+                records.append(merged)
+            return records
     record = page_field_values(template, fields, snapshot, exchanges)
     record.setdefault(driver, value)
     return [record]
+
+
+def table_rows(template: BrowserTemplate, snapshot: BrowserSnapshot) -> list[dict[str, Any]] | None:
+    """Rows of the taught table keyed by field, or ``None`` when the page has no such table.
+
+    With a learned table the grid is found by header overlap (position as fallback) and each
+    row field reads its column by header hint. Templates taught before tables were learned
+    keep the old behaviour: adapter-provided records keyed by field.
+    """
+    learned = template.learned.table
+    if learned is None:
+        keys = {item.key for item in template.target.fields}
+        legacy = [{k: v for k, v in record.items() if k in keys} for record in snapshot.records]
+        return legacy or None
+    table = select_table(tables_from_snapshot(snapshot), learned)
+    if table is None:
+        return None
+    positions: dict[str, int] = {}
+    for key, fallback in learned.columns.items():
+        spec = next((item for item in template.target.fields if item.key == key), None)
+        mapping = template.learned.field_mappings.get(key)
+        hints = [spec.name, *spec.semantic, *spec.aliases] if spec else [key]
+        if mapping is not None:
+            hints.extend(mapping.hints)
+        position = column_index(table, hints, fallback)
+        if position is not None:
+            positions[key] = position
+    rows: list[dict[str, Any]] = []
+    for number, cells in enumerate(table.rows, start=1):
+        if not any(cell.strip() for cell in cells):
+            continue
+        row: dict[str, Any] = {
+            key: cells[position] if position < len(cells) else ""
+            for key, position in positions.items()
+        }
+        row[ROW_NO_KEY] = number
+        rows.append(row)
+    return rows
 
 
 def classify_item(

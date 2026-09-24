@@ -13,6 +13,7 @@ from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 from browser_skill.acquire.label_value import LabelValue, parse_label_values
 from browser_skill.acquire.network import parse_exchanges
+from browser_skill.acquire.tables import column_names, is_grid, tables_from_snapshot
 from browser_skill.browser.base import BrowserAdapter
 from browser_skill.errors import ErrorCode, SkillError
 from browser_skill.models import (
@@ -20,10 +21,12 @@ from browser_skill.models import (
     AuthState,
     BrowserCapabilities,
     BrowserSnapshot,
+    FieldType,
     LoginCheckSpec,
     NetworkExchange,
     ProbeAttachmentCandidate,
     ProbeFieldCandidate,
+    ProbeTableCandidate,
     SignalSpec,
     UrlAnalysis,
     UrlProbeReport,
@@ -35,6 +38,8 @@ from browser_skill.runtime.sample_analyzer import SampleAnalyzer
 VARIABLE_THRESHOLD = 0.6
 _MAX_FIELDS = 60
 _MAX_ATTACHMENTS = 30
+_MAX_TABLES = 6
+_PREVIEW_ROWS = 3
 _MAX_JSON_DEPTH = 4
 _MAX_KEYS_PER_EXCHANGE = 60
 
@@ -136,6 +141,28 @@ _GLOSSARY: dict[str, str] = {
     "样机": "sample",
     "负责人": "owner",
     "部门": "department",
+    # line-item / grid headers
+    "序号": "seq_no",
+    "行号": "row_no",
+    "物料编码": "material_code",
+    "物料名称": "material_name",
+    "物料": "material",
+    "商品名称": "product_name",
+    "商品编码": "product_code",
+    "商品": "product",
+    "规格": "spec",
+    "规格型号": "spec",
+    "单位": "unit",
+    "税率": "tax_rate",
+    "税额": "tax_amount",
+    "小计": "subtotal",
+    "合计": "total",
+    "折扣": "discount",
+    "付款日期": "payment_date",
+    "付款金额": "payment_amount",
+    "方式": "method",
+    "操作": "action",
+    "操作人": "operator",
 }
 
 
@@ -418,7 +445,9 @@ class UrlProber:
             warnings.append("当前浏览器不支持读取网络响应，字段候选仅来自页面文字。")
         fields = self.field_candidates(analysis, snapshot, exchanges)
         attachments = self.attachment_candidates(snapshot)
-        if not fields:
+        samples = {v.sample: v for v in analysis.variables if v.selected}
+        tables = self.table_candidates(snapshot, samples)
+        if not fields and not tables:
             warnings.append("未在页面上识别到字段候选，请确认页面已完全加载。")
         if any(
             str(element.get("text", "")).strip().casefold() in _EXPAND_WORDS
@@ -433,6 +462,7 @@ class UrlProber:
             auth_state=auth_state,
             fields=fields,
             attachments=attachments,
+            tables=tables,
             warnings=warnings,
             network_exchanges=len(exchanges),
         )
@@ -555,27 +585,60 @@ class UrlProber:
                         recommended=label is not None,
                     )
                 )
-        for record in snapshot.records[:1]:
-            for column, raw in record.items():
-                if raw in (None, "") or str(raw) in samples:
-                    continue
-                key = machine_key(str(column), fallback=f"field_{len(candidates) + 1}", used=used)
-                add(
-                    ProbeFieldCandidate(
-                        key=key,
-                        name=str(column),
-                        sample=str(raw)[:200],
-                        source="table",
-                        strategy="table_header",
-                        type=SampleAnalyzer._infer_type([raw]),
-                        confidence=0.75,
-                        recommended=True,
-                    )
-                )
         candidates.sort(
             key=lambda item: (item.source != "url", not item.recommended, -item.confidence)
         )
         return candidates[:_MAX_FIELDS]
+
+    # ------------------------------------------------------------------ tables
+
+    def table_candidates(
+        self, snapshot: BrowserSnapshot, samples: dict[str, UrlVariableSuggestion] | None = None
+    ) -> list[ProbeTableCandidate]:
+        """Every grid on the page (header row + data rows) as a possible source of records.
+
+        Key/value tables are already read as page fields and are skipped here. A grid is
+        *recommended* when it has real headers and more than one row: that is what line items,
+        payments or logs look like. The first non-empty row supplies column samples.
+        """
+        out: list[ProbeTableCandidate] = []
+        for table in tables_from_snapshot(snapshot):
+            if not is_grid(table):
+                continue
+            names = column_names(table)
+            first = next((row for row in table.rows if any(cell.strip() for cell in row)), [])
+            used: set[str] = set(samples or {})
+            columns: list[ProbeFieldCandidate] = []
+            for position, name in enumerate(names):
+                sample = first[position] if position < len(first) else ""
+                key = machine_key(name, fallback=f"col_{position + 1}", used=used)
+                columns.append(
+                    ProbeFieldCandidate(
+                        key=key,
+                        name=name,
+                        sample=sample[:200],
+                        source="table",
+                        strategy="table_header",
+                        type=SampleAnalyzer._infer_type([sample]) if sample else FieldType.STRING,
+                        confidence=0.9 if table.headers else 0.6,
+                        recommended=True,
+                        column=position,
+                    )
+                )
+            has_headers = bool(table.headers) and any(item.strip() for item in table.headers)
+            out.append(
+                ProbeTableCandidate(
+                    index=table.index,
+                    title=table.title,
+                    headers=names,
+                    columns=columns,
+                    row_count=len(table.rows),
+                    preview=[row[: len(names)] for row in table.rows[:_PREVIEW_ROWS]],
+                    recommended=has_headers and len(table.rows) >= 2,
+                )
+            )
+        out.sort(key=lambda item: (not item.recommended, -item.row_count))
+        return out[:_MAX_TABLES]
 
     # ------------------------------------------------------------------ attachments
 

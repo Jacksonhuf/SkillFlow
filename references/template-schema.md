@@ -67,6 +67,17 @@ See `templates/inventory_feedback/1.yaml` for a complete example and
   copied from the first file instead of being downloaded again (`DownloadedFile.copied_from`
   points at the original). Links without a document URL (`javascript:`, `#`, `blob:`) are
   always downloaded.
+- Record rows from a table (`capture_tables: true` + `learned.table`): the snapshot carries every
+  visible table as `tables[]` (`index`, `title` = caption or nearest heading, `headers`,
+  `rows`; split header/body tables as rendered by element-ui/antd are merged). `learned.table`
+  = `{index, title, headers, columns: {field_key: column_position}}` names the grid the template
+  was taught on. At run time the grid is found by header overlap (≥50% of the taught headers,
+  position as fallback), each row field reads its column by header text (exact → contains →
+  taught position), a `row_no` field (1-based, `required`) is stamped on every row and appended
+  to `record_key`, and page-level fields are copied onto each row. Attachments stay per page:
+  they are downloaded once per item, named after the first record. When the grid is missing
+  the page yields a single record which then fails on the required `row_no`. Templates without
+  `learned.table` keep the old behaviour (adapter-provided `records`).
 - `concurrency` is accepted but items run sequentially: the browser adapters expose one active
   page (`open` / `snapshot` / `download` all act on it), so multi-tab execution needs per-page
   handles in both the Playwright and chrome-use adapters first.

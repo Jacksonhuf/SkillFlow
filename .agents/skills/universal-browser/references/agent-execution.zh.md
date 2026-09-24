@@ -39,7 +39,9 @@
 - `py scripts\invoke.py probe <详情页URL>` 返回 `data.probe`：`url_analysis`（哪段是变量、建议的 `url_template`）、`fields`（字段候选：key / 名称 / 示例 / 来源 url·dom·table·network / 置信度 / `recommended`）、`attachments`（附件候选）、`warnings`。
 - 降噪规则：只有页面上可见的值（URL 变量、页面「标签：值」、表格列、与页面同值的接口字段）`recommended: true`；仅存在于接口返回里的值 `recommended: false`。接口的 `code/msg/total/pageSize/traceId` 等信封字段、与本条记录无关的响应（菜单、当前用户、字典）不会出现在候选里。向用户展示时**默认只列 recommended 的字段**，其余作为「更多候选」按需展示。
 - 未登录时 `ok: false`、`interaction.actions` 只含 `retry_probe_url`：让用户在打开的 Chrome 登录后重试同一命令。
+- `data.probe.tables`：页面上的多行表格（记录行候选），每个含 `index`、`title`、`headers`、`columns`（列候选，含 `key/name/sample/type/column`）、`row_count`、`preview`（前 3 行）、`recommended`（有表头且 ≥2 行）。两列的「标签 | 值」表不会出现在这里（已并入页面字段）。
 - 让用户确认要保留的字段 / 附件和主键后，调用 `create_from_probe`（请求体 `probe_draft`：`template_id`、`name`、`sample_url`、`url_template`、`driver_variable`、勾选的 `fields`、`attachments`、`record_key`、`required_keys`），再 `test` 若干编号，`COMPLETED` 后 `publish`。
+- 要抓**表格的每一行**（明细行、付款记录等）时，在 `probe_draft` 里加 `table: {index, title, headers, columns: [勾选的列]}`（直接取自 `data.probe.tables[i]`，`columns` 只保留需要的列）。生成的模板 `run.capture_tables: true`，每一行输出一条记录，自动带上页面字段和 `row_no`（行号，主键之一）；附件仍按页面下载一次。`fields` 可为空（只要表格行）。列 key 与页面字段 key 不能重名。
 - 业务用户更适合在本地界面「新建模板」里完成同样三步（探测 → 勾选 → 试跑/发布）。
 
 ## 本地界面（可选，同一引擎）

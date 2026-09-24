@@ -14,6 +14,7 @@ from browser_skill.models import (
     CommandResult,
     RunState,
     SkillRequest,
+    TableData,
 )
 from browser_skill.templates.store import TemplateStore
 
@@ -146,6 +147,102 @@ def test_probe_create_and_batch_run(tmp_path: Path) -> None:
     assert template.target.attachments[1].multiple is True
     invoices = sorted(path.name for path in (run_dir / "attachments" / "invoice").iterdir())
     assert invoices == ["ORD-0001_发票_1.pdf", "ORD-0001_发票_2.pdf"]
+
+
+def _lines(order_no: str, rows: list[list[str]]) -> BrowserSnapshot:
+    return BrowserSnapshot(
+        url=f"https://portal.example.com/orders/{order_no}/detail",
+        title="订单详情",
+        text=f"退出登录\n订单号：{order_no}\n客户名称：张三贸易\n",
+        elements=[{"ref": f"@c-{order_no}", "role": "link", "text": "合同.pdf", "href": "/c.pdf"}],
+        tables=[
+            TableData(index=0, rows=[["订单号", order_no], ["客户名称", "张三贸易"]]),
+            TableData(
+                index=1,
+                title="商品明细",
+                headers=["序号", "物料编码", "物料名称", "数量"],
+                rows=rows,
+            ),
+        ],
+    )
+
+
+def test_probe_table_selection_yields_one_record_per_row(tmp_path: Path) -> None:
+    first = [["1", "M-001", "螺栓", "200"], ["2", "M-002", "垫片", "50"]]
+    second = [["1", "M-009", "螺母", "10"]]
+    adapter = FakeBrowserAdapter(
+        {
+            "capabilities": [CAPS] * 4,
+            "snapshot": [
+                _lines("ORD-0001", first),  # probe
+                _lines("ORD-0001", first),  # run: entry auth check
+                _lines("ORD-0001", first),  # item 1
+                _lines("ORD-0002", second),  # item 2
+            ],
+        }
+    )
+    app = BrowserSkillApp(tmp_path / "templates", tmp_path / "runs", adapter)
+
+    probed = asyncio.run(app.handle(SkillRequest(action="probe_url", url=SAMPLE_URL)))
+    probe = probed.data["probe"]
+    assert [item["title"] for item in probe["tables"]] == ["商品明细"]
+    table = probe["tables"][0]
+    assert table["recommended"] is True
+    columns = {item["name"]: item for item in table["columns"]}
+    by_key = {item["key"]: item for item in probe["fields"]}
+
+    created = asyncio.run(
+        app.handle(
+            SkillRequest(
+                action="create_from_probe",
+                probe_draft={
+                    "template_id": "order_lines",
+                    "name": "订单明细",
+                    "sample_url": SAMPLE_URL,
+                    "url_template": probe["url_analysis"]["template_suggestion"],
+                    "driver_variable": "order_no",
+                    "fields": [by_key["order_no"], by_key["customer_name"]],
+                    "attachments": probe["attachments"],
+                    "table": {
+                        "index": table["index"],
+                        "title": table["title"],
+                        "headers": table["headers"],
+                        "columns": [columns["物料编码"], columns["数量"]],
+                    },
+                    "run": {"per_item_delay_ms": 0},
+                },
+            )
+        )
+    )
+    assert created.ok is True, created.message
+
+    tested = asyncio.run(
+        app.handle(
+            SkillRequest(
+                action="test",
+                template_id="order_lines",
+                variables={"order_no": "ORD-0001\nORD-0002"},
+            )
+        )
+    )
+
+    assert tested.ok is True, tested.message
+    assert tested.state == RunState.COMPLETED
+    assert tested.data["items"]["ok"] == 2
+    run_dir = tmp_path / "runs" / str(tested.run_id)
+    result = json.loads((run_dir / "order_lines.json").read_text(encoding="utf-8"))
+    rows = [
+        (r["order_no"], r["row_no"], r["material_code"], r["quantity"], r["customer_name"])
+        for r in result["records"]
+    ]
+    assert rows == [
+        ("ORD-0001", 1, "M-001", "200", "张三贸易"),
+        ("ORD-0001", 2, "M-002", "50", "张三贸易"),
+        ("ORD-0002", 1, "M-009", "10", "张三贸易"),
+    ]
+    # attachments are per page, not per row: one contract per order
+    names = sorted(path.name for path in (run_dir / "attachments" / "contract").iterdir())
+    assert names == ["ORD-0001_合同.pdf", "ORD-0002_合同.pdf"]
 
 
 def test_probe_url_requires_url_and_reports_login_page(tmp_path: Path) -> None:
