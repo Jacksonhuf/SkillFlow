@@ -24,6 +24,7 @@ from browser_skill.interaction.contracts import (
     variable_form_interaction,
 )
 from browser_skill.interaction.template_menu import TemplateMenu
+from browser_skill.interaction.value_files import apply_values_file
 from browser_skill.interaction.variables import VariableResolver
 from browser_skill.models import (
     AuthState,
@@ -203,8 +204,7 @@ class BrowserSkillApp:
             return SkillResponse(
                 ok=authenticated,
                 message=(
-                    f"探测完成：{len(probe.fields)} 个字段候选、"
-                    f"{len(probe.attachments)} 个附件候选"
+                    f"探测完成：{len(probe.fields)} 个字段候选、{len(probe.attachments)} 个附件候选"
                     if authenticated
                     else "页面需要登录，请在 Chrome 中登录后重新探测"
                 ),
@@ -480,6 +480,14 @@ class BrowserSkillApp:
             require_published=request.action != "test",
         )
         if request.action in {"run", "test"}:
+            if request.values_file is not None:
+                apply_values_file(
+                    template,
+                    request.variables,
+                    request.values_file,
+                    column=request.values_column,
+                    name=request.values_variable,
+                )
             missing = VariableResolver().missing(template, request.variables)
             if missing:
                 interaction = variable_form_interaction(template, missing)
@@ -532,6 +540,7 @@ class BrowserSkillApp:
 
 
 def parse_variables(items: list[str]) -> dict[str, Any]:
+    """Parse repeated ``name=value`` options; a name given more than once becomes a list."""
     values: dict[str, Any] = {}
     for item in items:
         if "=" not in item:
@@ -539,5 +548,9 @@ def parse_variables(items: list[str]) -> dict[str, Any]:
         key, value = item.split("=", 1)
         if not key:
             raise ValueError("变量名称不能为空")
-        values[key] = value
+        if key in values:
+            previous = values[key]
+            values[key] = [*previous, value] if isinstance(previous, list) else [previous, value]
+        else:
+            values[key] = value
     return values

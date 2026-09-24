@@ -733,6 +733,10 @@ class SkillRequest(StrictModel):
     run_id: str | None = None
     version: int | None = Field(default=None, ge=1)
     variables: dict[str, Any] = Field(default_factory=dict)
+    # Batch runs: read one column of driver values from a text/CSV/TSV/XLSX file.
+    values_file: Path | None = None
+    values_column: str | None = None
+    values_variable: str | None = None
     current_url: str | None = None
     url: str | None = Field(default=None, max_length=2000)
     sample_path: Path | None = None

@@ -317,7 +317,7 @@ py scripts\invoke.py probe https://portal.example.com/orders/ORD-2024-0917/detai
 ```
 
 - `--var` 重复同名 → 聚合为数组（`multiple: true` 变量）。
-- `--var-file` + `--var-column`：从 CSV/XLSX 读一列。
+- `--var-file` + `--var-column`：从 txt / CSV / TSV / XLSX 读一列（表格首行为表头，列名或 1 起序号，默认第 1 列；`--var-name` 指定非驱动变量）。与 `--var` 同时给出时合并。
 - Agent 执行契约（`references/agent-execution.zh.md`）新增：对 `detail_batch` 模板，Agent 收集**一组值**而不是单值；返回 `data.items` 进度与 `failed_values`。
 
 ---
@@ -367,7 +367,7 @@ py scripts\invoke.py probe https://portal.example.com/orders/ORD-2024-0917/detai
 | **P2 · Runner 批量**（已完成） | `detail_batch` 循环、`batch.json`、续跑、失败汇总、多附件命名；并发暂为串行 | `runtime/runner.py`, `runtime/batch.py`, `outputs/writer.py` |
 | **P3 · Probe**（已完成） | `probe_url` 动作：URL 分析 + DOM/Network 候选 + 置信度；`create_from_probe` 编译草稿；运行期新增文本 label/value 与详情页 JSON 取值 | `runtime/url_probe.py`, `runtime/probe_compiler.py`, `acquire/label_value.py`, `app.py` |
 | **P4 · 向导 UI**（已完成） | 新建模板 3 步页（探测 → 勾选 → 命名/试跑/发布）、运行页多值输入（多行 / 文件导入选列）、逐项进度、失败项一键重跑、历史页批量明细；旧样本流程折叠 | `console/ui.html`, `console/server.py`, `runtime/runner.py`（`progress_listener`） |
-| **P5 · CLI/Agent** | `--var` 数组、`--var-file/--var-column`、`probe` 子命令、执行契约文档 | `skill-scripts/invoke.py`, `cli.py`, `references/` |
+| **P5 · CLI/Agent**（已完成） | `--var` 重复聚合为数组；`--var-file/--var-column/--var-name`（txt / CSV / TSV / XLSX 读一列，请求字段 `values_file/values_column/values_variable`）；`probe` 子命令；`run`/`test` 输出批量统计；执行契约文档新增批量与 probe 章节 | `skill-scripts/invoke.py`, `cli.py`, `interaction/value_files.py`, `references/agent-execution.zh.md`, `SKILL.md` |
 | **P6 · 优化** | 并发多标签、增量、附件去重、失败一键重跑 | Runner / UI |
 
 各阶段可独立合并；P1–P2 先落地即可用 CLI 批量跑，P3–P4 提供业务用户体验。
