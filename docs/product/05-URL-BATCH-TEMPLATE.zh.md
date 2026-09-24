@@ -366,7 +366,7 @@ py scripts\invoke.py probe https://portal.example.com/orders/ORD-2024-0917/detai
 | **P1 · Schema + 渲染**（已完成） | `RunSpec`、`url_template`、`multiple`、渲染与校验、旧模板兼容测试 | `models.py`, `interaction/variables.py`, `runtime/policy.py` |
 | **P2 · Runner 批量**（已完成） | `detail_batch` 循环、`batch.json`、续跑、失败汇总、多附件命名；并发暂为串行 | `runtime/runner.py`, `runtime/batch.py`, `outputs/writer.py` |
 | **P3 · Probe**（已完成） | `probe_url` 动作：URL 分析 + DOM/Network 候选 + 置信度；`create_from_probe` 编译草稿；运行期新增文本 label/value 与详情页 JSON 取值 | `runtime/url_probe.py`, `runtime/probe_compiler.py`, `acquire/label_value.py`, `app.py` |
-| **P4 · 向导 UI** | 新建模板 3 步页、运行页多值输入与进度、专家模式折叠 | `console/ui.html`, `console/server.py` |
+| **P4 · 向导 UI**（已完成） | 新建模板 3 步页（探测 → 勾选 → 命名/试跑/发布）、运行页多值输入（多行 / 文件导入选列）、逐项进度、失败项一键重跑、历史页批量明细；旧样本流程折叠 | `console/ui.html`, `console/server.py`, `runtime/runner.py`（`progress_listener`） |
 | **P5 · CLI/Agent** | `--var` 数组、`--var-file/--var-column`、`probe` 子命令、执行契约文档 | `skill-scripts/invoke.py`, `cli.py`, `references/` |
 | **P6 · 优化** | 并发多标签、增量、附件去重、失败一键重跑 | Runner / UI |
 

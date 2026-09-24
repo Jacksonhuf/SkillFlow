@@ -141,11 +141,19 @@ class JobRegistry:
         if request is None:
             return
         self._set(job_id, status="running", started_at=datetime.now(UTC).isoformat())
+        progress: dict[str, Any] = {}
+
+        def observe(event: dict[str, Any]) -> None:
+            self._set(job_id, progress=_fold_progress(progress, event))
+
+        self.app.runner.progress_listener = observe
         try:
             response = loop.run_until_complete(self.app.handle(request))
             payload = response.model_dump(mode="json")
         except Exception as exc:
             payload = SkillResponse(ok=False, message=str(exc)).model_dump(mode="json")
+        finally:
+            self.app.runner.progress_listener = None
         self._set(
             job_id,
             status="done",
@@ -157,6 +165,27 @@ class JobRegistry:
         with self._lock:
             if job_id in self._jobs:
                 self._jobs[job_id].update(fields)
+
+
+def _fold_progress(progress: dict[str, Any], event: dict[str, Any]) -> dict[str, Any]:
+    """Reduce runner execution events into the small progress card the console polls."""
+    name = str(event.get("event", ""))
+    progress["run_id"] = event.get("run_id")
+    progress["state"] = event.get("state")
+    progress["event"] = name
+    if name == "run_created" and event.get("items") is not None:
+        progress["total"] = int(event["items"])
+        progress.setdefault("done", 0)
+        progress.setdefault("failed", 0)
+    elif name == "item_started":
+        progress["current"] = event.get("value")
+        progress["current_index"] = event.get("index")
+    elif name in {"item_finished", "item_failed"}:
+        progress["done"] = int(progress.get("done", 0)) + 1
+        if name == "item_failed":
+            progress["failed"] = int(progress.get("failed", 0)) + 1
+        progress["current"] = None
+    return dict(progress)
 
 
 class _SyncCall:
@@ -290,9 +319,16 @@ class ConsoleServer:
                     "prompt": spec.prompt,
                     "options": spec.options,
                     "sensitive": spec.sensitive,
+                    "multiple": spec.multiple,
                 }
                 for name, spec in template.variables.items()
             ],
+            "run": {
+                "mode": template.run.mode.value,
+                "driver_variable": template.run.driver_variable,
+                "url_template": template.system.url_template,
+                "accept_full_urls": template.run.accept_full_urls,
+            },
             "fields": [
                 {"key": f.key, "name": f.name, "type": f.type.value, "required": f.required}
                 for f in template.target.fields
@@ -358,7 +394,7 @@ class ConsoleServer:
         if not workspace.is_dir():
             raise SkillError(ErrorCode.TEMPLATE_NOT_FOUND, "Run not found")
         detail: dict[str, Any] = {"run_id": run_id}
-        for name in ("summary", "manifest", "pipeline"):
+        for name in ("summary", "manifest", "pipeline", "batch"):
             path = workspace / f"{name}.json"
             if path.is_file():
                 try:
@@ -370,6 +406,7 @@ class ConsoleServer:
             try:
                 run = json.loads(run_path.read_text(encoding="utf-8"))
                 detail["state"] = run.get("state")
+                detail["template_id"] = run.get("template_id")
                 detail["variables"] = run.get("variables")
                 detail["records_preview"] = (run.get("records") or [])[:20]
             except (OSError, json.JSONDecodeError):
@@ -515,7 +552,7 @@ class _Handler(BaseHTTPRequestHandler):
             return
         body = _UI_PATH.read_text(encoding="utf-8")
         stamp = (
-            f'<script>window.__UB_EXPECTED_VERSION__={json.dumps(__version__)};'
+            f"<script>window.__UB_EXPECTED_VERSION__={json.dumps(__version__)};"
             f"window.__UB_CONSOLE_PORT__={self.console.port};</script>"
         )
         body = body.replace("<body>", "<body>" + stamp, 1) if "<body>" in body else stamp + body

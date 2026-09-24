@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 import random
 import secrets
@@ -56,6 +57,7 @@ from browser_skill.runtime.url_batch import plan_batch_items
 from browser_skill.runtime.validator import ResultValidator
 
 EventHook = Callable[[dict[str, Any]], Awaitable[None]]
+ProgressListener = Callable[[dict[str, Any]], None]
 
 
 class _SessionExpired(Exception):
@@ -95,6 +97,8 @@ class Runner:
         self.output_writer = output_writer or OutputWriter()
         self.policy = policy or ActionPolicy()
         self.run_store = RunStore(runs_root)
+        # Optional sync observer for execution events (console job progress); never raises
+        self.progress_listener: ProgressListener | None = None
 
     async def run(
         self,
@@ -740,20 +744,20 @@ class Runner:
         self._persist_context(workspace, context)
         self._event(workspace, context, "state_changed")
 
-    @staticmethod
-    def _event(workspace: RunWorkspace, context: RunContext, event: str, **data: Any) -> None:
-        workspace.append_jsonl(
-            "execution.jsonl",
-            {
-                "timestamp": datetime.now(UTC).isoformat(),
-                "run_id": context.run_id,
-                "template_id": context.template_id,
-                "template_version": context.template_version,
-                "state": context.state.value,
-                "event": event,
-                **data,
-            },
-        )
+    def _event(self, workspace: RunWorkspace, context: RunContext, event: str, **data: Any) -> None:
+        payload = {
+            "timestamp": datetime.now(UTC).isoformat(),
+            "run_id": context.run_id,
+            "template_id": context.template_id,
+            "template_version": context.template_version,
+            "state": context.state.value,
+            "event": event,
+            **data,
+        }
+        workspace.append_jsonl("execution.jsonl", payload)
+        if self.progress_listener is not None:
+            with contextlib.suppress(Exception):
+                self.progress_listener(payload)
 
     def _persist_context(self, workspace: RunWorkspace, context: RunContext) -> None:
         payload = context.model_dump(mode="json")

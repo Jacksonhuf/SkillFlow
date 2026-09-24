@@ -100,10 +100,48 @@
   <!-- Teach -->
   <section id="view-teach" class="hidden">
     <div class="card">
-      <strong>新建模板：告诉系统你要什么结果</strong>
-      <div class="steps"><span>1 上传样例</span><span>2 生成草稿</span><span>3 发现映射</span><span>4 测试运行</span><span>5 发布</span></div>
-      <p class="muted">上传一份你想要的结果表（CSV / JSON），系统在你已登录的 Chrome 里理解页面、建立字段映射并试跑；你只需确认结果是否正确。日常只需「运行任务」，这一页偶尔才用。</p>
+      <strong>新建模板：给一个网页地址就够了</strong>
+      <div class="steps"><span>1 给一个详情页地址</span><span>2 勾选字段和附件</span><span>3 试跑并发布</span></div>
+      <p class="muted">把任意一条记录的详情页地址贴进来，系统在你已登录的 Chrome 里打开它，列出页面上能采集的字段和附件；你勾选需要的内容，之后就能按一批编号批量下载。日常只需「运行任务」，这一页偶尔才用。</p>
     </div>
+    <div class="card" id="wzStep1">
+      <h4>1. 详情页地址</h4>
+      <input id="wzUrl" placeholder="https://portal.example.com/orders/ORD-2024-0917/detail">
+      <div class="row"><button class="btn" id="wzProbeBtn">探测页面</button><span class="muted">如果还没登录，系统会先打开 Chrome；登录后再点一次即可。</span></div>
+      <div id="wzProbeStatus"></div>
+    </div>
+    <div class="card hidden" id="wzStep2">
+      <h4>2. 勾选要采集的内容</h4>
+      <div id="wzWarnings"></div>
+      <h5>地址里会变化的部分（变量）</h5>
+      <table><thead><tr><th></th><th>变量名（可改）</th><th>示例值</th><th>位置</th><th>置信度</th></tr></thead><tbody id="wzVarRows"></tbody></table>
+      <label>URL 模板：运行时把 {变量} 换成每个编号；不勾选变量时需直接提供完整地址</label><input id="wzUrlTemplate">
+      <h5 style="margin-top:14px">字段 <span class="muted">（勾选要导出的列；主键用于命名附件和去重）</span></h5>
+      <table><thead><tr><th></th><th>名称（可改）</th><th>示例值</th><th>来源</th><th>类型</th><th>主键</th></tr></thead><tbody id="wzFieldRows"></tbody></table>
+      <h5 style="margin-top:14px">附件</h5>
+      <table><thead><tr><th></th><th>附件名（可改）</th><th>数量</th><th>类型</th></tr></thead><tbody id="wzAttRows"></tbody></table>
+      <div class="row"><button class="btn" id="wzNextBtn">下一步</button><button class="btn secondary" id="wzBackBtn1">重新探测</button></div>
+    </div>
+    <div class="card hidden" id="wzStep3">
+      <h4>3. 命名、试跑、发布</h4>
+      <label>模板名称</label><input id="wzName" placeholder="订单附件下载">
+      <label>模板 ID（小写字母、数字、下划线，3–64 位）</label><input id="wzId" placeholder="order_files">
+      <label>说明（可选）</label><input id="wzDesc">
+      <a href="#" id="wzAdvToggle" class="muted" style="display:inline-block;margin-top:10px">高级设置</a>
+      <div id="wzAdv" class="hidden">
+        <label>每条之间等待（毫秒）</label><input id="wzDelay" type="number" value="300" min="0">
+        <label>某一条失败时</label><select id="wzOnErr"><option value="continue">继续其余（结果标记为部分成功，可只重跑失败项）</option><option value="stop">立即停止</option></select>
+        <label style="display:flex;gap:6px;align-items:center;margin-top:10px"><input type="checkbox" id="wzTables" style="width:auto">详情页里的表格，每行作为一条记录</label>
+      </div>
+      <div class="row"><button class="btn" id="wzCreateBtn">创建草稿</button><button class="btn secondary" id="wzBackBtn2">上一步</button><span id="wzCreateInfo" class="muted"></span></div>
+      <div id="wzTest" class="hidden">
+        <label>试跑用的编号（默认是示例值；想多试几条就每行一个）</label><textarea id="wzTestValues" style="min-height:70px;font-family:inherit"></textarea>
+        <div class="row"><button class="btn" id="wzTestBtn">试跑</button><button class="btn secondary hidden" id="wzPublishBtn">结果正确，发布模板</button></div>
+        <div id="wzTestStatus"></div>
+      </div>
+    </div>
+    <div class="card"><a href="#" id="legacyTeachToggle" class="muted">其他方式：上传结果样例表（列表页模板，旧流程）</a></div>
+    <div id="legacyTeach" class="hidden">
     <div class="card">
       <h4>1. 上传结果样例（CSV / JSON）</h4>
       <input type="file" id="sampleFile">
@@ -135,6 +173,7 @@
       </div>
       <div id="teachStatus"></div>
       <pre id="teachOut" class="hidden"></pre>
+    </div>
     </div>
   </section>
 
@@ -222,6 +261,14 @@
     }
     const v = resp.data && resp.data.validation;
     if (v) html += `<div class="muted">记录 ${v.record_count} · 附件 ${v.download_count} · 字段完整度 ${(v.field_completeness * 100).toFixed(0)}%</div>`;
+    const items = (resp.data && resp.data.items) || (resp.data && resp.data.error && resp.data.error.details && resp.data.error.details.items);
+    if (items) {
+      html += `<div class="muted" style="margin-top:6px">批量：共 ${items.total} 条 · 成功 ${items.ok} · 部分 ${items.partial} · 失败 ${items.failed}${items.pending ? ' · 未跑 ' + items.pending : ''}</div>`;
+      if (items.failed_values && items.failed_values.length) {
+        html += `<div class="row"><span class="muted">失败的编号：${esc(items.failed_values.slice(0, 20).join('、'))}${items.failed_values.length > 20 ? ' …' : ''}</span>`
+          + (ctx && ctx.driver && ctx.template_id ? `<button class="btn secondary" id="retryFailedBtn">只重跑失败的 ${items.failed_values.length} 条</button>` : '') + '</div>';
+      }
+    }
     const al = resp.data && resp.data.sample_alignment;
     if (al) {
       html += `<div class="muted" style="margin-top:6px">样例比对：覆盖 ${(al.coverage * 100).toFixed(0)}% · ${al.aligned ? '一致' : al.issues.length + ' 个差异'}</div>`;
@@ -232,6 +279,19 @@
     el.innerHTML = html;
     const rb = $('resumeBtn');
     if (rb) rb.onclick = () => submitJob({ action: 'resume', run_id: resp.run_id, variables: ctx && ctx.variables || {} }, el, ctx);
+    const rf = $('retryFailedBtn');
+    if (rf) rf.onclick = () => {
+      const variables = { ...(ctx.variables || {}), [ctx.driver]: items.failed_values };
+      submitJob({ action: ctx.action || 'run', template_id: ctx.template_id, variables }, el, { ...ctx, variables });
+    };
+  }
+  function progressText(action, p) {
+    if (p && p.total) {
+      const running = p.current ? 1 : 0;
+      const n = Math.min((p.done || 0) + running, p.total);
+      return `执行中… 第 ${n}/${p.total} 条` + (p.current ? `（${p.current}）` : '') + (p.failed ? ` · 已失败 ${p.failed}` : '');
+    }
+    return '执行中…（' + action + '）';
   }
   window.__dl = async (ev, href) => {
     ev.preventDefault();
@@ -248,7 +308,7 @@
     try {
       const r = await post('/api/jobs', req);
       if (!r.ok) { el.innerHTML = `<div class="notice bad">${esc(r.message)}</div>`; return null; }
-      const resp = await waitJob(r.job.job_id, (job) => { if (job.status === 'running') el.querySelector('.notice').textContent = '执行中…（' + esc(req.action) + '）'; });
+      const resp = await waitJob(r.job.job_id, (job) => { if (job.status === 'running') el.querySelector('.notice').textContent = progressText(req.action, job.progress); });
       renderResponse(el, resp, ctx);
       return resp;
     } catch (e) { el.innerHTML = `<div class="notice bad">${esc(e.message)}</div>`; return null; }
@@ -276,24 +336,65 @@
     $('runMeta').innerHTML = `<span class="badge">${esc(t.entry_url)}</span>` +
       `<span class="badge">字段 ${t.fields.length}</span><span class="badge">附件 ${t.attachments.length}</span>` +
       (t.pipeline.report ? '<span class="badge ok">报告</span>' : '') + (t.pipeline.delivery ? '<span class="badge ok">分发</span>' : '');
+    const batch = t.run && t.run.mode === 'detail_batch';
+    if (batch) $('runMeta').innerHTML += `<span class="badge">按编号批量</span>` + (t.run.url_template ? `<div class="muted" style="margin-top:6px">地址模板：<code>${esc(t.run.url_template)}</code></div>` : '');
     $('varForm').innerHTML = t.variables.length ? t.variables.map(v => {
       const req = v.required ? ' <span class="badge warn">必填</span>' : '';
       const def = v.default != null ? `（默认 ${esc(v.default)}）` : '';
+      if (v.multiple) {
+        return `<label>${esc(v.prompt || v.name)}${req} <span class="muted" data-count="${esc(v.name)}"></span></label>
+          <textarea name="${esc(v.name)}" data-multi="${esc(v.name)}" style="min-height:120px;font-family:inherit" placeholder="每行一个值，可直接从 Excel 复制一列粘贴；也可以粘贴完整的详情页地址"></textarea>
+          <div class="row" style="margin-top:4px"><span class="muted">或从文件导入：</span><input type="file" data-multi-file="${esc(v.name)}" accept=".csv,.tsv,.txt" style="width:auto"><select data-multi-col="${esc(v.name)}" class="hidden" style="width:auto"></select></div>`;
+      }
       const input = v.options && v.options.length
         ? `<select name="${esc(v.name)}"><option value="">—</option>${v.options.map(o => `<option>${esc(o)}</option>`).join('')}</select>`
         : `<input name="${esc(v.name)}" type="${v.sensitive ? 'password' : 'text'}" placeholder="${esc(v.type)}${def}">`;
       return `<label>${esc(v.prompt || v.name)}${req}</label>${input}`;
     }).join('') : '<p class="muted">此模板无需变量。</p>';
+    wireMultiInputs($('varForm'));
     $('runPanel').classList.remove('hidden'); $('jobStatus').innerHTML = '';
     $('runPanel').scrollIntoView({ behavior: 'smooth' });
+  }
+  // ---- 多值输入：行计数 + CSV 列导入（纯前端解析，不上传文件）
+  const splitValues = (text) => String(text || '').split(/[\r\n,;\t]+/).map(s => s.trim()).filter(Boolean);
+  function wireMultiInputs(root) {
+    root.querySelectorAll('[data-multi]').forEach(ta => {
+      const counter = root.querySelector(`[data-count="${ta.dataset.multi}"]`);
+      const update = () => { const n = new Set(splitValues(ta.value)).size; if (counter) counter.textContent = n ? `已输入 ${n} 个` : ''; };
+      ta.oninput = update; update();
+    });
+    root.querySelectorAll('[data-multi-file]').forEach(fi => {
+      fi.onchange = async () => {
+        const f = fi.files[0]; if (!f) return;
+        const text = await f.text();
+        const lines = text.split(/\r?\n/).filter(l => l.trim());
+        const ta = root.querySelector(`[data-multi="${fi.dataset.multiFile}"]`);
+        const sel = root.querySelector(`[data-multi-col="${fi.dataset.multiFile}"]`);
+        const delim = lines[0] && lines[0].includes('\t') ? '\t' : lines[0] && lines[0].includes(',') ? ',' : lines[0] && lines[0].includes(';') ? ';' : null;
+        if (!delim) { ta.value = lines.join('\n'); ta.dispatchEvent(new Event('input')); sel.classList.add('hidden'); return; }
+        const rows = lines.map(l => l.split(delim).map(c => c.trim().replace(/^"|"$/g, '')));
+        const header = rows[0];
+        sel.innerHTML = '<option value="">选择要用的列…</option>' + header.map((h, i) => `<option value="${i}">${esc(h || '列 ' + (i + 1))}</option>`).join('');
+        sel.classList.remove('hidden');
+        sel.onchange = () => {
+          const i = Number(sel.value); if (sel.value === '') return;
+          const body = rows.slice(1).map(r => r[i]).filter(Boolean);
+          // header cell that already looks like a value (no header row) is kept
+          if (header[i] && /\d/.test(header[i]) && rows.length === 1) body.unshift(header[i]);
+          ta.value = body.join('\n'); ta.dispatchEvent(new Event('input'));
+        };
+        if (header.length === 1) { sel.value = '0'; sel.onchange(); }
+      };
+    });
   }
   function collectVars() {
     const vars = {};
     new FormData($('varForm')).forEach((v, k) => { if (String(v).trim() !== '') vars[k] = v; });
     return vars;
   }
-  $('runBtn').onclick = (e) => { e.preventDefault(); const variables = collectVars(); submitJob({ action: 'run', template_id: currentTpl.template_id, variables }, $('jobStatus'), { variables }); };
-  $('testBtn').onclick = (e) => { e.preventDefault(); const variables = collectVars(); submitJob({ action: 'test', template_id: currentTpl.template_id, variables }, $('jobStatus'), { variables }); };
+  const runCtx = (action, variables) => ({ action, variables, template_id: currentTpl.template_id, driver: currentTpl.run && currentTpl.run.driver_variable });
+  $('runBtn').onclick = (e) => { e.preventDefault(); const variables = collectVars(); submitJob({ action: 'run', template_id: currentTpl.template_id, variables }, $('jobStatus'), runCtx('run', variables)); };
+  $('testBtn').onclick = (e) => { e.preventDefault(); const variables = collectVars(); submitJob({ action: 'test', template_id: currentTpl.template_id, variables }, $('jobStatus'), runCtx('test', variables)); };
   $('closeRun').onclick = (e) => { e.preventDefault(); $('runPanel').classList.add('hidden'); };
   $('refreshTemplates').onclick = loadTemplates; $('showAll').onchange = loadTemplates;
 
@@ -311,6 +412,16 @@
     let html = `<h3>${esc(id)} ${fmtState(s.state || d.state)}</h3>`;
     if (s.error) html += `<div class="notice bad">${esc(s.error.message || JSON.stringify(s.error))}</div>`;
     if (s.artifacts) html += '<div class="row">' + Object.entries(s.artifacts).map(([k, p]) => `<a class="btn secondary" href="/api/runs/${encodeURIComponent(id)}/files/${p}" onclick="return window.__dl(event, this.href)">${esc(k)}</a>`).join('') + '</div>';
+    if (d.batch && d.batch.items) {
+      const st = d.batch.stats || {};
+      const failed = d.batch.items.filter(i => i.status === 'failed').map(i => i.value);
+      html += `<h4>批量明细 <span class="muted">共 ${d.batch.items.length} · 成功 ${st.ok ?? '-'} · 部分 ${st.partial ?? '-'} · 失败 ${st.failed ?? '-'}</span></h4>`;
+      if (failed.length && d.template_id) html += `<div class="row" style="margin-top:0"><button class="btn secondary" id="runRetryBtn">只重跑失败的 ${failed.length} 条</button></div>`;
+      html += `<table><thead><tr><th>#</th><th>编号 / 地址</th><th>状态</th><th>记录</th><th>附件</th><th>原因</th></tr></thead><tbody>`
+        + d.batch.items.slice(0, 200).map(i => `<tr><td>${i.index + 1}</td><td><code>${esc(i.value)}</code></td><td><span class="badge ${i.status === 'ok' ? 'ok' : i.status === 'failed' ? 'bad' : i.status === 'partial' ? 'warn' : ''}">${esc(i.status)}</span></td><td>${i.record_count}</td><td>${i.file_count}</td><td class="muted">${esc(i.reason || (i.error && i.error.message) || '')}</td></tr>`).join('')
+        + '</tbody></table>';
+      if (d.batch.items.length > 200) html += `<p class="muted">仅显示前 200 条。</p>`;
+    }
     if (d.report_markdown) html += `<h4>报告</h4><pre class="report">${esc(d.report_markdown)}</pre>`;
     if (d.pipeline) html += `<h4>管线</h4><pre>${esc(JSON.stringify(d.pipeline.stages, null, 2))}</pre>`;
     if (d.manifest) html += `<h4>Manifest（${d.manifest.record_count} 条）</h4><pre>${esc(JSON.stringify(d.manifest.bundles.slice(0, 5), null, 2))}</pre>`;
@@ -319,10 +430,144 @@
       html += `<h4>数据预览</h4><table><thead><tr>${cols.map(c => `<th>${esc(c)}</th>`).join('')}</tr></thead><tbody>${d.records_preview.map(rw => `<tr>${cols.map(c => `<td>${esc(rw[c])}</td>`).join('')}</tr>`).join('')}</tbody></table>`;
     }
     $('runDetail').innerHTML = html; $('runDetail').classList.remove('hidden'); $('runDetail').scrollIntoView({ behavior: 'smooth' });
+    const retry = $('runRetryBtn');
+    if (retry) retry.onclick = () => {
+      const failed = d.batch.items.filter(i => i.status === 'failed').map(i => i.value);
+      const driver = d.batch.driver_variable;
+      const variables = { ...(d.variables || {}), [driver]: failed };
+      Object.keys(variables).forEach(k => { if (variables[k] === '***') delete variables[k]; });
+      const holder = document.createElement('div'); $('runDetail').prepend(holder);
+      submitJob({ action: 'run', template_id: d.template_id, variables }, holder, { action: 'run', variables, template_id: d.template_id, driver });
+    };
   }
   $('refreshRuns').onclick = loadRuns;
 
-  // ---- Teach
+  // ---- 新建模板向导（给一个 URL → 勾选 → 试跑 → 发布）
+  const wz = { probe: null, vars: [], fields: [], atts: [], created: null, testRun: null };
+  const validKey = (s) => /^[a-z][a-z0-9_]{0,63}$/.test(s);
+  const slug = (s) => String(s || '').toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '').replace(/^[^a-z]+/, '');
+  function wzShow(step) {
+    [1, 2, 3].forEach(n => $('wzStep' + n).classList.toggle('hidden', n > step));
+    $('wzStep' + step).scrollIntoView({ behavior: 'smooth' });
+  }
+  function wzRenderTemplate() {
+    const url = wz.probe.url_analysis.url;
+    let u; try { u = new URL(url); } catch (e) { return url; }
+    const segs = u.pathname.replace(/^\/+|\/+$/g, '').split('/');
+    let query = u.search ? u.search.slice(1).split('&') : [];
+    wz.vars.filter(v => v.selected && validKey(v.name)).forEach(v => {
+      const m = v.position.match(/^path\[(\d+)\]$/);
+      if (m) { segs[Number(m[1])] = '{' + v.name + '}'; return; }
+      if (v.position.startsWith('query:')) {
+        const key = v.position.slice(6);
+        query = query.map(pair => { const [k] = pair.split('='); return k === key ? `${k}={${v.name}}` : pair; });
+      }
+    });
+    const path = segs.length && segs[0] !== '' ? '/' + segs.join('/') + (u.pathname.endsWith('/') ? '/' : '') : u.pathname;
+    return u.origin + path + (query.length ? '?' + query.join('&') : '');
+  }
+  function wzRender() {
+    const p = wz.probe;
+    $('wzWarnings').innerHTML = (p.warnings || []).map(w => `<div class="notice">${esc(w)}</div>`).join('');
+    $('wzVarRows').innerHTML = wz.vars.length ? wz.vars.map((v, i) => `<tr>
+      <td><input type="checkbox" data-var-sel="${i}" ${v.selected ? 'checked' : ''} style="width:auto"></td>
+      <td><input data-var-name="${i}" value="${esc(v.name)}" style="max-width:200px"></td>
+      <td><code>${esc(v.sample)}</code></td><td class="muted">${esc(v.position)}</td><td>${Math.round(v.confidence * 100)}%</td></tr>`).join('')
+      : '<tr><td colspan="5" class="muted">地址里没有识别出编号；运行时请直接粘贴每条记录的完整地址。</td></tr>';
+    $('wzFieldRows').innerHTML = wz.fields.map((f, i) => `<tr>
+      <td><input type="checkbox" data-f-sel="${i}" ${f.selected ? 'checked' : ''} style="width:auto"></td>
+      <td><input data-f-name="${i}" value="${esc(f.name)}" style="max-width:220px"></td>
+      <td><code>${esc(f.sample)}</code></td>
+      <td><span class="badge">${esc({ url: '地址变量', dom: '页面文字', network: '接口数据', table: '表格' }[f.source] || f.source)}</span> <span class="muted">${Math.round(f.confidence * 100)}%</span></td>
+      <td class="muted">${esc(f.type)}</td>
+      <td><input type="radio" name="wzKey" data-f-key="${i}" ${f.isKey ? 'checked' : ''} style="width:auto"></td></tr>`).join('') || '<tr><td colspan="6" class="muted">没有字段候选。</td></tr>';
+    $('wzAttRows').innerHTML = wz.atts.map((a, i) => `<tr>
+      <td><input type="checkbox" data-a-sel="${i}" ${a.selected ? 'checked' : ''} style="width:auto"></td>
+      <td><input data-a-name="${i}" value="${esc(a.name)}" style="max-width:220px"></td>
+      <td>${a.count}</td><td class="muted">${esc((a.types || []).join(', ') || '-')}</td></tr>`).join('') || '<tr><td colspan="4" class="muted">页面上没有发现可下载的附件。</td></tr>';
+    if (!$('wzUrlTemplate').dataset.edited) $('wzUrlTemplate').value = wzRenderTemplate();
+    document.querySelectorAll('[data-var-sel]').forEach(el => el.onchange = () => { wz.vars[el.dataset.varSel].selected = el.checked; wzRender(); });
+    document.querySelectorAll('[data-var-name]').forEach(el => el.onchange = () => { const v = wz.vars[el.dataset.varName]; const old = v.name; v.name = slug(el.value) || old; wz.fields.filter(f => f.source === 'url' && f.key === old).forEach(f => { f.key = v.name; }); wzRender(); });
+    document.querySelectorAll('[data-f-sel]').forEach(el => el.onchange = () => { wz.fields[el.dataset.fSel].selected = el.checked; });
+    document.querySelectorAll('[data-f-name]').forEach(el => el.onchange = () => { wz.fields[el.dataset.fName].name = el.value.trim() || wz.fields[el.dataset.fName].name; });
+    document.querySelectorAll('[data-f-key]').forEach(el => el.onchange = () => { wz.fields.forEach((f, i) => { f.isKey = String(i) === el.dataset.fKey; if (f.isKey) f.selected = true; }); wzRender(); });
+    document.querySelectorAll('[data-a-sel]').forEach(el => el.onchange = () => { wz.atts[el.dataset.aSel].selected = el.checked; });
+    document.querySelectorAll('[data-a-name]').forEach(el => el.onchange = () => { wz.atts[el.dataset.aName].name = el.value.trim() || wz.atts[el.dataset.aName].name; });
+  }
+  $('wzUrlTemplate').oninput = () => { $('wzUrlTemplate').dataset.edited = '1'; };
+  $('wzProbeBtn').onclick = async () => {
+    const url = $('wzUrl').value.trim();
+    if (!/^https?:\/\//i.test(url)) { alert('请填写以 http:// 或 https:// 开头的完整地址'); return; }
+    $('wzStep2').classList.add('hidden'); $('wzStep3').classList.add('hidden');
+    const resp = await submitJob({ action: 'probe_url', url }, $('wzProbeStatus'));
+    if (!resp) return;
+    const p = resp.data && resp.data.probe; if (!p) return;
+    if (p.auth_state === 'unauthenticated') { $('wzProbeStatus').innerHTML = `<div class="notice">${esc((p.warnings || [])[0] || '请先登录')}<div class="row"><button class="btn" id="wzReprobe">我已登录，重新探测</button></div></div>`; $('wzReprobe').onclick = () => $('wzProbeBtn').onclick(); return; }
+    wz.probe = p; wz.created = null; wz.testRun = null; delete $('wzUrlTemplate').dataset.edited;
+    wz.vars = p.url_analysis.variables.map(v => ({ ...v }));
+    const firstVar = wz.vars.find(v => v.selected);
+    let ticked = 0;
+    wz.fields = p.fields.map(f => { const sel = f.source === 'url' || (f.confidence >= 0.75 && ticked++ < 15); return { ...f, selected: sel, isKey: !!firstVar && f.source === 'url' && f.key === firstVar.name }; });
+    if (!wz.fields.some(f => f.isKey) && wz.fields.length) { wz.fields[0].isKey = true; wz.fields[0].selected = true; }
+    wz.atts = p.attachments.map(a => ({ ...a, selected: true }));
+    $('wzProbeStatus').innerHTML = `<div class="notice ok">探测完成：${p.fields.length} 个字段候选、${p.attachments.length} 个附件候选${p.page_title ? ' · 页面「' + esc(p.page_title) + '」' : ''}</div>`;
+    wzRender(); wzShow(2);
+  };
+  $('wzBackBtn1').onclick = () => wzShow(1);
+  $('wzBackBtn2').onclick = () => wzShow(2);
+  $('wzNextBtn').onclick = () => {
+    if (!wz.fields.some(f => f.selected)) { alert('请至少勾选一个字段'); return; }
+    const bad = wz.vars.filter(v => v.selected && !validKey(v.name));
+    if (bad.length) { alert('变量名只能是小写字母、数字、下划线，且以字母开头'); return; }
+    if (!$('wzId').value) { try { const u = new URL(wz.probe.url_analysis.url); const seg = u.pathname.split('/').filter(Boolean)[0] || 'detail'; $('wzId').value = slug(seg + '_batch').slice(0, 40) || 'detail_batch'; } catch (e) { /* keep empty */ } }
+    if (!$('wzName').value && wz.probe.page_title) $('wzName').value = wz.probe.page_title.slice(0, 60);
+    wzShow(3);
+  };
+  $('wzAdvToggle').onclick = (e) => { e.preventDefault(); $('wzAdv').classList.toggle('hidden'); };
+  function wzDraft() {
+    const selVars = wz.vars.filter(v => v.selected);
+    const driver = selVars.length ? selVars[0].name : 'detail_url';
+    const keyField = wz.fields.find(f => f.isKey && f.selected);
+    const fields = wz.fields.filter(f => f.selected).map(f => ({ key: f.key, name: f.name, sample: f.sample, source: f.source, strategy: f.strategy, type: f.type, confidence: f.confidence, endpoint_hint: f.endpoint_hint, json_path: f.json_path, aliases: f.aliases || [] }));
+    const attachments = wz.atts.filter(a => a.selected).map(a => ({ key: a.key, name: a.name, count: a.count, types: a.types, sample_href: a.sample_href, confidence: a.confidence }));
+    const urlTemplate = selVars.length ? $('wzUrlTemplate').value.trim() : null;
+    return {
+      template_id: $('wzId').value.trim(), name: $('wzName').value.trim(), description: $('wzDesc').value.trim(),
+      sample_url: wz.probe.url_analysis.url, url_template: urlTemplate, driver_variable: driver,
+      driver_prompt: selVars.length ? (wz.fields.find(f => f.source === 'url' && f.key === driver) || {}).name || null : '详情页地址',
+      fields, attachments, record_key: keyField ? [keyField.key] : [],
+      run: { per_item_delay_ms: Number($('wzDelay').value) || 0, on_item_error: $('wzOnErr').value, capture_tables: $('wzTables').checked },
+    };
+  }
+  $('wzCreateBtn').onclick = async () => {
+    const draft = wzDraft();
+    if (!/^[a-z][a-z0-9_]{2,63}$/.test(draft.template_id)) { alert('模板 ID 需为 3–64 位小写字母、数字、下划线，并以字母开头'); return; }
+    if (!draft.name) { alert('请填写模板名称'); return; }
+    $('wzCreateInfo').textContent = '创建中…';
+    const r = await post('/api/action', { action: 'create_from_probe', probe_draft: draft });
+    if (!r.ok) { $('wzCreateInfo').textContent = r.message || '创建失败'; return; }
+    wz.created = { template_id: r.data.template_id, version: r.data.version, driver: draft.driver_variable };
+    $('wzCreateInfo').textContent = `已创建草稿 ${r.data.template_id} v${r.data.version}，下面试跑确认结果`;
+    const sample = wz.vars.find(v => v.selected) ? wz.vars.find(v => v.selected).sample : wz.probe.url_analysis.url;
+    $('wzTestValues').value = sample; $('wzTest').classList.remove('hidden'); $('wzPublishBtn').classList.add('hidden'); $('wzTestStatus').innerHTML = '';
+    $('wzTest').scrollIntoView({ behavior: 'smooth' });
+  };
+  $('wzTestBtn').onclick = async () => {
+    if (!wz.created) return;
+    const variables = { [wz.created.driver]: $('wzTestValues').value };
+    const resp = await submitJob({ action: 'test', template_id: wz.created.template_id, variables }, $('wzTestStatus'), { action: 'test', variables, template_id: wz.created.template_id, driver: wz.created.driver });
+    if (resp && resp.ok && resp.run_id) { wz.testRun = resp.run_id; $('wzPublishBtn').classList.remove('hidden'); }
+  };
+  $('wzPublishBtn').onclick = async () => {
+    if (!wz.created || !wz.testRun) return;
+    if (!confirm('确认试跑结果正确并发布该模板？发布后会出现在「运行任务」页。')) return;
+    const r = await post('/api/action', { action: 'publish', template_id: wz.created.template_id, version: wz.created.version, run_id: wz.testRun, confirmed: true });
+    $('wzTestStatus').innerHTML = `<div class="notice ${r.ok ? 'ok' : 'bad'}">${esc(r.message)}</div>` + $('wzTestStatus').innerHTML;
+    if (r.ok) { $('wzPublishBtn').classList.add('hidden'); loadTemplates(); }
+  };
+  $('legacyTeachToggle').onclick = (e) => { e.preventDefault(); $('legacyTeach').classList.toggle('hidden'); };
+
+  // ---- Teach（旧流程：上传样例）
   let samplePath = null;
   $('analyzeBtn').onclick = async () => {
     const f = $('sampleFile').files[0]; if (!f) { alert('请选择样例文件'); return; }
