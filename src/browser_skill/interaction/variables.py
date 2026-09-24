@@ -32,8 +32,51 @@ class VariableResolver:
             value = supplied.get(name, spec.default)
             if value is None:
                 continue
-            resolved[name] = self._coerce(name, spec, value)
+            if spec.multiple:
+                resolved[name] = self._coerce_many(name, spec, value)
+            else:
+                resolved[name] = self._coerce(name, spec, value)
         return resolved
+
+    def driver_values(self, template: BrowserTemplate, resolved: dict[str, Any]) -> list[str]:
+        """Return the ordered list of values that drive a detail_batch run."""
+        driver = template.run.driver_variable
+        if driver is None:
+            return []
+        raw = resolved.get(driver)
+        if raw is None:
+            raise SkillError(
+                ErrorCode.VARIABLE_MISSING,
+                f"Missing required variables: {driver}",
+                details={"variables": [driver]},
+            )
+        values = [str(item) for item in (raw if isinstance(raw, list) else [raw])]
+        if template.run.dedupe_values:
+            values = list(dict.fromkeys(values))
+        if len(values) > template.run.max_items:
+            raise SkillError(
+                ErrorCode.VARIABLE_INVALID,
+                f"{driver} has {len(values)} values; the template allows at most "
+                f"{template.run.max_items}",
+                details={"variable": driver, "count": len(values)},
+            )
+        return values
+
+    @staticmethod
+    def split_multi(value: Any) -> list[Any]:
+        """Normalise pasted lines / comma lists / JSON arrays into a flat list of items."""
+        if isinstance(value, list | tuple | set):
+            items: list[Any] = list(value)
+        else:
+            items = re.split(r"[\r\n,;\t]+", str(value))
+        cleaned = [item.strip() if isinstance(item, str) else item for item in items]
+        return [item for item in cleaned if str(item).strip()]
+
+    def _coerce_many(self, name: str, spec: VariableSpec, value: Any) -> list[Any]:
+        items = self.split_multi(value)
+        if not items and spec.required:
+            raise SkillError(ErrorCode.VARIABLE_MISSING, f"{name} needs at least one value")
+        return [self._coerce(name, spec, item) for item in items]
 
     def redacted(self, template: BrowserTemplate, values: dict[str, Any]) -> dict[str, Any]:
         return {
@@ -77,7 +120,13 @@ class VariableResolver:
             raise SkillError(ErrorCode.VARIABLE_INVALID, f"{name} must be one of {spec.options}")
         if spec.validation:
             validation = spec.validation
-            if validation.regex and re.fullmatch(validation.regex, str(result)) is None:
+            # Full detail URLs bypass the business-id pattern; the host is checked by the policy.
+            is_url = isinstance(result, str) and result.startswith(("http://", "https://"))
+            if (
+                validation.regex
+                and not is_url
+                and re.fullmatch(validation.regex, str(result)) is None
+            ):
                 raise SkillError(ErrorCode.VARIABLE_INVALID, f"{name} does not match its pattern")
             if validation.minimum is not None and float(result) < validation.minimum:
                 raise SkillError(ErrorCode.VARIABLE_INVALID, f"{name} is below its minimum")

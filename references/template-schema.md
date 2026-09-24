@@ -32,5 +32,21 @@ See `templates/inventory_feedback/1.yaml` for a complete example and
   and `json_path` (`$.data.list[*].orderNo`); Run reads the browser's observed JSON exchange first
   and falls back to DOM/table extraction when the exchange is missing.
 
+## URL batch (detail_batch) templates
+
+- `run.mode: detail_batch` runs one detail page per value of `run.driver_variable`; the default
+  `run.mode: list` keeps the classic single-entry workflow. Other `run` knobs: `concurrency`,
+  `per_item_delay_ms`, `on_item_error` (`continue | stop`), `dedupe_values`, `max_items`,
+  `accept_full_urls`, `capture_tables`.
+- `system.url_template` is an absolute http(s) URL with `{variable}` placeholders (never in the
+  host part); its host must be in `allowed_hosts` and every placeholder must be a declared
+  variable. Values are URL-encoded when rendered.
+- The driver variable must set `multiple: true`. Multi-value input accepts a JSON array or text
+  split on newlines / commas / semicolons. A value that is itself a full `http(s)` URL is opened
+  directly (when `accept_full_urls`), skips the variable regex, and still has to pass the
+  `allowed_hosts` policy check.
+- `filename_pattern` placeholders for attachments: any record field key, `{original_name}`,
+  `{index}`, `{ext}`.
+
 The host Agent platform renders template selection and variable collection. Template files must not
 contain platform-specific UI component identifiers.

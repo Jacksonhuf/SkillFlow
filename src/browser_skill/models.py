@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import re
 from datetime import UTC, date, datetime
 from enum import StrEnum
 from pathlib import Path
 from typing import Any, Literal
+from urllib.parse import urlsplit
 
 from pydantic import BaseModel, ConfigDict, Field, HttpUrl, field_validator, model_validator
 
@@ -84,16 +86,57 @@ class OutputFormat(StrEnum):
     FILES_ONLY = "files-only"
 
 
+_URL_PLACEHOLDER = re.compile(r"\{([a-z][a-z0-9_]*)\}")
+
+
 class SystemSpec(StrictModel):
     entry_url: HttpUrl
     preferred_tab_url_contains: str | None = None
     allowed_hosts: list[str] = Field(default_factory=list)
+    url_template: str | None = Field(default=None, max_length=2000)
+    """Detail-page address with ``{variable}`` placeholders (detail_batch templates)."""
 
     @model_validator(mode="after")
     def default_allowed_host(self) -> SystemSpec:
         if not self.allowed_hosts and self.entry_url.host:
             self.allowed_hosts = [self.entry_url.host]
+        if self.url_template is not None:
+            parsed = urlsplit(self.url_template)
+            if parsed.scheme not in {"http", "https"} or not parsed.hostname:
+                raise ValueError("url_template must be an absolute http(s) URL")
+            if _URL_PLACEHOLDER.search(parsed.netloc):
+                raise ValueError("url_template placeholders are not allowed in the host part")
+            if parsed.hostname not in self.allowed_hosts:
+                raise ValueError("url_template host must be listed in allowed_hosts")
         return self
+
+    def url_template_variables(self) -> list[str]:
+        if not self.url_template:
+            return []
+        seen: list[str] = []
+        for name in _URL_PLACEHOLDER.findall(self.url_template):
+            if name not in seen:
+                seen.append(name)
+        return seen
+
+
+class RunMode(StrEnum):
+    LIST = "list"
+    DETAIL_BATCH = "detail_batch"
+
+
+class RunSpec(StrictModel):
+    """How a template is executed. Defaults reproduce the classic list workflow."""
+
+    mode: RunMode = RunMode.LIST
+    driver_variable: str | None = None
+    concurrency: int = Field(default=1, ge=1, le=4)
+    per_item_delay_ms: int = Field(default=300, ge=0, le=60_000)
+    on_item_error: Literal["continue", "stop"] = "continue"
+    dedupe_values: bool = True
+    max_items: int = Field(default=500, ge=1, le=10_000)
+    accept_full_urls: bool = True
+    capture_tables: bool = False
 
 
 class SignalSpec(StrictModel):
@@ -131,6 +174,8 @@ class VariableSpec(StrictModel):
     options: list[str] = Field(default_factory=list)
     validation: VariableValidation | None = None
     sensitive: bool = False
+    multiple: bool = False
+    """Accept a list of values (pasted lines / CSV column); used by detail_batch drivers."""
 
     @model_validator(mode="after")
     def enum_requires_options(self) -> VariableSpec:
@@ -348,6 +393,7 @@ class BrowserTemplate(StrictModel):
     system: SystemSpec
     auth: AuthSpec
     variables: dict[str, VariableSpec] = Field(default_factory=dict)
+    run: RunSpec = Field(default_factory=RunSpec)
     target: TargetSpec
     workflow: WorkflowSpec = Field(default_factory=WorkflowSpec)
     learned: LearnedSpec = Field(default_factory=LearnedSpec)
@@ -368,6 +414,23 @@ class BrowserTemplate(StrictModel):
             raise ValueError(f"attachment mappings reference unknown keys: {sorted(unknown)}")
         if unknown := set(self.output.columns) - field_keys:
             raise ValueError(f"output columns reference unknown keys: {sorted(unknown)}")
+        if unknown := set(self.system.url_template_variables()) - set(self.variables):
+            raise ValueError(f"url_template references undeclared variables: {sorted(unknown)}")
+        if self.run.mode == RunMode.DETAIL_BATCH:
+            driver = self.run.driver_variable
+            if not driver:
+                raise ValueError("detail_batch templates require run.driver_variable")
+            spec = self.variables.get(driver)
+            if spec is None:
+                raise ValueError(f"run.driver_variable references unknown variable: {driver}")
+            if not spec.multiple:
+                raise ValueError("run.driver_variable must be declared with multiple: true")
+            if not self.system.url_template and not self.run.accept_full_urls:
+                raise ValueError(
+                    "detail_batch templates need system.url_template or accept_full_urls"
+                )
+        elif self.run.driver_variable is not None:
+            raise ValueError("run.driver_variable is only valid when run.mode is detail_batch")
         return self
 
 
