@@ -108,6 +108,7 @@ def test_batch_run_visits_every_value_and_downloads_named_attachments(
         "ok": 3,
         "partial": 0,
         "failed": 0,
+        "skipped": 0,
         "failed_values": [],
     }
     assert _opened_urls(adapter) == [
@@ -274,6 +275,7 @@ def test_session_expiry_pauses_and_resume_skips_completed_items(
         "ok": 1,
         "partial": 0,
         "failed": 0,
+        "skipped": 0,
         "failed_values": [],
     }
     workspace = tmp_path / str(paused.run_id)
@@ -334,3 +336,138 @@ def test_redirect_outside_allowed_hosts_fails_only_that_item(
     assert response.data["items"]["failed_values"] == ["ORD-0001"]
     batch = json.loads((tmp_path / str(response.run_id) / "batch.json").read_text("utf-8"))
     assert batch["items"][0]["reason"] == "E_ACTION_NOT_ALLOWED"
+
+
+def test_skip_if_exists_only_visits_values_not_completed_before(
+    tmp_path: Path, template_data: dict[str, Any]
+) -> None:
+    template = _batch_template(template_data, skip_if_exists=True)
+    first = FakeBrowserAdapter(
+        {
+            "snapshot": [HOME, _detail("ORD-0001"), _detail("ORD-0003")],
+            "open_result": [
+                CommandResult(ok=True, operation="open"),
+                CommandResult(ok=False, operation="open", safe_stderr="404"),
+                CommandResult(ok=True, operation="open"),
+            ],
+        }
+    )
+    earlier = asyncio.run(
+        Runner(first, tmp_path).run(template, {"order_no": ["ORD-0001", "ORD-0002", "ORD-0003"]})
+    )
+    assert earlier.data["items"]["failed_values"] == ["ORD-0002"]
+
+    # Daily top-up: ORD-0001/0003 are done, ORD-0002 failed last time, ORD-0004 is new
+    second = FakeBrowserAdapter({"snapshot": [HOME, _detail("ORD-0002"), _detail("ORD-0004")]})
+    response = asyncio.run(
+        Runner(second, tmp_path).run(
+            template, {"order_no": ["ORD-0001", "ORD-0002", "ORD-0003", "ORD-0004"]}
+        )
+    )
+
+    assert response.ok is True
+    assert response.state == RunState.COMPLETED
+    assert "跳过 2 条" in response.message
+    assert response.data["items"] == {
+        "total": 4,
+        "pending": 0,
+        "ok": 2,
+        "partial": 0,
+        "failed": 0,
+        "skipped": 2,
+        "failed_values": [],
+    }
+    assert _opened_urls(second) == [
+        "https://example.internal/orders/ORD-0002",
+        "https://example.internal/orders/ORD-0004",
+    ]
+    batch = json.loads((tmp_path / str(response.run_id) / "batch.json").read_text("utf-8"))
+    assert batch["template_id"] == template.template_id
+    assert batch["items"][0]["status"] == "skipped"
+    assert batch["items"][0]["reason"] == f"done_in:{earlier.run_id}"
+    result = json.loads((tmp_path / str(response.run_id) / "orders.json").read_text("utf-8"))
+    assert [item["order_no"] for item in result["records"]] == ["ORD-0002", "ORD-0004"]
+    events = [
+        json.loads(line)
+        for line in (tmp_path / str(response.run_id) / "execution.jsonl")
+        .read_text(encoding="utf-8")
+        .splitlines()
+    ]
+    skipped = next(event for event in events if event["event"] == "items_skipped")
+    assert skipped["count"] == 2 and skipped["values"] == ["ORD-0001", "ORD-0003"]
+
+
+def test_skip_if_exists_with_nothing_new_completes_without_browser_visits(
+    tmp_path: Path, template_data: dict[str, Any]
+) -> None:
+    template = _batch_template(template_data, skip_if_exists=True)
+    template.validation.min_records = 1
+    asyncio.run(
+        Runner(FakeBrowserAdapter({"snapshot": [HOME, _detail("ORD-0001")]}), tmp_path).run(
+            template, {"order_no": ["ORD-0001"]}
+        )
+    )
+
+    adapter = FakeBrowserAdapter({"snapshot": [HOME]})
+    response = asyncio.run(Runner(adapter, tmp_path).run(template, {"order_no": ["ORD-0001"]}))
+
+    assert response.ok is True
+    assert response.state == RunState.COMPLETED
+    assert "无需重跑" in response.message
+    assert response.data["items"]["skipped"] == 1
+    assert _opened_urls(adapter) == []  # login check adopted the tab; no detail page visited
+
+
+def test_without_skip_if_exists_previous_runs_are_ignored(
+    tmp_path: Path, template_data: dict[str, Any]
+) -> None:
+    template = _batch_template(template_data)
+    asyncio.run(
+        Runner(FakeBrowserAdapter({"snapshot": [HOME, _detail("ORD-0001")]}), tmp_path).run(
+            template, {"order_no": ["ORD-0001"]}
+        )
+    )
+
+    adapter = FakeBrowserAdapter({"snapshot": [HOME, _detail("ORD-0001")]})
+    response = asyncio.run(Runner(adapter, tmp_path).run(template, {"order_no": ["ORD-0001"]}))
+
+    assert response.data["items"]["skipped"] == 0
+    assert response.data["items"]["ok"] == 1
+
+
+def test_shared_document_url_is_downloaded_once_and_copied(
+    tmp_path: Path, template_data: dict[str, Any]
+) -> None:
+    template = _batch_template(template_data)
+
+    def page(order_no: str) -> BrowserSnapshot:
+        return BrowserSnapshot(
+            url=f"https://example.internal/orders/{order_no}",
+            records=[{"order_no": order_no, "customer": "ACME"}],
+            elements=[
+                {
+                    "text": "凭证附件",
+                    "ref": f"@dl-{order_no}",
+                    "filename": "terms.pdf",
+                    "href": "/static/terms.pdf",
+                }
+            ],
+        )
+
+    adapter = FakeBrowserAdapter({"snapshot": [HOME, page("ORD-0001"), page("ORD-0002")]})
+    response = asyncio.run(
+        Runner(adapter, tmp_path).run(template, {"order_no": ["ORD-0001", "ORD-0002"]})
+    )
+
+    assert response.state == RunState.COMPLETED
+    downloads = [call for call in adapter.calls if call[0] == "download"]
+    assert len(downloads) == 1  # second record copied the first file instead of re-downloading
+    workspace = tmp_path / str(response.run_id)
+    names = sorted(path.name for path in (workspace / "attachments" / "evidence").iterdir())
+    assert names == ["ORD-0001_terms.pdf", "ORD-0002_terms.pdf"]
+    manifest = json.loads((workspace / "manifest.json").read_text(encoding="utf-8"))
+    files = [item for bundle in manifest["bundles"] for item in bundle["files"]]
+    copied = [item for item in files if item.get("copied_from")]
+    assert len(copied) == 1
+    assert copied[0]["copied_from"] == "attachments/evidence/ORD-0001_terms.pdf"
+    assert copied[0]["status"] == "ok"

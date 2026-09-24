@@ -132,6 +132,7 @@
         <label>每条之间等待（毫秒）</label><input id="wzDelay" type="number" value="300" min="0">
         <label>某一条失败时</label><select id="wzOnErr"><option value="continue">继续其余（结果标记为部分成功，可只重跑失败项）</option><option value="stop">立即停止</option></select>
         <label style="display:flex;gap:6px;align-items:center;margin-top:10px"><input type="checkbox" id="wzTables" style="width:auto">详情页里的表格，每行作为一条记录</label>
+        <label style="display:flex;gap:6px;align-items:center;margin-top:6px"><input type="checkbox" id="wzSkipDone" style="width:auto">增量：以前已成功采集过的编号自动跳过（适合每日补数）</label>
       </div>
       <div class="row"><button class="btn" id="wzCreateBtn">创建草稿</button><button class="btn secondary" id="wzBackBtn2">上一步</button><span id="wzCreateInfo" class="muted"></span></div>
       <div id="wzTest" class="hidden">
@@ -263,7 +264,7 @@
     if (v) html += `<div class="muted">记录 ${v.record_count} · 附件 ${v.download_count} · 字段完整度 ${(v.field_completeness * 100).toFixed(0)}%</div>`;
     const items = (resp.data && resp.data.items) || (resp.data && resp.data.error && resp.data.error.details && resp.data.error.details.items);
     if (items) {
-      html += `<div class="muted" style="margin-top:6px">批量：共 ${items.total} 条 · 成功 ${items.ok} · 部分 ${items.partial} · 失败 ${items.failed}${items.pending ? ' · 未跑 ' + items.pending : ''}</div>`;
+      html += `<div class="muted" style="margin-top:6px">批量：共 ${items.total} 条 · 成功 ${items.ok} · 部分 ${items.partial} · 失败 ${items.failed}${items.skipped ? ' · 已跳过 ' + items.skipped : ''}${items.pending ? ' · 未跑 ' + items.pending : ''}</div>`;
       if (items.failed_values && items.failed_values.length) {
         html += `<div class="row"><span class="muted">失败的编号：${esc(items.failed_values.slice(0, 20).join('、'))}${items.failed_values.length > 20 ? ' …' : ''}</span>`
           + (ctx && ctx.driver && ctx.template_id ? `<button class="btn secondary" id="retryFailedBtn">只重跑失败的 ${items.failed_values.length} 条</button>` : '') + '</div>';
@@ -415,7 +416,7 @@
     if (d.batch && d.batch.items) {
       const st = d.batch.stats || {};
       const failed = d.batch.items.filter(i => i.status === 'failed').map(i => i.value);
-      html += `<h4>批量明细 <span class="muted">共 ${d.batch.items.length} · 成功 ${st.ok ?? '-'} · 部分 ${st.partial ?? '-'} · 失败 ${st.failed ?? '-'}</span></h4>`;
+      html += `<h4>批量明细 <span class="muted">共 ${d.batch.items.length} · 成功 ${st.ok ?? '-'} · 部分 ${st.partial ?? '-'} · 失败 ${st.failed ?? '-'}${st.skipped ? ' · 已跳过 ' + st.skipped : ''}</span></h4>`;
       if (failed.length && d.template_id) html += `<div class="row" style="margin-top:0"><button class="btn secondary" id="runRetryBtn">只重跑失败的 ${failed.length} 条</button></div>`;
       html += `<table><thead><tr><th>#</th><th>编号 / 地址</th><th>状态</th><th>记录</th><th>附件</th><th>原因</th></tr></thead><tbody>`
         + d.batch.items.slice(0, 200).map(i => `<tr><td>${i.index + 1}</td><td><code>${esc(i.value)}</code></td><td><span class="badge ${i.status === 'ok' ? 'ok' : i.status === 'failed' ? 'bad' : i.status === 'partial' ? 'warn' : ''}">${esc(i.status)}</span></td><td>${i.record_count}</td><td>${i.file_count}</td><td class="muted">${esc(i.reason || (i.error && i.error.message) || '')}</td></tr>`).join('')
@@ -536,7 +537,7 @@
       sample_url: wz.probe.url_analysis.url, url_template: urlTemplate, driver_variable: driver,
       driver_prompt: selVars.length ? (wz.fields.find(f => f.source === 'url' && f.key === driver) || {}).name || null : '详情页地址',
       fields, attachments, record_key: keyField ? [keyField.key] : [],
-      run: { per_item_delay_ms: Number($('wzDelay').value) || 0, on_item_error: $('wzOnErr').value, capture_tables: $('wzTables').checked },
+      run: { per_item_delay_ms: Number($('wzDelay').value) || 0, on_item_error: $('wzOnErr').value, capture_tables: $('wzTables').checked, skip_if_exists: $('wzSkipDone').checked },
     };
   }
   $('wzCreateBtn').onclick = async () => {

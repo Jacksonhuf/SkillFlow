@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import asyncio
 import re
+import shutil
 from pathlib import Path
 from typing import Any
+from urllib.parse import urljoin
 
 from browser_skill.browser.base import BrowserAdapter
 from browser_skill.models import (
@@ -27,6 +29,16 @@ class AttachmentDownloader:
     ) -> None:
         self.completion_polls = max(1, completion_polls)
         self.locator = locator or LocatorService()
+        # Per-run cache: absolute source URL → first saved file, so a document shared by many
+        # records (e.g. a common contract template) is fetched once and copied afterwards.
+        self._source_cache: dict[str, Path] = {}
+        self._source_cache_workspace: Path | None = None
+
+    def _cache_for(self, workspace: Path) -> dict[str, Path]:
+        if self._source_cache_workspace != workspace:
+            self._source_cache = {}
+            self._source_cache_workspace = workspace
+        return self._source_cache
 
     async def collect(
         self,
@@ -75,6 +87,7 @@ class AttachmentDownloader:
                             element,
                             workspace,
                             used_paths,
+                            source=self._source_url(snapshot, element),
                         )
                     )
         return downloaded
@@ -89,6 +102,8 @@ class AttachmentDownloader:
         element: dict[str, Any] | None,
         workspace: Path,
         used_paths: set[Path],
+        *,
+        source: str | None = None,
     ) -> DownloadedFile:
         original = safe_filename(
             self._original_name(element) or f"{spec.key}.bin", fallback=f"{spec.key}.bin"
@@ -103,8 +118,16 @@ class AttachmentDownloader:
         )
         path = workspace / relative
         path.parent.mkdir(parents=True, exist_ok=True)
-        result = await adapter.download(target, path)
-        complete = await self._wait_for_file(adapter, path) if result.ok else False
+        cache = self._cache_for(workspace)
+        cached = cache.get(source) if source else None
+        copied_from: str | None = None
+        if cached is not None and cached.is_file() and cached != path:
+            shutil.copy2(cached, path)
+            copied_from = cached.relative_to(workspace).as_posix()
+            complete = True
+        else:
+            result = await adapter.download(target, path)
+            complete = await self._wait_for_file(adapter, path) if result.ok else False
         status = DownloadStatus.OK if complete else DownloadStatus.FAILED
         if (
             status == DownloadStatus.OK
@@ -113,6 +136,8 @@ class AttachmentDownloader:
         ):
             status = DownloadStatus.REJECTED
             path.unlink(missing_ok=True)
+        if status == DownloadStatus.OK and source and copied_from is None:
+            cache[source] = path
         return DownloadedFile(
             record_key=record_key,
             attachment_key=spec.key,
@@ -121,7 +146,19 @@ class AttachmentDownloader:
             size=path.stat().st_size if path.exists() else 0,
             sha256=file_sha256(path) if status == DownloadStatus.OK else None,
             status=status,
+            copied_from=copied_from,
         )
+
+    @staticmethod
+    def _source_url(snapshot: BrowserSnapshot, element: dict[str, Any] | None) -> str | None:
+        """Absolute document URL of a link element, or None when it cannot identify the bytes."""
+        if not element:
+            return None
+        href = str(element.get("href") or "").strip()
+        if not href or href.startswith(("javascript:", "#", "data:", "blob:")):
+            return None
+        absolute = urljoin(snapshot.url or "", href)
+        return absolute if absolute.startswith(("http://", "https://")) else None
 
     @staticmethod
     def _unique_relative(relative: Path, used_paths: set[Path]) -> Path:

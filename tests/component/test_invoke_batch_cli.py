@@ -150,6 +150,7 @@ def test_var_file_column_feeds_the_driver_variable(
         "ok": 3,
         "partial": 0,
         "failed": 0,
+        "skipped": 0,
         "failed_values": [],
     }
 

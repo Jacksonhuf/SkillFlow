@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import json
 from collections.abc import Sequence
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit
 
@@ -41,8 +43,43 @@ def build_progress(template: BrowserTemplate, items: list[BatchItem]) -> BatchPr
     assert driver is not None
     return BatchProgress(
         driver_variable=driver,
+        template_id=template.template_id,
         items=[BatchItemState(index=item.index, value=item.value, url=item.url) for item in items],
     )
+
+
+def previously_completed_values(runs_root: Path, template_id: str) -> dict[str, str]:
+    """Map driver value → run_id for items that finished ``ok`` in earlier runs of a template.
+
+    Reads ``runs/*/batch.json``; the newest run wins when a value appears more than once.
+    Malformed or foreign files are ignored so a broken run can never block a new one.
+    """
+    completed: dict[str, str] = {}
+    if not runs_root.is_dir():
+        return completed
+    for batch_file in sorted(runs_root.glob("run_*/batch.json")):
+        try:
+            payload = json.loads(batch_file.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+        if not isinstance(payload, dict) or payload.get("template_id") != template_id:
+            continue
+        for item in payload.get("items") or []:
+            if isinstance(item, dict) and item.get("status") == BatchItemStatus.OK.value:
+                completed[str(item.get("value"))] = batch_file.parent.name
+    return completed
+
+
+def apply_incremental_skip(batch: BatchProgress, completed: dict[str, str]) -> int:
+    """Mark pending items whose value already completed earlier as ``skipped``."""
+    skipped = 0
+    for item in batch.items:
+        run_id = completed.get(item.value)
+        if item.status == BatchItemStatus.PENDING and run_id:
+            item.status = BatchItemStatus.SKIPPED
+            item.reason = f"done_in:{run_id}"
+            skipped += 1
+    return skipped
 
 
 def endpoint_matches(hint: str, path: str) -> bool:

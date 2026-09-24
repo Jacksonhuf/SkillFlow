@@ -137,6 +137,8 @@ class RunSpec(StrictModel):
     max_items: int = Field(default=500, ge=1, le=10_000)
     accept_full_urls: bool = True
     capture_tables: bool = False
+    # Incremental runs: values already ``ok`` in an earlier run of this template are skipped
+    skip_if_exists: bool = False
 
 
 class SignalSpec(StrictModel):
@@ -500,6 +502,8 @@ class DownloadedFile(StrictModel):
     size: int = Field(default=0, ge=0)
     sha256: str | None = None
     status: DownloadStatus
+    # Set when the same source URL was already fetched in this run and the bytes were copied
+    copied_from: str | None = None
 
 
 class ValidationIssue(StrictModel):
@@ -531,6 +535,8 @@ class BatchItemStatus(StrEnum):
     OK = "ok"
     PARTIAL = "partial"
     FAILED = "failed"
+    # Not visited in this run because an earlier run of the same template already got it
+    SKIPPED = "skipped"
 
 
 class BatchItemState(StrictModel):
@@ -548,11 +554,12 @@ class BatchItemState(StrictModel):
 
     @property
     def done(self) -> bool:
-        return self.status in {BatchItemStatus.OK, BatchItemStatus.PARTIAL}
+        return self.status in {BatchItemStatus.OK, BatchItemStatus.PARTIAL, BatchItemStatus.SKIPPED}
 
 
 class BatchProgress(StrictModel):
     driver_variable: str
+    template_id: str | None = None
     items: list[BatchItemState] = Field(default_factory=list)
 
     def stats(self) -> dict[str, Any]:

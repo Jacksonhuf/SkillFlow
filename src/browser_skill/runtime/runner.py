@@ -33,6 +33,7 @@ from browser_skill.models import (
     RunMode,
     RunState,
     SkillResponse,
+    ValidationReport,
 )
 from browser_skill.outputs.writer import OutputWriter, RunWorkspace
 from browser_skill.pipeline.analyze import AnalysisProvider
@@ -41,9 +42,11 @@ from browser_skill.pipeline.process import apply_processing
 from browser_skill.runtime.auth import AuthClassifier
 from browser_skill.runtime.batch import (
     ItemOutcome,
+    apply_incremental_skip,
     build_progress,
     classify_item,
     extract_item_records,
+    previously_completed_values,
 )
 from browser_skill.runtime.capability_requirements import ensure_template_runtime_capabilities
 from browser_skill.runtime.detail import DetailCollector
@@ -286,12 +289,18 @@ class Runner:
         context.records = apply_processing(template, context.records)
         self._report_vision(workspace, context)
         self._transition(workspace, context, RunState.VALIDATING)
-        report = self.validator.validate(
-            template,
-            context.records,
-            context.downloaded_files,
-            pagination_complete=context.pagination_complete,
-        )
+        stats = context.batch.stats() if context.batch is not None else None
+        all_skipped = bool(stats and stats["total"] and stats["skipped"] == stats["total"])
+        if all_skipped:
+            # Nothing was (or had to be) collected: earlier runs already hold every value.
+            report = ValidationReport(ok=True, record_count=0, download_count=0)
+        else:
+            report = self.validator.validate(
+                template,
+                context.records,
+                context.downloaded_files,
+                pagination_complete=context.pagination_complete,
+            )
         if not report.ok:
             analysis = await analyze_failed_run(
                 context, report, analysis_provider=self.analysis_provider
@@ -321,12 +330,16 @@ class Runner:
         self.output_writer.write_summary(context, report=report, artifacts=artifacts)
         self._persist_context(workspace, context)
         self._event(workspace, context, "run_finished", artifacts=artifacts)
-        if resumed:
+        if all_skipped:
+            message = f"全部 {stats['total'] if stats else 0} 条此前已采集，本次无需重跑"
+        elif resumed:
             message = "认证后已恢复并完成任务"
         elif final_state == RunState.COMPLETED:
             message = "任务完成"
         else:
             message = "任务产生部分结果"
+        if stats and stats["skipped"] and not all_skipped:
+            message += f"（跳过 {stats['skipped']} 条此前已采集）"
         data: dict[str, Any] = {
             "artifacts": artifacts,
             "validation": report.model_dump(mode="json"),
@@ -392,7 +405,11 @@ class Runner:
             return None
         driver_values = self.variables.driver_values(template, values)
         items = plan_batch_items(template, values, driver_values, policy=self.policy)
-        return build_progress(template, items)
+        batch = build_progress(template, items)
+        if template.run.skip_if_exists:
+            completed = previously_completed_values(self.runs_root, template.template_id)
+            apply_incremental_skip(batch, completed)
+        return batch
 
     async def _run_batch(
         self,
@@ -412,6 +429,15 @@ class Runner:
             assert batch is not None
             context.batch = batch
         self._persist_batch(workspace, context)
+        skipped = [item for item in batch.items if item.status == BatchItemStatus.SKIPPED]
+        if skipped:
+            self._event(
+                workspace,
+                context,
+                "items_skipped",
+                count=len(skipped),
+                values=[item.value for item in skipped[:50]],
+            )
         pending = [item for item in batch.items if not item.done]
         for position, item in enumerate(pending):
             self._check_cancelled(workspace, context)

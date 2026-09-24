@@ -28,7 +28,7 @@
   - 从文件读一列：`run <id> --var-file orders.csv --var-column 订单号`（`.txt` 一行一个；CSV/TSV/XLSX 首行为表头，`--var-column` 填列名或 1 起的序号，默认第 1 列；`--var-name` 可指定非驱动变量）
   - 用户在对话里粘贴的多行 / 逗号分隔文本也可以直接作为一个 `--var` 值传入（会自动拆分）。
   - 值也可以是完整详情页 URL（`accept_full_urls`），host 必须在模板 `allowed_hosts` 内。
-- **读结果时看 `data.items`**：`{total, ok, partial, failed, failed_values}`；每项明细在 `runs/<run_id>/batch.json`。
+- **读结果时看 `data.items`**：`{total, ok, partial, failed, skipped, failed_values}`；每项明细在 `runs/<run_id>/batch.json`。`skipped` 是模板开了 `run.skip_if_exists`（增量）时、此前已成功采集而本次未访问的编号（`reason: done_in:<run_id>`），它们的数据在那次运行的产物里，不算失败。
   - `state == PARTIAL` 且 `failed_values` 非空：如实告知哪些编号失败（`batch.json` 里有 `reason`，如 `E_PAGE_NOT_FOUND`、`required_field_missing:*`），并可**只重跑失败项**：把 `failed_values` 作为新的 `--var` 值再次 `run`。
   - `on_item_error: stop` 的模板在第一条失败就结束；`error.details.items` 里同样有进度。
 - **登录过期**：批量中途 `WAIT_USER_AUTH` 时，用户在 Chrome 登录后 `resume <run_id>`，已完成的项不会重跑。

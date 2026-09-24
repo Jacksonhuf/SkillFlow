@@ -177,6 +177,10 @@ def _fold_progress(progress: dict[str, Any], event: dict[str, Any]) -> dict[str,
         progress["total"] = int(event["items"])
         progress.setdefault("done", 0)
         progress.setdefault("failed", 0)
+    elif name == "items_skipped":
+        count = int(event.get("count") or 0)
+        progress["skipped"] = count
+        progress["done"] = int(progress.get("done", 0)) + count
     elif name == "item_started":
         progress["current"] = event.get("value")
         progress["current_index"] = event.get("index")

@@ -41,6 +41,7 @@ _ALLOWED_RUN_KEYS = {
     "max_items",
     "accept_full_urls",
     "capture_tables",
+    "skip_if_exists",
 }
 
 

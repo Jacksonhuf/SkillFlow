@@ -327,11 +327,11 @@ py scripts\invoke.py probe https://portal.example.com/orders/ORD-2024-0917/detai
 | 优化 | 做法 | 收益 |
 |------|------|------|
 | **Network 优先** | 探测时若接口 JSON 覆盖所勾字段，运行时直接读响应，不解析 DOM | 更快、抗改版 |
-| **并发多标签** | `concurrency` 2~3 时用 Playwright 多 page 同 context | 单机吞吐提升 2~3 倍；默认 1 保证稳定 |
+| **并发多标签**（待做） | `concurrency` 2~3 时用 Playwright 多 page 同 context；前置条件：适配器 per-page 句柄 | 单机吞吐提升 2~3 倍；默认 1 保证稳定 |
 | **限速与抖动** | `per_item_delay_ms` + 随机 ±30% | 降低被风控概率 |
 | **断点续跑** | `batch.json` 每项状态；`resume` 只跑未完成 | 中途登录过期/断网不重来 |
-| **增量运行** | 可选 `skip_if_exists`：同主键上次 `ok` 且附件已在则跳过 | 每日补数只跑新增 |
-| **附件去重** | 内容 hash + 大小阈值 | 避免重复下载 |
+| **增量运行** | 可选 `run.skip_if_exists`：扫描 `runs/*/batch.json`（同 `template_id`）中上次 `ok` 的编号，本次标记 `skipped` 不打开页面 | 每日补数只跑新增 |
+| **附件去重** | 同一 run 内相同文档绝对 URL 只下载一次，其余复制并记录 `copied_from`（内容 sha256 已在 manifest） | 避免重复下载 |
 | **失败分类** | `auth_required` / `not_found(404)` / `no_data` / `download_failed` | 控制台按类聚合，方便一键重跑 |
 | **URL 白名单** | `url_template` host 必须 ∈ `allowed_hosts`；渲染后再校验 | 防止变量注入跳到外站 |
 | **值校验前置** | 驱动变量 `regex`，不合法项直接进 failed 不打开页面 | 省时间、少误报 |
@@ -368,7 +368,7 @@ py scripts\invoke.py probe https://portal.example.com/orders/ORD-2024-0917/detai
 | **P3 · Probe**（已完成） | `probe_url` 动作：URL 分析 + DOM/Network 候选 + 置信度；`create_from_probe` 编译草稿；运行期新增文本 label/value 与详情页 JSON 取值 | `runtime/url_probe.py`, `runtime/probe_compiler.py`, `acquire/label_value.py`, `app.py` |
 | **P4 · 向导 UI**（已完成） | 新建模板 3 步页（探测 → 勾选 → 命名/试跑/发布）、运行页多值输入（多行 / 文件导入选列）、逐项进度、失败项一键重跑、历史页批量明细；旧样本流程折叠 | `console/ui.html`, `console/server.py`, `runtime/runner.py`（`progress_listener`） |
 | **P5 · CLI/Agent**（已完成） | `--var` 重复聚合为数组；`--var-file/--var-column/--var-name`（txt / CSV / TSV / XLSX 读一列，请求字段 `values_file/values_column/values_variable`）；`probe` 子命令；`run`/`test` 输出批量统计；执行契约文档新增批量与 probe 章节 | `skill-scripts/invoke.py`, `cli.py`, `interaction/value_files.py`, `references/agent-execution.zh.md`, `SKILL.md` |
-| **P6 · 优化** | 并发多标签、增量、附件去重、失败一键重跑 | Runner / UI |
+| **P6 · 优化**（部分完成） | 已完成：增量运行 `run.skip_if_exists`（同模板此前 `ok` 的编号标记 `skipped`，全部已完成时直接 COMPLETED；向导高级选项可勾选）、附件去重（同一 run 内相同文档 URL 只下载一次，其余复制，`copied_from` 记录来源）、失败一键重跑（控制台 / CLI 提示）。未做：并发多标签——适配器只有单活动页 API（`open/snapshot/download` 都作用于当前页），需先给 Playwright 与 chrome-use 适配器加 per-page 句柄，`concurrency` 仍按顺序执行 | `runtime/batch.py`, `runtime/runner.py`, `runtime/downloader.py`, `console/ui.html` |
 
 各阶段可独立合并；P1–P2 先落地即可用 CLI 批量跑，P3–P4 提供业务用户体验。
 
