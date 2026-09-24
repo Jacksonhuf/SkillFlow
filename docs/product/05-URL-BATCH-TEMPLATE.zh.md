@@ -198,7 +198,7 @@ run(template, variables={order_no: [v1, v2, ...]})
   │     record = extract_detail(fields)          # Network 优先 → DOM label/value
   │     files  = download_attachments(record)    # 命名 {order_no}_...
   │     item_status: ok | partial | failed(+reason)
-  │     写 runs/<run_id>/items/<value>.json（断点）
+  │     写 runs/<run_id>/batch.json（逐项断点）
   ├─ 合并 records → Process → Validate → Output(result.xlsx, attachments/, manifest.json)
   └─ summary.items: {total, ok, partial, failed, failed_values[]}
 ```
@@ -363,8 +363,8 @@ py scripts\invoke.py probe https://portal.example.com/orders/ORD-2024-0917/detai
 
 | 阶段 | 内容 | 主要文件 |
 |------|------|----------|
-| **P1 · Schema + 渲染** | `RunSpec`、`url_template`、`multiple`、渲染与校验、旧模板兼容测试 | `models.py`, `interaction/variables.py`, `runtime/policy.py` |
-| **P2 · Runner 批量** | `detail_batch` 循环、`batch.json`、续跑、失败汇总、多附件命名 | `runtime/runner.py`, `runtime/detail.py`, `outputs/*` |
+| **P1 · Schema + 渲染**（已完成） | `RunSpec`、`url_template`、`multiple`、渲染与校验、旧模板兼容测试 | `models.py`, `interaction/variables.py`, `runtime/policy.py` |
+| **P2 · Runner 批量**（已完成） | `detail_batch` 循环、`batch.json`、续跑、失败汇总、多附件命名；并发暂为串行 | `runtime/runner.py`, `runtime/batch.py`, `outputs/writer.py` |
 | **P3 · Probe** | `probe_url` 动作：URL 分析 + DOM/Network 候选 + 置信度 | `runtime/probe.py`, `acquire/network.py`, `app.py` |
 | **P4 · 向导 UI** | 新建模板 3 步页、运行页多值输入与进度、专家模式折叠 | `console/ui.html`, `console/server.py` |
 | **P5 · CLI/Agent** | `--var` 数组、`--var-file/--var-column`、`probe` 子命令、执行契约文档 | `skill-scripts/invoke.py`, `cli.py`, `references/` |

@@ -526,6 +526,48 @@ class Checkpoint(StrictModel):
     record_offset: int = 0
 
 
+class BatchItemStatus(StrEnum):
+    PENDING = "pending"
+    OK = "ok"
+    PARTIAL = "partial"
+    FAILED = "failed"
+
+
+class BatchItemState(StrictModel):
+    """Durable per-value progress of a detail_batch run (persisted in batch.json)."""
+
+    index: int = Field(ge=0)
+    value: str
+    url: str
+    status: BatchItemStatus = BatchItemStatus.PENDING
+    record_count: int = Field(default=0, ge=0)
+    file_count: int = Field(default=0, ge=0)
+    reason: str | None = None
+    error: dict[str, Any] | None = None
+    finished_at: datetime | None = None
+
+    @property
+    def done(self) -> bool:
+        return self.status in {BatchItemStatus.OK, BatchItemStatus.PARTIAL}
+
+
+class BatchProgress(StrictModel):
+    driver_variable: str
+    items: list[BatchItemState] = Field(default_factory=list)
+
+    def stats(self) -> dict[str, Any]:
+        counts = {status.value: 0 for status in BatchItemStatus}
+        for item in self.items:
+            counts[item.status.value] += 1
+        return {
+            "total": len(self.items),
+            **counts,
+            "failed_values": [
+                item.value for item in self.items if item.status == BatchItemStatus.FAILED
+            ],
+        }
+
+
 class RunContext(StrictModel):
     run_id: str
     template_id: str
@@ -538,6 +580,7 @@ class RunContext(StrictModel):
     records: list[dict[str, Any]] = Field(default_factory=list)
     downloaded_files: list[DownloadedFile] = Field(default_factory=list)
     checkpoints: list[Checkpoint] = Field(default_factory=list)
+    batch: BatchProgress | None = None
     pagination_complete: bool = True
     repair_attempts: int = 0
     recovery_run_id: str | None = None

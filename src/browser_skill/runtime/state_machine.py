@@ -12,6 +12,8 @@ ALLOWED_TRANSITIONS: dict[RunState, set[RunState]] = {
         RunState.DOWNLOADING,
         RunState.VALIDATING,
         RunState.REPAIRING,
+        # detail_batch: the session may expire between items; pause and resume where we left off
+        RunState.WAIT_USER_AUTH,
         RunState.FAILED,
     },
     RunState.DOWNLOADING: {RunState.VALIDATING, RunState.REPAIRING, RunState.FAILED},
