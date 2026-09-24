@@ -42,7 +42,7 @@ When no host platform injects a browser tool, run the bundled script yourself—
 `py scripts\\invoke.py ui` starts a **127.0.0.1-only** web console (token in the printed URL): template
 cards with variable forms (multi-line / CSV import for batch templates, per-item progress, retry failed),
 run history with artifact download (`result`, `manifest.json`, `report.md`), a **new-template wizard**
-(paste one detail URL → probe → tick fields/attachments → test → publish; the legacy sample-based Teach
+(paste one detail URL → probe → tick page fields and/or a table for record rows → test → publish; the legacy sample-based Teach
 flow stays behind a toggle) and environment diagnostics. It calls the same
 `BrowserSkillApp` actions as the Agent, so results are identical. Scheduled runs on the user's machine:
 `scripts\windows\Register-ScheduledRun.ps1` (Windows Task Scheduler → `invoke.py run`).
