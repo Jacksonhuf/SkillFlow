@@ -140,10 +140,15 @@
         <label>某一条失败时</label><select id="wzOnErr"><option value="continue">继续其余（结果标记为部分成功，可只重跑失败项）</option><option value="stop">立即停止</option></select>
         <label style="display:flex;gap:6px;align-items:center;margin-top:10px"><input type="checkbox" id="wzSkipDone" style="width:auto">增量：以前已成功采集过的编号自动跳过（适合每日补数）</label>
       </div>
-      <div class="row"><button class="btn" id="wzCreateBtn">创建草稿</button><button class="btn secondary" id="wzBackBtn2">上一步</button><span id="wzCreateInfo" class="muted"></span></div>
-      <div id="wzTest" class="hidden">
-        <label>试跑用的编号（默认是示例值；想多试几条就每行一个）</label><textarea id="wzTestValues" style="min-height:70px;font-family:inherit"></textarea>
-        <div class="row"><button class="btn" id="wzTestBtn">试跑</button><button class="btn secondary hidden" id="wzPublishBtn">结果正确，发布模板</button></div>
+      <p class="muted" style="margin-bottom:10px">顺序：<strong>① 保存草稿</strong>（已写入本机）→ <strong>② 试跑</strong>（看下方结果与预览）→ <strong>③ 发布</strong>（出现在「运行任务」列表）。仅保存不发布：完成 ① 即可。</p>
+      <div class="row"><button class="btn" id="wzCreateBtn">保存草稿</button><button class="btn secondary" id="wzSaveTestBtn">保存并试跑</button><button class="btn secondary" id="wzBackBtn2">上一步</button><span id="wzCreateInfo" class="muted"></span></div>
+      <div id="wzTest">
+        <label>试跑用的编号（默认是示例值；想多试多条就每行一个）</label><textarea id="wzTestValues" style="min-height:70px;font-family:inherit"></textarea>
+        <div class="row">
+          <button class="btn" id="wzTestBtn">试跑</button>
+          <button class="btn secondary hidden" id="wzPublishBtn" title="">结果正确，发布到运行任务</button>
+        </div>
+        <p id="wzPublishHint" class="muted hidden" style="margin:6px 0 0"></p>
         <div id="wzTestStatus"></div>
       </div>
     </div>
@@ -315,7 +320,11 @@
     try {
       const r = await post('/api/jobs', req);
       if (!r.ok) { el.innerHTML = `<div class="notice bad">${esc(r.message)}</div>`; return null; }
-      const resp = await waitJob(r.job.job_id, (job) => { if (job.status === 'running') el.querySelector('.notice').textContent = progressText(req.action, job.progress); });
+      const resp = await waitJob(r.job.job_id, (job) => {
+        if (job.status !== 'running') return;
+        const n = el.querySelector('.notice');
+        if (n) n.textContent = progressText(req.action, job.progress);
+      });
       renderResponse(el, resp, ctx);
       return resp;
     } catch (e) { el.innerHTML = `<div class="notice bad">${esc(e.message)}</div>`; return null; }
@@ -450,7 +459,7 @@
   $('refreshRuns').onclick = loadRuns;
 
   // ---- 新建模板向导（给一个 URL → 勾选 → 试跑 → 发布）
-  const wz = { probe: null, vars: [], fields: [], atts: [], tables: [], tableIndex: -1, created: null, testRun: null };
+  const wz = { probe: null, vars: [], fields: [], atts: [], tables: [], tableIndex: -1, created: null, testRun: null, draftFp: '' };
   const validKey = (s) => /^[a-z][a-z0-9_]{0,63}$/.test(s);
   const slug = (s) => String(s || '').toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '').replace(/^[^a-z]+/, '');
   function wzShow(step) {
@@ -546,7 +555,7 @@
     if (!resp) return;
     const p = resp.data && resp.data.probe; if (!p) return;
     if (p.auth_state === 'unauthenticated') { $('wzProbeStatus').innerHTML = `<div class="notice">${esc((p.warnings || [])[0] || '请先登录')}<div class="row"><button class="btn" id="wzReprobe">我已登录，重新探测</button></div></div>`; $('wzReprobe').onclick = () => $('wzProbeBtn').onclick(); return; }
-    wz.probe = p; wz.created = null; wz.testRun = null; delete $('wzUrlTemplate').dataset.edited;
+    wz.probe = p; wz.created = null; wz.testRun = null; wz.draftFp = ''; delete $('wzUrlTemplate').dataset.edited;
     wz.vars = p.url_analysis.variables.map(v => ({ ...v }));
     const firstVar = wz.vars.find(v => v.selected);
     wz.fields = p.fields.map(f => ({ ...f, recommended: wzIsRecommended(f), isKey: !!firstVar && f.source === 'url' && f.key === firstVar.name }));
@@ -561,7 +570,96 @@
     const tbl = best >= 0 ? `；已选「${esc(wz.tables[best].title || '表格 ' + (wz.tables[best].index + 1))}」作为记录行（${wz.tables[best].row_count} 行）` : (wz.tables.length ? `；发现 ${wz.tables.length} 个表格，可选作记录行` : '');
     $('wzProbeStatus').innerHTML = `<div class="notice ok">探测完成：推荐 ${rec} 个页面字段（已勾选）${more ? '，另有 ' + more + ' 个候选折叠在「更多候选」' : ''}${tbl}；${p.attachments.length} 个附件候选${p.page_title ? ' · 页面「' + esc(p.page_title) + '」' : ''}</div>`;
     wzRender(); wzShow(2);
+    wzResetPublishUi();
   };
+  function wzResetPublishUi() {
+    $('wzPublishBtn').classList.add('hidden');
+    $('wzPublishBtn').disabled = false;
+    $('wzPublishHint').classList.add('hidden');
+    $('wzPublishHint').textContent = '';
+  }
+  function wzUpdatePublishUi(resp) {
+    const btn = $('wzPublishBtn');
+    const hint = $('wzPublishHint');
+    if (!resp || !resp.run_id) {
+      wzResetPublishUi();
+      return;
+    }
+    btn.classList.remove('hidden');
+    const canPublish = resp.ok && resp.state === 'COMPLETED';
+    btn.disabled = !canPublish;
+    if (canPublish) {
+      hint.classList.add('hidden');
+      hint.textContent = '';
+      btn.title = '发布后可在「运行任务」中选择该模板';
+    } else {
+      hint.classList.remove('hidden');
+      hint.textContent = resp.state === 'WAIT_USER_AUTH'
+        ? '请先在 Chrome 完成登录，再点试跑结果里的「我已登录，继续」。'
+        : '试跑需状态为 COMPLETED 才能发布；若为 PARTIAL/FAILED，请调整勾选或到「历史结果」查看原因后重试。草稿已保存在本机。';
+      btn.title = '试跑未全部成功，暂不能发布';
+    }
+  }
+  async function wzAppendRunPreview(runId, el) {
+    try {
+      const r = await api('/api/runs/' + encodeURIComponent(runId));
+      const rows = r.run && r.run.records_preview;
+      if (!rows || !rows.length) {
+        el.insertAdjacentHTML('beforeend', '<p class="muted" style="margin-top:8px">试跑已完成，但未写出数据行（请检查登录、字段/表格勾选或到「历史结果」查看详情）。</p>');
+        return;
+      }
+      const cols = Object.keys(rows[0]);
+      const tbl = `<h4 style="margin-top:10px">数据预览（前 ${rows.length} 条）</h4><div style="overflow:auto;max-height:280px"><table><thead><tr>${cols.map(c => `<th>${esc(c)}</th>`).join('')}</tr></thead><tbody>${rows.map(rw => `<tr>${cols.map(c => `<td>${esc(rw[c])}</td>`).join('')}</tr>`).join('')}</tbody></table></div>`;
+      el.insertAdjacentHTML('beforeend', tbl);
+    } catch (e) {
+      el.insertAdjacentHTML('beforeend', `<p class="muted" style="margin-top:8px">无法加载预览：${esc(e.message)}</p>`);
+    }
+  }
+  async function wzSaveDraft() {
+    const draft = wzDraft();
+    if (!/^[a-z][a-z0-9_]{2,63}$/.test(draft.template_id)) {
+      alert('模板 ID 需为 3–64 位小写字母、数字、下划线，并以字母开头');
+      return false;
+    }
+    if (!draft.name) { alert('请填写模板名称'); return false; }
+    $('wzCreateInfo').textContent = '保存中…';
+    const r = await post('/api/action', { action: 'create_from_probe', probe_draft: draft });
+    if (!r.ok) {
+      $('wzCreateInfo').textContent = r.message || '保存失败';
+      if (r.data && r.data.error) $('wzCreateInfo').textContent += ' — ' + (r.data.error.message || JSON.stringify(r.data.error));
+      return false;
+    }
+    wz.created = { template_id: r.data.template_id, version: r.data.version, driver: draft.driver_variable };
+    wz.draftFp = JSON.stringify(draft);
+    $('wzCreateInfo').textContent = `草稿已保存：${r.data.template_id} v${r.data.version}（本机 templates 目录）`;
+    const sample = wz.vars.find(v => v.selected) ? wz.vars.find(v => v.selected).sample : wz.probe.url_analysis.url;
+    if (!$('wzTestValues').value.trim()) $('wzTestValues').value = sample;
+    wzResetPublishUi();
+    return true;
+  }
+  async function wzRunTest() {
+    const fp = JSON.stringify(wzDraft());
+    if (!wz.created || wz.draftFp !== fp) {
+      $('wzCreateInfo').textContent = '配置已改，正在重新保存草稿…';
+      if (!(await wzSaveDraft())) return null;
+    }
+    if (!wz.created) {
+      alert('请先填写模板名称和 ID，并点「保存草稿」');
+      return null;
+    }
+    const variables = { [wz.created.driver]: $('wzTestValues').value };
+    const resp = await submitJob(
+      { action: 'test', template_id: wz.created.template_id, variables },
+      $('wzTestStatus'),
+      { action: 'test', variables, template_id: wz.created.template_id, driver: wz.created.driver },
+    );
+    if (resp && resp.run_id) {
+      wz.testRun = resp.run_id;
+      await wzAppendRunPreview(resp.run_id, $('wzTestStatus'));
+    }
+    wzUpdatePublishUi(resp);
+    return resp;
+  }
   // Servers that predate the `recommended` flag: fall back to source/confidence.
   function wzIsRecommended(f) {
     if (typeof f.recommended === 'boolean') return f.recommended;
@@ -610,30 +708,24 @@
     };
   }
   $('wzCreateBtn').onclick = async () => {
-    const draft = wzDraft();
-    if (!/^[a-z][a-z0-9_]{2,63}$/.test(draft.template_id)) { alert('模板 ID 需为 3–64 位小写字母、数字、下划线，并以字母开头'); return; }
-    if (!draft.name) { alert('请填写模板名称'); return; }
-    $('wzCreateInfo').textContent = '创建中…';
-    const r = await post('/api/action', { action: 'create_from_probe', probe_draft: draft });
-    if (!r.ok) { $('wzCreateInfo').textContent = r.message || '创建失败'; return; }
-    wz.created = { template_id: r.data.template_id, version: r.data.version, driver: draft.driver_variable };
-    $('wzCreateInfo').textContent = `已创建草稿 ${r.data.template_id} v${r.data.version}，下面试跑确认结果`;
-    const sample = wz.vars.find(v => v.selected) ? wz.vars.find(v => v.selected).sample : wz.probe.url_analysis.url;
-    $('wzTestValues').value = sample; $('wzTest').classList.remove('hidden'); $('wzPublishBtn').classList.add('hidden'); $('wzTestStatus').innerHTML = '';
+    if (await wzSaveDraft()) $('wzTest').scrollIntoView({ behavior: 'smooth' });
+  };
+  $('wzSaveTestBtn').onclick = async () => {
+    $('wzTestStatus').innerHTML = '';
+    await wzRunTest();
     $('wzTest').scrollIntoView({ behavior: 'smooth' });
   };
   $('wzTestBtn').onclick = async () => {
-    if (!wz.created) return;
-    const variables = { [wz.created.driver]: $('wzTestValues').value };
-    const resp = await submitJob({ action: 'test', template_id: wz.created.template_id, variables }, $('wzTestStatus'), { action: 'test', variables, template_id: wz.created.template_id, driver: wz.created.driver });
-    if (resp && resp.ok && resp.run_id) { wz.testRun = resp.run_id; $('wzPublishBtn').classList.remove('hidden'); }
+    $('wzTestStatus').innerHTML = '';
+    await wzRunTest();
   };
   $('wzPublishBtn').onclick = async () => {
+    if ($('wzPublishBtn').disabled) return;
     if (!wz.created || !wz.testRun) return;
     if (!confirm('确认试跑结果正确并发布该模板？发布后会出现在「运行任务」页。')) return;
     const r = await post('/api/action', { action: 'publish', template_id: wz.created.template_id, version: wz.created.version, run_id: wz.testRun, confirmed: true });
     $('wzTestStatus').innerHTML = `<div class="notice ${r.ok ? 'ok' : 'bad'}">${esc(r.message)}</div>` + $('wzTestStatus').innerHTML;
-    if (r.ok) { $('wzPublishBtn').classList.add('hidden'); loadTemplates(); }
+    if (r.ok) { wzResetPublishUi(); loadTemplates(); }
   };
   $('legacyTeachToggle').onclick = (e) => { e.preventDefault(); $('legacyTeach').classList.toggle('hidden'); };
 
