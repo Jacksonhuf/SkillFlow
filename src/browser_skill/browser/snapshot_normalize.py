@@ -18,7 +18,11 @@ _ELEMENT_KEYS = (
 
 
 def _element_from_mapping(item: dict[str, Any]) -> dict[str, Any]:
-    element = {key: item[key] for key in _ELEMENT_KEYS if key in item and item[key] not in (None, "")}
+    element = {
+        key: item[key]
+        for key in _ELEMENT_KEYS
+        if key in item and item[key] not in (None, "")
+    }
     if "target" not in element and "ref" in element:
         element["target"] = element["ref"]
     if "text" not in element:
