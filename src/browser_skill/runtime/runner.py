@@ -447,6 +447,7 @@ class Runner:
             try:
                 outcome = await self._process_batch_item(
                     workspace,
+                    context,
                     template,
                     context.variables,
                     batch.driver_variable,
@@ -517,15 +518,65 @@ class Runner:
     async def _process_batch_item(
         self,
         workspace: RunWorkspace,
+        context: RunContext,
         template: BrowserTemplate,
         values: dict[str, Any],
         driver: str,
         item: BatchItemState,
         capabilities: BrowserCapabilities,
     ) -> ItemOutcome:
+        limit_s = template.run.item_timeout_ms / 1000
+        try:
+            return await asyncio.wait_for(
+                self._process_batch_item_body(
+                    workspace,
+                    context,
+                    template,
+                    values,
+                    driver,
+                    item,
+                    capabilities,
+                ),
+                timeout=limit_s,
+            )
+        except TimeoutError as exc:
+            raise SkillError(
+                ErrorCode.NAVIGATION_FAILED,
+                f"本条处理超过 {int(limit_s)} 秒仍未完成。"
+                " 华为等 SPA 详情页加载较慢，或附件链接未触发浏览器下载（会等到超时）。"
+                " 可先取消附件勾选试跑，或在高级设置调大单条/附件超时。",
+                stage="item",
+            ) from exc
+
+    async def _process_batch_item_body(
+        self,
+        workspace: RunWorkspace,
+        context: RunContext,
+        template: BrowserTemplate,
+        values: dict[str, Any],
+        driver: str,
+        item: BatchItemState,
+        capabilities: BrowserCapabilities,
+    ) -> ItemOutcome:
+        self._event(
+            workspace,
+            context,
+            "item_progress",
+            index=item.index,
+            value=item.value,
+            phase="opening",
+        )
         opened = await self.adapter.open(item.url)
         if not opened.ok:
             raise SkillError(ErrorCode.PAGE_NOT_FOUND, "无法打开详情页", stage="item")
+        self._event(
+            workspace,
+            context,
+            "item_progress",
+            index=item.index,
+            value=item.value,
+            phase="snapshot",
+        )
         snapshot = await self.adapter.snapshot(interactive=True)
         if snapshot.url:
             self.policy.require_url_allowed(snapshot.url, template)
@@ -542,6 +593,15 @@ class Runner:
         records = extract_item_records(template, driver, item.value, snapshot, exchanges)
         files: list[DownloadedFile] = []
         if template.target.attachments and records:
+            self._event(
+                workspace,
+                context,
+                "item_progress",
+                index=item.index,
+                value=item.value,
+                phase="attachments",
+                attachment_count=len(template.target.attachments),
+            )
             # Attachments belong to the page, not to individual table rows: download once per
             # item, named after the first record (which carries the driver value).
             owners = records[:1] if template.run.capture_tables else records

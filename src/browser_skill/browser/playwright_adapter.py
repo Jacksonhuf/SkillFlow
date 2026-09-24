@@ -297,14 +297,19 @@ class PlaywrightAdapter:
         )
 
     async def _settle(self, page: Any) -> None:
+        url = str(getattr(page, "url", "") or "")
+        spa = "#" in url
         with contextlib.suppress(Exception):
             await page.wait_for_load_state("domcontentloaded", timeout=self.timeout_ms)
-        # Give click handlers a beat to start their XHR before checking for idle, then let the
-        # driver flush response events that may trail the DOM update.
         with contextlib.suppress(Exception):
             await page.wait_for_timeout(_SETTLE_GRACE_MS)
-        with contextlib.suppress(Exception):
-            await page.wait_for_load_state("networkidle", timeout=min(self.timeout_ms, 3_000))
+        if spa:
+            # Hash SPAs rarely reach networkidle; wait for client routing.
+            with contextlib.suppress(Exception):
+                await page.wait_for_timeout(1200)
+        else:
+            with contextlib.suppress(Exception):
+                await page.wait_for_load_state("networkidle", timeout=min(self.timeout_ms, 3_000))
         await asyncio.sleep(_SETTLE_GRACE_MS / 1000)
 
     async def _guarded(self, operation: str, coroutine_factory: Any) -> CommandResult:
@@ -367,7 +372,8 @@ class PlaywrightAdapter:
     async def open(self, url: str) -> CommandResult:
         async def action() -> Any:
             page = await self._ensure()
-            await page.goto(url, wait_until="domcontentloaded", timeout=self.timeout_ms)
+            nav_timeout = max(self.timeout_ms, 45_000) if "#" in url else self.timeout_ms
+            await page.goto(url, wait_until="domcontentloaded", timeout=nav_timeout)
             await self._settle(page)
             return page.url
 
@@ -577,13 +583,17 @@ class PlaywrightAdapter:
                 return {"strategy": "text", "text": text}
         raise LookupError("No enabled next-page control found")
 
-    async def download(self, target: str, path: Path) -> CommandResult:
+    async def download(
+        self, target: str, path: Path, *, timeout_ms: int | None = None
+    ) -> CommandResult:
+        limit = timeout_ms if timeout_ms is not None else self.timeout_ms
+
         async def action() -> Any:
             page = await self._ensure()
             path.parent.mkdir(parents=True, exist_ok=True)
             locator = self._locator(page, target)
-            async with page.expect_download(timeout=max(self.timeout_ms, 120_000)) as info:
-                await locator.click(timeout=self.timeout_ms)
+            async with page.expect_download(timeout=limit) as info:
+                await locator.click(timeout=min(limit, self.timeout_ms))
             download = await info.value
             await download.save_as(str(path))
             entry = {

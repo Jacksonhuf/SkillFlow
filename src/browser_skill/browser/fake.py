@@ -92,8 +92,10 @@ class FakeBrowserAdapter:
     async def do_action(self, target: str, action: str) -> CommandResult:
         return self._take("do_action", CommandResult(ok=True, operation="do"))
 
-    async def download(self, target: str, path: Path) -> CommandResult:
-        self.calls.append(("download", (target, path), {}))
+    async def download(
+        self, target: str, path: Path, *, timeout_ms: int | None = None
+    ) -> CommandResult:
+        self.calls.append(("download", (target, path), {"timeout_ms": timeout_ms}))
         result = self._take("download_result", CommandResult(ok=True, operation="download"))
         if result.ok and not path.exists():
             path.parent.mkdir(parents=True, exist_ok=True)

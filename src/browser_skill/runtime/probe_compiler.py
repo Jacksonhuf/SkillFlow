@@ -46,6 +46,8 @@ _ALLOWED_RUN_KEYS = {
     "accept_full_urls",
     "capture_tables",
     "skip_if_exists",
+    "attachment_timeout_ms",
+    "item_timeout_ms",
 }
 
 

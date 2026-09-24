@@ -189,6 +189,11 @@ def _fold_progress(progress: dict[str, Any], event: dict[str, Any]) -> dict[str,
         if name == "item_failed":
             progress["failed"] = int(progress.get("failed", 0)) + 1
         progress["current"] = None
+        progress.pop("phase", None)
+    elif name == "item_progress":
+        progress["phase"] = event.get("phase")
+        if event.get("attachment_count") is not None:
+            progress["attachment_count"] = event.get("attachment_count")
     return dict(progress)
 
 
