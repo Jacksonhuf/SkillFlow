@@ -285,7 +285,15 @@ class Runner:
                 dialogs_supported=capabilities.dialogs,
             )
             self._transition(workspace, context, RunState.EXTRACTING, page_url=snapshot.url)
-            await self._collect_list_mode(workspace, context, template, snapshot, capabilities)
+            await self._collect_list_mode(
+                workspace,
+                context,
+                template,
+                snapshot,
+                capabilities,
+                context.variables,
+                dialogs_supported=capabilities.dialogs,
+            )
         context.records = apply_processing(template, context.records)
         self._report_vision(workspace, context)
         self._transition(workspace, context, RunState.VALIDATING)
@@ -363,6 +371,9 @@ class Runner:
         template: BrowserTemplate,
         snapshot: BrowserSnapshot,
         capabilities: BrowserCapabilities,
+        values: dict[str, Any],
+        *,
+        dialogs_supported: bool = False,
     ) -> None:
         context.records, context.pagination_complete, snapshot = await self._collect_records(
             workspace, context, template, snapshot, capabilities
@@ -373,6 +384,10 @@ class Runner:
         if not template.target.attachments and not needs_detail:
             return
         self._transition(workspace, context, RunState.DOWNLOADING, page_url=snapshot.url)
+        snapshot = await self._snapshot_for_attachments(
+            template, values, snapshot, dialogs_supported=dialogs_supported
+        )
+        exchanges = await self._network_exchanges(capabilities)
         list_attachments = [item for item in template.target.attachments if item.source == "list"]
         if list_attachments:
             context.downloaded_files = await self.downloader.collect(
@@ -382,10 +397,16 @@ class Runner:
                 context.records,
                 workspace.path,
                 attachments=list_attachments,
+                exchanges=exchanges,
             )
         if needs_detail:
             detail_result = await self.detail_collector.collect(
-                self.adapter, template, snapshot, context.records, workspace.path
+                self.adapter,
+                template,
+                snapshot,
+                context.records,
+                workspace.path,
+                exchanges=exchanges,
             )
             context.records = detail_result.records
             context.downloaded_files.extend(detail_result.files)
@@ -586,7 +607,10 @@ class Runner:
             template, values, snapshot, dialogs_supported=capabilities.dialogs
         )
         exchanges: list[NetworkExchange] = []
-        if capabilities.network and NetworkExtractor.network_field_mappings(template):
+        if capabilities.network and (
+            template.target.attachments
+            or NetworkExtractor.network_field_mappings(template)
+        ):
             listing = await self.adapter.network_requests()
             if listing.ok:
                 exchanges = parse_exchanges(listing.data)
@@ -602,11 +626,23 @@ class Runner:
                 phase="attachments",
                 attachment_count=len(template.target.attachments),
             )
+            snapshot = await self._snapshot_for_attachments(
+                template, values, snapshot, dialogs_supported=capabilities.dialogs
+            )
+            if any(hint.phase == "attachments" for hint in template.workflow.hints):
+                listing = await self.adapter.network_requests()
+                if listing.ok:
+                    exchanges = parse_exchanges(listing.data)
             # Attachments belong to the page, not to individual table rows: download once per
             # item, named after the first record (which carries the driver value).
             owners = records[:1] if template.run.capture_tables else records
             files = await self.downloader.collect(
-                self.adapter, template, snapshot, owners, workspace.path
+                self.adapter,
+                template,
+                snapshot,
+                owners,
+                workspace.path,
+                exchanges=exchanges,
             )
         return classify_item(template, records, files)
 
@@ -687,6 +723,33 @@ class Runner:
             )
         return records, complete, current
 
+    async def _network_exchanges(self, capabilities: BrowserCapabilities) -> list[NetworkExchange]:
+        if not capabilities.network:
+            return []
+        listing = await self.adapter.network_requests()
+        if not listing.ok:
+            return []
+        return parse_exchanges(listing.data)
+
+    async def _snapshot_for_attachments(
+        self,
+        template: BrowserTemplate,
+        values: dict[str, Any],
+        snapshot: BrowserSnapshot,
+        *,
+        dialogs_supported: bool,
+    ) -> BrowserSnapshot:
+        attachment_hints = [hint for hint in template.workflow.hints if hint.phase == "attachments"]
+        if not attachment_hints:
+            return snapshot
+        return await self._apply_workflow(
+            template,
+            values,
+            snapshot,
+            dialogs_supported=dialogs_supported,
+            phase="attachments",
+        )
+
     async def _apply_workflow(
         self,
         template: BrowserTemplate,
@@ -694,9 +757,12 @@ class Runner:
         snapshot: BrowserSnapshot,
         *,
         dialogs_supported: bool = False,
+        phase: str = "navigate",
     ) -> BrowserSnapshot:
         current = snapshot
         for hint in template.workflow.hints:
+            if hint.phase != phase:
+                continue
             if hint.action == "ensure_page":
                 if hint.target.casefold() not in current.text.casefold():
                     located = await self.locator.locate(

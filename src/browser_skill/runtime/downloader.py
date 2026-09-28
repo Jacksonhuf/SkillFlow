@@ -5,8 +5,8 @@ import re
 import shutil
 from pathlib import Path
 from typing import Any
-from urllib.parse import urljoin
 
+from browser_skill.acquire import attachments as attach
 from browser_skill.browser.base import BrowserAdapter
 from browser_skill.models import (
     AttachmentSpec,
@@ -14,6 +14,7 @@ from browser_skill.models import (
     BrowserTemplate,
     DownloadedFile,
     DownloadStatus,
+    NetworkExchange,
 )
 from browser_skill.outputs.paths import safe_filename, safe_relative_subdir
 from browser_skill.outputs.writer import file_sha256
@@ -48,8 +49,10 @@ class AttachmentDownloader:
         records: list[dict[str, Any]],
         workspace: Path,
         attachments: list[AttachmentSpec] | None = None,
+        exchanges: list[NetworkExchange] | None = None,
     ) -> list[DownloadedFile]:
         attachment_timeout_ms = template.run.attachment_timeout_ms
+        captured = list(exchanges or [])
         downloaded: list[DownloadedFile] = []
         for spec in attachments if attachments is not None else template.target.attachments:
             expected: list[tuple[str | None, dict[str, Any] | None]]
@@ -61,43 +64,98 @@ class AttachmentDownloader:
                 expected = expected[: spec.max_count]
             used_paths: set[Path] = set()
             for record_key, record in expected:
-                targets = await self._resolve_download_targets(
+                files = await self._acquire_for_record(
                     adapter,
-                    snapshot,
+                    template,
                     spec,
+                    snapshot,
+                    captured,
                     record_key,
+                    record,
+                    workspace,
+                    used_paths,
+                    attachment_timeout_ms=attachment_timeout_ms,
                 )
-                if not targets:
-                    downloaded.append(
-                        DownloadedFile(
-                            record_key=record_key,
-                            attachment_key=spec.key,
-                            relative_path="",
-                            status=DownloadStatus.MISSING,
-                        )
-                    )
-                    continue
-                for target, element in targets:
-                    downloaded.append(
-                        await self._download_one(
-                            adapter,
-                            spec,
-                            record_key,
-                            record,
-                            target,
-                            element,
-                            workspace,
-                            used_paths,
-                            source=self._source_url(snapshot, element),
-                            attachment_timeout_ms=attachment_timeout_ms,
-                        )
-                    )
+                downloaded.extend(files)
         return downloaded
+
+    async def _acquire_for_record(
+        self,
+        adapter: BrowserAdapter,
+        template: BrowserTemplate,
+        spec: AttachmentSpec,
+        snapshot: BrowserSnapshot,
+        exchanges: list[NetworkExchange],
+        record_key: str | None,
+        record: dict[str, Any] | None,
+        workspace: Path,
+        used_paths: set[Path],
+        *,
+        attachment_timeout_ms: int,
+    ) -> list[DownloadedFile]:
+        terms = attach.attachment_semantic_terms(spec, template)
+        mapping = template.learned.attachment_mappings.get(spec.key)
+        targets = await self._resolve_download_targets(
+            adapter, template, snapshot, spec, record_key, record, terms
+        )
+        if not targets and not exchanges and mapping is None:
+            return [
+                DownloadedFile(
+                    record_key=record_key,
+                    attachment_key=spec.key,
+                    relative_path="",
+                    status=DownloadStatus.MISSING,
+                )
+            ]
+
+        attempts: list[tuple[str, dict[str, Any] | None]] = list(targets)
+        if not attempts:
+            attempts = [("", None)]
+
+        results: list[DownloadedFile] = []
+        for index, (target, element) in enumerate(attempts, start=1):
+            if spec.multiple is False and results:
+                break
+            if spec.max_count is not None and len(results) >= spec.max_count:
+                break
+            item = await self._download_one(
+                adapter,
+                template,
+                spec,
+                snapshot,
+                exchanges,
+                record_key,
+                record,
+                target,
+                element,
+                workspace,
+                used_paths,
+                attachment_timeout_ms=attachment_timeout_ms,
+                file_index=index,
+                terms=terms,
+                mapping=mapping,
+            )
+            results.append(item)
+            if item.status == DownloadStatus.OK and not spec.multiple:
+                break
+        if not results:
+            results.append(
+                DownloadedFile(
+                    record_key=record_key,
+                    attachment_key=spec.key,
+                    relative_path="",
+                    status=DownloadStatus.MISSING,
+                )
+            )
+        return results
 
     async def _download_one(
         self,
         adapter: BrowserAdapter,
+        template: BrowserTemplate,
         spec: AttachmentSpec,
+        snapshot: BrowserSnapshot,
+        exchanges: list[NetworkExchange],
         record_key: str | None,
         record: dict[str, Any] | None,
         target: str,
@@ -105,65 +163,166 @@ class AttachmentDownloader:
         workspace: Path,
         used_paths: set[Path],
         *,
-        source: str | None = None,
         attachment_timeout_ms: int = 45_000,
+        file_index: int = 1,
+        terms: list[str],
+        mapping: Any,
     ) -> DownloadedFile:
         original = safe_filename(
             self._original_name(element) or f"{spec.key}.bin", fallback=f"{spec.key}.bin"
         )
-        values = {**(record or {}), "original_name": original}
-        name = spec.filename_pattern
-        for key, value in values.items():
-            name = name.replace("{" + str(key) + "}", str(value))
-        name = safe_filename(name, fallback=original)
-        relative = self._unique_relative(
-            Path(safe_relative_subdir(spec.destination_subdir)) / name, used_paths
+        ext = "bin"
+        relative = self._build_relative(
+            spec, record, original, ext=ext, index=file_index, used_paths=used_paths
         )
         path = workspace / relative
         path.parent.mkdir(parents=True, exist_ok=True)
-        cache = self._cache_for(workspace)
-        cached = cache.get(source) if source else None
-        copied_from: str | None = None
-        if cached is not None and cached.is_file() and cached != path:
-            shutil.copy2(cached, path)
-            copied_from = cached.relative_to(workspace).as_posix()
-            complete = True
-        else:
-            result = await adapter.download(
-                target, path, timeout_ms=attachment_timeout_ms
-            )
-            complete = await self._wait_for_file(adapter, path) if result.ok else False
-        status = DownloadStatus.OK if complete else DownloadStatus.FAILED
-        if (
-            status == DownloadStatus.OK
-            and spec.file_types
-            and path.suffix.lower().lstrip(".") not in spec.file_types
-        ):
-            status = DownloadStatus.REJECTED
-            path.unlink(missing_ok=True)
-        if status == DownloadStatus.OK and source and copied_from is None:
-            cache[source] = path
-        return DownloadedFile(
-            record_key=record_key,
-            attachment_key=spec.key,
-            relative_path=relative.as_posix() if path.exists() else "",
-            original_name=original,
-            size=path.stat().st_size if path.exists() else 0,
-            sha256=file_sha256(path) if status == DownloadStatus.OK else None,
-            status=status,
-            copied_from=copied_from,
-        )
 
-    @staticmethod
-    def _source_url(snapshot: BrowserSnapshot, element: dict[str, Any] | None) -> str | None:
-        """Absolute document URL of a link element, or None when it cannot identify the bytes."""
-        if not element:
-            return None
-        href = str(element.get("href") or "").strip()
-        if not href or href.startswith(("javascript:", "#", "data:", "blob:")):
-            return None
-        absolute = urljoin(snapshot.url or "", href)
-        return absolute if absolute.startswith(("http://", "https://")) else None
+        async def finalize(
+            *,
+            content_type: str = "",
+            source_url: str | None = None,
+            copied_from: str | None = None,
+        ) -> DownloadedFile:
+            nonlocal path, relative
+            ext_final = attach.guess_extension(content_type, source_url or "", path)
+            if "{ext}" in spec.filename_pattern and ext_final != ext:
+                relative_final = self._build_relative(
+                    spec, record, original, ext=ext_final, index=file_index, used_paths=used_paths
+                )
+                final_path = workspace / relative_final
+                if path.exists() and final_path != path:
+                    final_path.parent.mkdir(parents=True, exist_ok=True)
+                    path.replace(final_path)
+                    path = final_path
+                    relative = relative_final
+            status = (
+                DownloadStatus.OK
+                if path.is_file() and path.stat().st_size > 0
+                else DownloadStatus.FAILED
+            )
+            if status == DownloadStatus.OK and spec.file_types:
+                suffix = path.suffix.lower().lstrip(".")
+                if suffix not in spec.file_types:
+                    status = DownloadStatus.REJECTED
+                    path.unlink(missing_ok=True)
+            if (
+                status == DownloadStatus.OK
+                and spec.min_size_bytes is not None
+                and path.stat().st_size < spec.min_size_bytes
+            ):
+                status = DownloadStatus.FAILED
+            if (
+                status == DownloadStatus.OK
+                and spec.max_size_bytes is not None
+                and path.stat().st_size > spec.max_size_bytes
+            ):
+                status = DownloadStatus.REJECTED
+                path.unlink(missing_ok=True)
+            cache = self._cache_for(workspace)
+            if status == DownloadStatus.OK and source_url:
+                cache.setdefault(source_url, path)
+            return DownloadedFile(
+                record_key=record_key,
+                attachment_key=spec.key,
+                relative_path=relative.as_posix() if path.exists() else "",
+                original_name=original,
+                size=path.stat().st_size if path.exists() else 0,
+                sha256=file_sha256(path) if status == DownloadStatus.OK else None,
+                status=status,
+                copied_from=copied_from,
+            )
+
+        # 1) Learned network JSON → file URL
+        if mapping and exchanges:
+            file_url = attach.network_json_file_url(exchanges, mapping, record)
+            if file_url:
+                ok, copied = await self._cached_or_fetch(
+                    adapter, template, file_url, path, workspace, attachment_timeout_ms
+                )
+                if ok:
+                    return await finalize(source_url=file_url, copied_from=copied)
+
+        # 2) Captured binary response
+        binary = attach.network_binary_match(exchanges, mapping, terms, template)
+        if binary and attach.write_network_binary(binary, path):
+            return await finalize(content_type=binary.content_type, source_url=binary.url)
+
+        # 3) JSON bodies mentioning attachment-like URLs
+        for exchange in exchanges:
+            if exchange.body is None or exchange.status >= 400:
+                continue
+            for file_url in attach.scan_json_for_file_urls(exchange.body, terms, exchange.url):
+                ok, copied = await self._cached_or_fetch(
+                    adapter, template, file_url, path, workspace, attachment_timeout_ms
+                )
+                if ok:
+                    return await finalize(source_url=file_url, copied_from=copied)
+
+        source = attach.stable_http_url(snapshot, element)
+        if source:
+            ok, copied = await self._cached_or_fetch(
+                adapter, template, source, path, workspace, attachment_timeout_ms
+            )
+            if ok:
+                return await finalize(source_url=source, copied_from=copied)
+
+        if target:
+            result = await adapter.download(target, path, timeout_ms=attachment_timeout_ms)
+            complete = await self._wait_for_file(adapter, path) if result.ok else False
+            if complete:
+                return await finalize(source_url=source)
+
+        if not target:
+            binary = attach.network_binary_match(exchanges, None, terms, template)
+            if binary and attach.write_network_binary(binary, path):
+                return await finalize(content_type=binary.content_type, source_url=binary.url)
+
+        return await finalize()
+
+    async def _cached_or_fetch(
+        self,
+        adapter: BrowserAdapter,
+        template: BrowserTemplate,
+        url: str,
+        path: Path,
+        workspace: Path,
+        timeout_ms: int,
+    ) -> tuple[bool, str | None]:
+        cache = self._cache_for(workspace)
+        cached = cache.get(url)
+        if cached is not None and cached.is_file() and cached != path:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(cached, path)
+            return True, cached.relative_to(workspace).as_posix()
+        path.parent.mkdir(parents=True, exist_ok=True)
+        if await attach.session_fetch(adapter, template, url, path, timeout_ms=timeout_ms):
+            cache[url] = path
+            return True, None
+        return False, None
+
+    def _build_relative(
+        self,
+        spec: AttachmentSpec,
+        record: dict[str, Any] | None,
+        original_name: str,
+        *,
+        ext: str,
+        index: int,
+        used_paths: set[Path],
+    ) -> Path:
+        rendered = attach.apply_filename_pattern(
+            spec.filename_pattern,
+            record=record,
+            original_name=original_name,
+            index=index,
+            ext=ext,
+        )
+        name = safe_filename(rendered, fallback=original_name)
+        relative = self._unique_relative(
+            Path(safe_relative_subdir(spec.destination_subdir)) / name, used_paths
+        )
+        return relative
 
     @staticmethod
     def _unique_relative(relative: Path, used_paths: set[Path]) -> Path:
@@ -179,12 +338,21 @@ class AttachmentDownloader:
     async def _resolve_download_targets(
         self,
         adapter: BrowserAdapter,
+        template: BrowserTemplate,
         snapshot: BrowserSnapshot,
         spec: AttachmentSpec,
         record_key: str | None,
+        record: dict[str, Any] | None,
+        terms: list[str],
     ) -> list[tuple[str, dict[str, Any] | None]]:
         """Return ``(target, element)`` pairs; several when the spec allows multiple files."""
-        elements = self._find_elements(snapshot, spec.semantic, record_key)
+        elements = attach.find_elements(
+            snapshot,
+            terms,
+            record_key=record_key,
+            record=record,
+            match_by=list(spec.match_by),
+        )
         if not spec.multiple:
             elements = elements[:1]
         elif spec.max_count is not None:
@@ -199,7 +367,7 @@ class AttachmentDownloader:
         located = await self.locator.locate(
             adapter,
             snapshot,
-            list(spec.semantic),
+            terms,
             record_key=record_key,
             required=False,
         )
@@ -228,19 +396,6 @@ class AttachmentDownloader:
             if re.search(r"\.[A-Za-z0-9]{2,5}$", tail):
                 return tail
         return None
-
-    @staticmethod
-    def _find_elements(
-        snapshot: BrowserSnapshot, semantics: list[str], record_key: str | None
-    ) -> list[dict[str, Any]]:
-        matches: list[dict[str, Any]] = []
-        for element in snapshot.elements:
-            text = " ".join(str(value) for value in element.values()).casefold()
-            if record_key and element.get("record_key") not in {None, record_key}:
-                continue
-            if any(semantic.casefold() in text for semantic in semantics):
-                matches.append(element)
-        return matches
 
     @staticmethod
     def _record_key(template: BrowserTemplate, record: dict[str, Any]) -> str | None:

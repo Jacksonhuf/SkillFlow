@@ -168,6 +168,15 @@ class ChromeUseAdapter:
         limit = timeout_ms if timeout_ms is not None else self.timeout
         return await self._run(["download", target, str(path)], timeout=max(limit, 120))
 
+    async def fetch_resource(
+        self, url: str, path: Path, *, timeout_ms: int | None = None
+    ) -> CommandResult:
+        return CommandResult(
+            ok=False,
+            operation="fetch",
+            safe_stderr="chrome-use CLI does not expose session fetch; use Playwright adapter",
+        )
+
     async def list_downloads(self) -> CommandResult:
         return await self._run(["downloads"])
 
@@ -292,6 +301,15 @@ class ChromeUseToolAdapter:
         self, target: str, path: Path, *, timeout_ms: int | None = None
     ) -> CommandResult:
         return await self._call("download", target=target, path=str(path))
+
+    async def fetch_resource(
+        self, url: str, path: Path, *, timeout_ms: int | None = None
+    ) -> CommandResult:
+        return CommandResult(
+            ok=False,
+            operation="fetch",
+            safe_stderr="chrome-use tool does not expose session fetch; use Playwright adapter",
+        )
 
     async def list_downloads(self) -> CommandResult:
         return await self._call("downloads")

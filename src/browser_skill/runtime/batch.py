@@ -10,6 +10,7 @@ from typing import Any
 from urllib.parse import urlsplit
 
 from browser_skill.acquire.label_value import find_label_value, parse_label_values
+from browser_skill.acquire.network import endpoint_matches, resolve_scalar
 from browser_skill.acquire.tables import column_index, select_table, tables_from_snapshot
 from browser_skill.models import (
     AcquisitionSource,
@@ -82,37 +83,6 @@ def apply_incremental_skip(batch: BatchProgress, completed: dict[str, str]) -> i
             item.reason = f"done_in:{run_id}"
             skipped += 1
     return skipped
-
-
-def endpoint_matches(hint: str, path: str) -> bool:
-    """``/api/orders/{order_no}`` matches ``/api/orders/ORD-1``; plain hints must be equal."""
-    hint_parts = hint.strip("/").split("/")
-    path_parts = path.strip("/").split("/")
-    if len(hint_parts) != len(path_parts):
-        return False
-    return all(
-        "{" in expected or expected == actual
-        for expected, actual in zip(hint_parts, path_parts, strict=True)
-    )
-
-
-def resolve_scalar(body: Any, json_path: str) -> Any:
-    """Resolve ``$.a.b`` on a JSON body to a scalar; scalar lists are joined with ``, ``."""
-    if not json_path.startswith("$"):
-        return None
-    node: Any = body
-    for segment in [part for part in json_path[1:].split(".") if part]:
-        if isinstance(node, dict) and segment in node:
-            node = node[segment]
-        else:
-            return None
-    if isinstance(node, list):
-        if node and all(not isinstance(item, (dict, list)) for item in node):
-            return ", ".join(str(item) for item in node)
-        return None
-    if isinstance(node, dict):
-        return None
-    return node
 
 
 def _network_value(exchanges: Sequence[NetworkExchange], mapping: LearnedMapping) -> Any:

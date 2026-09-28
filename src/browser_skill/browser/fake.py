@@ -102,6 +102,19 @@ class FakeBrowserAdapter:
             path.write_bytes(b"fake download")
         return result
 
+    async def fetch_resource(
+        self, url: str, path: Path, *, timeout_ms: int | None = None
+    ) -> CommandResult:
+        self.calls.append(("fetch_resource", (url, path), {"timeout_ms": timeout_ms}))
+        result = self._take(
+            "fetch_result",
+            CommandResult(ok=False, operation="fetch", safe_stderr="unsupported"),
+        )
+        if result.ok and not path.exists():
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_bytes(b"fake fetch")
+        return result
+
     async def list_downloads(self) -> CommandResult:
         return self._take("list_downloads", CommandResult(ok=True, operation="downloads", data=[]))
 
