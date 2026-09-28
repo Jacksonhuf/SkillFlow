@@ -113,14 +113,60 @@ def find_elements(
     return matches
 
 
+_FILE_EXTENSIONS = (
+    ".pdf",
+    ".doc",
+    ".docx",
+    ".xls",
+    ".xlsx",
+    ".zip",
+    ".png",
+    ".jpg",
+    ".jpeg",
+    ".gif",
+    ".txt",
+    ".csv",
+)
+
+
+def is_fetchable_attachment_url(url: str, *, page_url: str = "") -> bool:
+    """Return False for SPA hash routes and other non-file navigation URLs."""
+    parts = urlsplit(url.strip())
+    if parts.scheme not in ("http", "https"):
+        return False
+    path = parts.path or "/"
+    lowered_path = path.casefold()
+    if any(lowered_path.endswith(ext) for ext in _FILE_EXTENSIONS):
+        return True
+    if any(token in lowered_path for token in ("/download", "/file/", "/static/", "/attachment")):
+        return True
+    if parts.fragment and "#" in url:
+        return False
+    if page_url:
+        page = urlsplit(page_url.strip())
+        if (
+            parts.scheme == page.scheme
+            and parts.netloc == page.netloc
+            and (parts.path or "/") == (page.path or "/")
+        ):
+            return False
+    return False
+
+
 def stable_http_url(snapshot: BrowserSnapshot, element: dict[str, Any] | None) -> str | None:
     if not element:
         return None
     href = str(element.get("href") or "").strip()
-    if not href or href.startswith(("javascript:", "#", "data:", "blob:")):
+    if not href or href.startswith(("javascript:", "data:", "blob:")):
+        return None
+    if href.startswith("#"):
         return None
     absolute = urljoin(snapshot.url or "", href)
-    return absolute if absolute.startswith(("http://", "https://")) else None
+    if not absolute.startswith(("http://", "https://")):
+        return None
+    if not is_fetchable_attachment_url(absolute, page_url=snapshot.url or ""):
+        return None
+    return absolute
 
 
 def _is_file_content_type(content_type: str) -> bool:
@@ -156,7 +202,11 @@ def network_json_file_url(
         if not endpoint_matches(hint, path):
             continue
         value = resolve_scalar(exchange.body, mapping.json_path)
-        if isinstance(value, str) and value.startswith(("http://", "https://")):
+        if (
+            isinstance(value, str)
+            and value.startswith(("http://", "https://"))
+            and is_fetchable_attachment_url(value)
+        ):
             return value
         if isinstance(value, str) and value.startswith("/"):
             parts = urlsplit(exchange.url)
@@ -214,8 +264,11 @@ async def session_fetch(
     path: Path,
     *,
     timeout_ms: int,
+    page_url: str = "",
 ) -> bool:
     if not host_allowed(url, template):
+        return False
+    if not is_fetchable_attachment_url(url, page_url=page_url):
         return False
     result = await adapter.fetch_resource(url, path, timeout_ms=timeout_ms)
     return bool(result.ok and path.is_file() and path.stat().st_size > 0)
@@ -294,6 +347,7 @@ __all__ = [
     "element_matches_record",
     "find_elements",
     "guess_extension",
+    "is_fetchable_attachment_url",
     "network_binary_match",
     "network_json_file_url",
     "parse_exchanges",

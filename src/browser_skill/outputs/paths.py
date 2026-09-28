@@ -10,14 +10,36 @@ from browser_skill.errors import ErrorCode, SkillError
 def safe_filename(value: str, *, fallback: str = "file", max_length: int = 120) -> str:
     value = unicodedata.normalize("NFKC", value).strip()
     value = value.replace("/", "_").replace("\\", "_")
-    value = re.sub(r"[\x00-\x1f<>:\"|?*]", "_", value)
+    value = re.sub(r"[\x00-\x1f<>:\"|?*#%&=]", "_", value)
     value = re.sub(r"\.{2,}", ".", value)
-    value = re.sub(r"\s+", " ", value).strip(" .")
+    value = re.sub(r"_+", "_", value)
+    value = re.sub(r"\s+", " ", value).strip(" ._")
     if value in {"", ".", ".."}:
         value = fallback
     stem, suffix = Path(value).stem, Path(value).suffix
     allowed_stem = max(1, max_length - len(suffix))
     return f"{stem[:allowed_stem]}{suffix[:16]}"
+
+
+def looks_like_url(value: str) -> bool:
+    """True when ``value`` is a page/link URL, not a human filename."""
+    text = value.strip()
+    if not text:
+        return True
+    lowered = text.casefold()
+    if lowered.startswith(("http://", "https://", "//")):
+        return True
+    if ":///" in lowered or "#/" in lowered or "/saasone/" in lowered:
+        return True
+    if len(text) > 160:
+        return True
+    return bool(re.search(r"https?___", lowered.replace("/", "_").replace("\\", "_")))
+
+
+def attachment_basename(raw: str | None, *, fallback: str, max_length: int = 64) -> str:
+    if raw and not looks_like_url(raw):
+        return safe_filename(raw, fallback=fallback, max_length=max_length)
+    return safe_filename(fallback, fallback=fallback, max_length=max_length)
 
 
 def contained_path(root: Path, *parts: str) -> Path:

@@ -16,7 +16,12 @@ from browser_skill.models import (
     DownloadStatus,
     NetworkExchange,
 )
-from browser_skill.outputs.paths import safe_filename, safe_relative_subdir
+from browser_skill.outputs.paths import (
+    attachment_basename,
+    looks_like_url,
+    safe_filename,
+    safe_relative_subdir,
+)
 from browser_skill.outputs.writer import file_sha256
 from browser_skill.runtime.locator import LocatorService
 
@@ -168,8 +173,10 @@ class AttachmentDownloader:
         terms: list[str],
         mapping: Any,
     ) -> DownloadedFile:
-        original = safe_filename(
-            self._original_name(element) or f"{spec.key}.bin", fallback=f"{spec.key}.bin"
+        original = attachment_basename(
+            self._original_name(element),
+            fallback=f"{spec.key}.bin",
+            max_length=64,
         )
         ext = "bin"
         relative = self._build_relative(
@@ -238,7 +245,13 @@ class AttachmentDownloader:
             file_url = attach.network_json_file_url(exchanges, mapping, record)
             if file_url:
                 ok, copied = await self._cached_or_fetch(
-                    adapter, template, file_url, path, workspace, attachment_timeout_ms
+                    adapter,
+                    template,
+                    file_url,
+                    path,
+                    workspace,
+                    attachment_timeout_ms,
+                    page_url=snapshot.url or "",
                 )
                 if ok:
                     return await finalize(source_url=file_url, copied_from=copied)
@@ -253,8 +266,16 @@ class AttachmentDownloader:
             if exchange.body is None or exchange.status >= 400:
                 continue
             for file_url in attach.scan_json_for_file_urls(exchange.body, terms, exchange.url):
+                if not attach.is_fetchable_attachment_url(file_url, page_url=snapshot.url or ""):
+                    continue
                 ok, copied = await self._cached_or_fetch(
-                    adapter, template, file_url, path, workspace, attachment_timeout_ms
+                    adapter,
+                    template,
+                    file_url,
+                    path,
+                    workspace,
+                    attachment_timeout_ms,
+                    page_url=snapshot.url or "",
                 )
                 if ok:
                     return await finalize(source_url=file_url, copied_from=copied)
@@ -262,7 +283,13 @@ class AttachmentDownloader:
         source = attach.stable_http_url(snapshot, element)
         if source:
             ok, copied = await self._cached_or_fetch(
-                adapter, template, source, path, workspace, attachment_timeout_ms
+                adapter,
+                template,
+                source,
+                path,
+                workspace,
+                attachment_timeout_ms,
+                page_url=snapshot.url or "",
             )
             if ok:
                 return await finalize(source_url=source, copied_from=copied)
@@ -288,6 +315,8 @@ class AttachmentDownloader:
         path: Path,
         workspace: Path,
         timeout_ms: int,
+        *,
+        page_url: str = "",
     ) -> tuple[bool, str | None]:
         cache = self._cache_for(workspace)
         cached = cache.get(url)
@@ -296,7 +325,9 @@ class AttachmentDownloader:
             shutil.copy2(cached, path)
             return True, cached.relative_to(workspace).as_posix()
         path.parent.mkdir(parents=True, exist_ok=True)
-        if await attach.session_fetch(adapter, template, url, path, timeout_ms=timeout_ms):
+        if await attach.session_fetch(
+            adapter, template, url, path, timeout_ms=timeout_ms, page_url=page_url
+        ):
             cache[url] = path
             return True, None
         return False, None
@@ -318,7 +349,7 @@ class AttachmentDownloader:
             index=index,
             ext=ext,
         )
-        name = safe_filename(rendered, fallback=original_name)
+        name = safe_filename(rendered, fallback=original_name, max_length=64)
         relative = self._unique_relative(
             Path(safe_relative_subdir(spec.destination_subdir)) / name, used_paths
         )
@@ -391,6 +422,8 @@ class AttachmentDownloader:
         for key in ("text", "name", "title", "href"):
             raw = str(element.get(key) or "").strip()
             if not raw:
+                continue
+            if looks_like_url(raw):
                 continue
             tail = raw.split("?", 1)[0].split("#", 1)[0].rstrip("/").rsplit("/", 1)[-1]
             if re.search(r"\.[A-Za-z0-9]{2,5}$", tail):
