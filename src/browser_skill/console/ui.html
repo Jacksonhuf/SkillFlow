@@ -235,6 +235,16 @@
   }
 
   const fmtState = (s) => { const cls = s === 'COMPLETED' ? 'ok' : (s === 'PARTIAL' || s === 'WAIT_USER_AUTH') ? 'warn' : (s === 'FAILED' || s === 'CANCELLED') ? 'bad' : ''; return `<span class="badge ${cls}">${esc(s || '-')}</span>`; };
+  const ARTIFACT_LABELS = {
+    json: 'JSON 数据',
+    csv: 'CSV 表格',
+    xlsx: 'Excel 表格',
+    report: '可读报告',
+    summary: '运行摘要',
+    manifest: '清单',
+    pipeline: '管线状态',
+  };
+  const artifactLabel = (k) => ARTIFACT_LABELS[k] || k;
 
   async function api(path, opts = {}) {
     const res = await fetch(path, { ...opts, headers: { 'Content-Type': 'application/json', ...(opts.headers || {}) } });
@@ -268,10 +278,20 @@
     let html = `<div class="notice ${resp.ok ? 'ok' : (st === 'WAIT_USER_AUTH' ? '' : 'bad')}">`;
     html += `<div>${fmtState(st)} ${esc(resp.message)}</div>`;
     if (resp.run_id) html += `<div class="muted">run_id: <code>${esc(resp.run_id)}</code></div>`;
+    const outDir = resp.data && resp.data.output_dir;
+    if (resp.ok && outDir) {
+      html += `<div style="margin-top:8px;padding:10px;border:1px solid #2d5a3d;border-radius:6px;background:#0f1a14">`
+        + `<div><strong>结果已保存到本机文件夹</strong></div>`
+        + `<div style="margin-top:6px"><code style="word-break:break-all">${esc(outDir)}</code></div>`
+        + `<div class="muted" style="margin-top:6px">在资源管理器中打开上述路径即可看到 CSV/JSON/附件；下方按钮会把文件下载到浏览器的「下载」目录。</div></div>`;
+    }
     if (st === 'WAIT_USER_AUTH') html += `<div class="row"><span>请切到刚弹出的 Chrome 窗口完成登录（只需这一次），回来点</span><button class="btn" id="resumeBtn">我已登录，继续</button></div>`;
     const arts = resp.data && resp.data.artifacts;
     if (arts && resp.run_id) {
-      html += '<div class="row">' + Object.entries(arts).map(([k, p]) => `<a class="btn secondary" href="/api/runs/${encodeURIComponent(resp.run_id)}/files/${p}?x=1" onclick="return window.__dl(event, this.href)">${esc(k)}</a>`).join('') + '</div>';
+      html += '<div class="row" style="margin-top:8px"><span class="muted">下载结果文件：</span>'
+        + Object.entries(arts).filter(([k]) => k !== 'summary' && k !== 'pipeline').map(([k, p]) =>
+          `<a class="btn secondary" href="/api/runs/${encodeURIComponent(resp.run_id)}/files/${p}?x=1" onclick="return window.__dl(event, this.href)" title="${esc(p)}">${esc(artifactLabel(k))}</a>`
+        ).join('') + '</div>';
     }
     const v = resp.data && resp.data.validation;
     if (v) html += `<div class="muted">记录 ${v.record_count} · 附件 ${v.download_count} · 字段完整度 ${(v.field_completeness * 100).toFixed(0)}%</div>`;
@@ -442,8 +462,16 @@
     const r = await api('/api/runs/' + encodeURIComponent(id)); const d = r.run;
     const s = d.summary || {};
     let html = `<h3>${esc(id)} ${fmtState(s.state || d.state)}</h3>`;
+    if (d.workspace_path) {
+      html += `<p><strong>结果文件夹</strong><br><code style="word-break:break-all">${esc(d.workspace_path)}</code></p>`;
+    }
     if (s.error) html += `<div class="notice bad">${esc(s.error.message || JSON.stringify(s.error))}</div>`;
-    if (s.artifacts) html += '<div class="row">' + Object.entries(s.artifacts).map(([k, p]) => `<a class="btn secondary" href="/api/runs/${encodeURIComponent(id)}/files/${p}" onclick="return window.__dl(event, this.href)">${esc(k)}</a>`).join('') + '</div>';
+    if (s.artifacts) {
+      html += '<div class="row"><span class="muted">下载：</span>'
+        + Object.entries(s.artifacts).filter(([k]) => k !== 'summary' && k !== 'pipeline').map(([k, p]) =>
+          `<a class="btn secondary" href="/api/runs/${encodeURIComponent(id)}/files/${p}" onclick="return window.__dl(event, this.href)" title="${esc(p)}">${esc(artifactLabel(k))}</a>`
+        ).join('') + '</div>';
+    }
     if (d.batch && d.batch.items) {
       const st = d.batch.stats || {};
       const failed = d.batch.items.filter(i => i.status === 'failed').map(i => i.value);

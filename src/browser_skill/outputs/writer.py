@@ -101,7 +101,7 @@ class OutputWriter:
                     prefix=f".{path.name}.", dir=path.parent, text=True
                 )
                 try:
-                    with os.fdopen(fd, "w", encoding="utf-8", newline="") as handle:
+                    with os.fdopen(fd, "w", encoding="utf-8-sig", newline="") as handle:
                         writer = csv.DictWriter(handle, fieldnames=columns, extrasaction="ignore")
                         writer.writeheader()
                         writer.writerows(context.records)

@@ -350,6 +350,7 @@ class Runner:
             message += f"（跳过 {stats['skipped']} 条此前已采集）"
         data: dict[str, Any] = {
             "artifacts": artifacts,
+            "output_dir": str(workspace.path),
             "validation": report.model_dump(mode="json"),
             "execution_contract": contract_payload(),
             "pipeline": pipeline_data.get("pipeline"),
