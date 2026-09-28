@@ -175,7 +175,7 @@ def test_selected_table_turns_rows_into_records() -> None:
     assert by_key["row_no"].required is True
     assert by_key["row_no"].type == "integer"
     assert by_key["material_code"].required is False
-    assert template.target.record_key == ["order_no", "row_no"]
+    assert template.target.record_key == ["row_no", "order_no"]
     assert template.learned.field_mappings["material_code"].strategy == "table_header"
     learned = template.learned.table
     assert learned is not None

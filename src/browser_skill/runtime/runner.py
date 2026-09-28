@@ -57,7 +57,7 @@ from browser_skill.runtime.policy import ActionPolicy
 from browser_skill.runtime.run_store import RunStore
 from browser_skill.runtime.state_machine import can_transition
 from browser_skill.runtime.url_batch import plan_batch_items
-from browser_skill.runtime.validator import ResultValidator
+from browser_skill.runtime.validator import ResultValidator, validation_failure_message
 
 EventHook = Callable[[dict[str, Any]], Awaitable[None]]
 ProgressListener = Callable[[dict[str, Any]], None]
@@ -321,7 +321,7 @@ class Runner:
                 details["items"] = context.batch.stats()
             raise SkillError(
                 ErrorCode.VALIDATION_FAILED,
-                "Business-result validation failed",
+                validation_failure_message(report),
                 stage="VALIDATING",
                 repairable=True,
                 details=details,

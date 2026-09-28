@@ -288,6 +288,10 @@
       html += `<div class="muted" style="margin-top:6px">样例比对：覆盖 ${(al.coverage * 100).toFixed(0)}% · ${al.aligned ? '一致' : al.issues.length + ' 个差异'}</div>`;
       if (al.issues.length) html += '<ul style="margin:4px 0 0 18px">' + al.issues.map(i => `<li>${esc(i)}</li>`).join('') + '</ul>';
     }
+    if (resp.data && resp.data.error && resp.data.error.details && resp.data.error.details.validation && resp.data.error.details.validation.issues) {
+      const issues = resp.data.error.details.validation.issues;
+      html += '<ul style="margin:6px 0 0 18px">' + issues.slice(0, 8).map(i => `<li><code>${esc(i.code)}</code> ${esc(i.message)}${i.record_key ? ' · ' + esc(i.record_key) : ''}</li>`).join('') + '</ul>';
+    }
     if (resp.data && resp.data.error) html += `<pre>${esc(JSON.stringify(resp.data.error, null, 2))}</pre>`;
     html += '</div>';
     el.innerHTML = html;

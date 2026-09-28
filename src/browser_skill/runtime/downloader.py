@@ -24,6 +24,7 @@ from browser_skill.outputs.paths import (
 )
 from browser_skill.outputs.writer import file_sha256
 from browser_skill.runtime.locator import LocatorService
+from browser_skill.runtime.record_key import record_key_for
 
 
 class AttachmentDownloader:
@@ -62,9 +63,10 @@ class AttachmentDownloader:
         for spec in attachments if attachments is not None else template.target.attachments:
             expected: list[tuple[str | None, dict[str, Any] | None]]
             if spec.per_record:
-                expected = [(self._record_key(template, record), record) for record in records]
+                expected = [(record_key_for(template, record), record) for record in records]
             else:
-                expected = [(None, None)]
+                owner = records[0] if records else None
+                expected = [(None, owner)]
             if spec.max_count is not None:
                 expected = expected[: spec.max_count]
             used_paths: set[Path] = set()
@@ -429,8 +431,3 @@ class AttachmentDownloader:
             if re.search(r"\.[A-Za-z0-9]{2,5}$", tail):
                 return tail
         return None
-
-    @staticmethod
-    def _record_key(template: BrowserTemplate, record: dict[str, Any]) -> str | None:
-        values = [str(record.get(key, "")) for key in template.target.record_key]
-        return "|".join(values) if values and all(values) else None

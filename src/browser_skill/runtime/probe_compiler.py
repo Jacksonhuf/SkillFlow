@@ -165,11 +165,15 @@ class ProbeDraftCompiler:
                 headers=list(draft.table.headers),
                 columns=columns,
             )
+            record_key = [key for key in record_key if key != driver] + [driver]
+        elif driver not in record_key:
+            record_key.append(driver)
         missing_keys = [key for key in record_key if key not in {field.key for field in fields}]
         if missing_keys:
             raise ValueError(f"record_key 引用了未选择的字段：{', '.join(missing_keys)}")
 
         attachments: list[AttachmentSpec] = []
+        attachment_per_record = draft.table is None
         for item in draft.attachments:
             attachments.append(
                 AttachmentSpec(
@@ -178,7 +182,7 @@ class ProbeDraftCompiler:
                     required=False,
                     semantic=[item.name],
                     source=SourcePage.DETAIL,
-                    per_record=True,
+                    per_record=attachment_per_record,
                     multiple=item.count > 1,
                     match_by=record_key,
                     file_types=list(item.types),
