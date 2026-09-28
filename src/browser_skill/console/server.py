@@ -378,6 +378,7 @@ class ConsoleServer:
                             "validation_ok": (summary.get("validation") or {}).get("ok"),
                             "error": (summary.get("error") or {}).get("message"),
                             "artifacts": summary.get("artifacts") or {},
+                            "workspace_path": str(directory),
                         }
                     )
                 elif run_path.is_file():
@@ -420,6 +421,9 @@ class ConsoleServer:
                 detail["records_preview"] = (run.get("records") or [])[:20]
             except (OSError, json.JSONDecodeError):
                 pass
+        summary = detail.get("summary") or {}
+        detail["artifacts"] = summary.get("artifacts") or {}
+        detail["workspace_path"] = str(workspace)
         report_path = workspace / "report.md"
         if report_path.is_file():
             detail["report_markdown"] = report_path.read_text(encoding="utf-8")
@@ -582,6 +586,8 @@ class _Handler(BaseHTTPRequestHandler):
 
     def _serve_file(self, path: Path) -> None:
         content_type = mimetypes.guess_type(path.name)[0] or "application/octet-stream"
+        if path.suffix.lower() == ".csv":
+            content_type = "text/csv; charset=utf-8"
         data = path.read_bytes()
         self.send_response(HTTPStatus.OK)
         self.send_header("Content-Type", content_type)

@@ -28,7 +28,9 @@ def test_writes_and_validates_ten_thousand_records(tmp_path: Path, template) -> 
     artifacts = OutputWriter().write(context, report)
 
     assert report.ok is True
-    with (workspace.path / artifacts["csv"]).open(encoding="utf-8", newline="") as handle:
+    csv_path = workspace.path / artifacts["csv"]
+    assert csv_path.read_bytes()[:3] == b"\xef\xbb\xbf"
+    with csv_path.open(encoding="utf-8-sig", newline="") as handle:
         assert sum(1 for _ in csv.DictReader(handle)) == 10_000
     payload = json.loads((workspace.path / artifacts["json"]).read_text(encoding="utf-8"))
     assert len(payload["records"]) == 10_000
