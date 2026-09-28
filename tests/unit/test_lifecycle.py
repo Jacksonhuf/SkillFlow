@@ -57,6 +57,34 @@ def test_publish_requires_confirmation_and_exact_completed_evidence(
     assert published.status == TemplateStatus.PUBLISHED
 
 
+def test_publish_accepts_partial_when_validation_ok(tmp_path: Path, template_data) -> None:
+    data = dict(template_data)
+    data["status"] = TemplateStatus.TESTING
+    template = BrowserTemplate.model_validate(data)
+    store = TemplateStore(tmp_path / "templates")
+    store.save(template)
+    runs_root = tmp_path / "runs"
+    directory = runs_root / "run_partial"
+    directory.mkdir(parents=True)
+    (directory / "summary.json").write_text(
+        json.dumps(
+            {
+                "template": "inventory_feedback@1",
+                "state": "PARTIAL",
+                "validation": {"ok": True, "partial": True},
+            }
+        ),
+        encoding="utf-8",
+    )
+    published = TemplateLifecycleService(store, runs_root).publish(
+        template.template_id,
+        template.version,
+        test_run_id="run_partial",
+        confirmed=True,
+    )
+    assert published.status == TemplateStatus.PUBLISHED
+
+
 def test_publish_rejects_different_version_evidence(tmp_path: Path, template_data) -> None:
     data = dict(template_data)
     data["status"] = TemplateStatus.TESTING

@@ -182,6 +182,41 @@ def test_publish_with_exact_completed_evidence_returns_platform_result(
     assert response.data["interaction"]["actions"] == ["run_template"]
 
 
+def test_publish_with_partial_ok_evidence_returns_platform_result(
+    tmp_path: Path, template_data: dict[str, object]
+) -> None:
+    data = deepcopy(template_data)
+    data["status"] = "testing"
+    templates_root = tmp_path / "templates"
+    TemplateStore(templates_root).save(BrowserTemplate.model_validate(data))
+    run_dir = tmp_path / "runs" / "run_partial"
+    run_dir.mkdir(parents=True)
+    (run_dir / "summary.json").write_text(
+        json.dumps(
+            {
+                "template": "inventory_feedback@1",
+                "state": "PARTIAL",
+                "validation": {"ok": True, "partial": True},
+            }
+        ),
+        encoding="utf-8",
+    )
+    app = BrowserSkillApp(templates_root, tmp_path / "runs", FakeBrowserAdapter())
+    response = asyncio.run(
+        app.handle(
+            SkillRequest(
+                action="publish",
+                template_id="inventory_feedback",
+                version=1,
+                run_id="run_partial",
+                confirmed=True,
+            )
+        )
+    )
+    assert response.ok is True
+    assert response.message == "模板已发布"
+
+
 def test_analyze_sample_returns_editable_target_review(tmp_path: Path) -> None:
     uploads = tmp_path / "uploads"
     uploads.mkdir()

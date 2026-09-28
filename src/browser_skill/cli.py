@@ -26,6 +26,7 @@ from browser_skill.platform.probe import probe_adapter
 from browser_skill.runtime.repair import RepairService
 from browser_skill.runtime.runner import Runner
 from browser_skill.runtime.teach import TeachCompiler
+from browser_skill.runtime.test_evidence import accepts_test_run_evidence
 from browser_skill.templates.store import TemplateStore
 
 app = typer.Typer(
@@ -496,11 +497,10 @@ def publish_template(
         raise typer.BadParameter("Test Run summary was not found")
     summary = json.loads(summary_path.read_text(encoding="utf-8"))
     expected = f"{template_id}@{version}"
-    passed = (
-        summary.get("template") == expected and summary.get("state") == RunState.COMPLETED.value
-    )
-    if not passed:
-        console.print("[red]Test Run does not prove this exact template version passed.[/red]")
+    if not accepts_test_run_evidence(summary, expected_template=expected):
+        console.print(
+            "[red]试跑证据无效：须 COMPLETED，或 PARTIAL 且必填校验已通过。[/red]"
+        )
         raise typer.Exit(2)
     published = _store(root).publish(template_id, version, test_passed=True)
     console.print(f"[bold green]✓ 已发布 {published.template_id}@{published.version}[/bold green]")
