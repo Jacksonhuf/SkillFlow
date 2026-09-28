@@ -29,7 +29,13 @@ def test_record_key_unique_across_pages_with_same_row_no(template_data: dict[str
         "capture_tables": True,
     }
     data["target"]["fields"].append(
-        {"key": "page_url", "name": "详情页", "type": "string", "required": True, "semantic": ["url"]}
+        {
+            "key": "page_url",
+            "name": "详情页",
+            "type": "string",
+            "required": True,
+            "semantic": ["url"],
+        }
     )
     data["target"]["fields"].append(
         {"key": "row_no", "name": "行号", "type": "integer", "required": True, "semantic": ["行号"]}
