@@ -92,6 +92,9 @@ def parse_exchanges(data: Any) -> list[NetworkExchange]:
             if "body" in entry
             else entry.get("response_body", response.get("body", response.get("content")))
         )
+        body_base64 = entry.get("body_base64")
+        if isinstance(body_base64, str) and not body_base64.strip():
+            body_base64 = None
         try:
             status = int(entry.get("status", response.get("status", 200)) or 0)
         except (TypeError, ValueError):
@@ -108,6 +111,7 @@ def parse_exchanges(data: Any) -> list[NetworkExchange]:
                     status=max(0, min(status, 999)),
                     content_type=content_type,
                     body=body,
+                    body_base64=body_base64 if isinstance(body_base64, str) else None,
                     size=max(0, size),
                 )
             )
@@ -119,6 +123,37 @@ def parse_exchanges(data: Any) -> list[NetworkExchange]:
 def endpoint_of(url: str) -> str:
     parts = urlsplit(url)
     return parts.path or "/"
+
+
+def endpoint_matches(hint: str, path: str) -> bool:
+    """``/api/orders/{order_no}`` matches ``/api/orders/ORD-1``; plain hints must be equal."""
+    hint_parts = hint.strip("/").split("/")
+    path_parts = path.strip("/").split("/")
+    if len(hint_parts) != len(path_parts):
+        return False
+    return all(
+        "{" in expected or expected == actual
+        for expected, actual in zip(hint_parts, path_parts, strict=True)
+    )
+
+
+def resolve_scalar(body: Any, json_path: str) -> Any:
+    """Resolve ``$.a.b`` on a JSON body to a scalar; scalar lists are joined with ``, ``."""
+    if not json_path.startswith("$"):
+        return None
+    node: Any = body
+    for segment in [part for part in json_path[1:].split(".") if part]:
+        if isinstance(node, dict) and segment in node:
+            node = node[segment]
+        else:
+            return None
+    if isinstance(node, list):
+        if node and all(not isinstance(item, (dict, list)) for item in node):
+            return ", ".join(str(item) for item in node)
+        return None
+    if isinstance(node, dict):
+        return None
+    return node
 
 
 def host_allowed(url: str, template: BrowserTemplate) -> bool:

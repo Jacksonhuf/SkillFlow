@@ -280,6 +280,9 @@ class WorkflowHint(StrictModel):
     target: str
     value: str | None = None
     dom_hint: str | None = Field(default=None, max_length=500)
+    # ``navigate``: before field extraction (default). ``attachments``: before downloads
+    # (e.g. expand a collapsed attachment panel).
+    phase: Literal["navigate", "attachments"] = "navigate"
 
     @field_validator("dom_hint")
     @classmethod
@@ -475,6 +478,7 @@ class NetworkExchange(StrictModel):
     status: int = Field(default=200, ge=0, le=999)
     content_type: str = ""
     body: Any | None = None
+    body_base64: str | None = None
     size: int = Field(default=0, ge=0)
 
     @property

@@ -36,6 +36,19 @@ _MAX_TABLES = 6
 _MAX_TABLE_ROWS = 500
 _MAX_NETWORK_ENTRIES = 300
 _MAX_BODY_BYTES = 2_000_000
+_MAX_ATTACHMENT_BODY_BYTES = 20_000_000
+_FILE_CAPTURE_TYPES = (
+    "pdf",
+    "octet-stream",
+    "msword",
+    "wordprocessingml",
+    "spreadsheetml",
+    "excel",
+    "zip",
+    "png",
+    "jpeg",
+    "gif",
+)
 _SETTLE_GRACE_MS = 150
 
 _NEXT_PAGE_SELECTORS = (
@@ -213,14 +226,20 @@ class PlaywrightAdapter:
             if request.resource_type not in {"xhr", "fetch", "document", "other"}:
                 return
             content_type = str(response.headers.get("content-type", ""))
-            if "json" not in content_type.casefold() and request.resource_type == "document":
+            folded = content_type.casefold()
+            is_json = "json" in folded
+            is_file = any(token in folded for token in _FILE_CAPTURE_TYPES)
+            if request.resource_type == "document" and not is_json and not is_file:
                 return
             body_text: str | None = None
+            body_base64: str | None = None
             size = 0
-            if "json" in content_type.casefold() or request.resource_type in {"xhr", "fetch"}:
+            if is_json or request.resource_type in {"xhr", "fetch"} or is_file:
                 raw = await response.body()
                 size = len(raw)
-                if size <= _MAX_BODY_BYTES:
+                if is_file and size <= _MAX_ATTACHMENT_BODY_BYTES:
+                    body_base64 = base64.b64encode(raw).decode("ascii")
+                elif is_json and size <= _MAX_BODY_BYTES:
                     body_text = raw.decode("utf-8", errors="replace")
             self._network.append(
                 {
@@ -229,6 +248,7 @@ class PlaywrightAdapter:
                     "status": response.status,
                     "content_type": content_type,
                     "body": body_text,
+                    "body_base64": body_base64,
                     "size": size,
                     "resource_type": request.resource_type,
                     "captured_at": time.time(),
@@ -607,6 +627,29 @@ class PlaywrightAdapter:
             return entry
 
         return await self._guarded("download", action)
+
+    async def fetch_resource(
+        self, url: str, path: Path, *, timeout_ms: int | None = None
+    ) -> CommandResult:
+        limit = timeout_ms if timeout_ms is not None else self.timeout_ms
+
+        async def action() -> Any:
+            page = await self._ensure()
+            path.parent.mkdir(parents=True, exist_ok=True)
+            response = await page.context.request.get(url, timeout=limit)
+            if response.status >= 400:
+                raise RuntimeError(f"HTTP {response.status}")
+            body = await response.body()
+            if not body:
+                raise RuntimeError("empty response body")
+            path.write_bytes(body)
+            return {
+                "url": url,
+                "size": len(body),
+                "content_type": response.headers.get("content-type", ""),
+            }
+
+        return await self._guarded("fetch", action)
 
     async def list_downloads(self) -> CommandResult:
         return self._result("downloads", True, data=list(self._downloads))

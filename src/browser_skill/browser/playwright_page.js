@@ -71,6 +71,25 @@
     out.elements.push(item);
   }
 
+  const seen = new Set(out.elements.map((item) => item.ref));
+  const extraDownload = document.querySelectorAll(
+    "[download], a[href*='.pdf' i], a[href*='download' i], span[role='button'], div[role='button']"
+  );
+  for (const el of extraDownload) {
+    if (out.elements.length >= MAX) break;
+    if (!visible(el) || disabled(el)) continue;
+    const ref = "@" + refOf(el);
+    if (seen.has(ref)) continue;
+    seen.add(ref);
+    const item = { ref, role: roleOf(el), text: label(el) };
+    const title = el.getAttribute("title"); if (title) item.title = title;
+    const aria = el.getAttribute("aria-label"); if (aria) item.aria_label = aria;
+    if (el.tagName.toLowerCase() === "a") item.href = el.href;
+    const dl = el.getAttribute("download");
+    if (dl !== null) item.filename = dl || (item.href || "").split("/").pop();
+    out.elements.push(item);
+  }
+
   const TABLE_SEL = "table,[role='grid'],[role='table'],[role='treegrid']";
   const cellText = (c) => (c.innerText || "").trim().replace(/\s+/g, " ");
   const isHeaderCell = (c) => c.tagName.toLowerCase() === "th" || c.getAttribute("role") === "columnheader";

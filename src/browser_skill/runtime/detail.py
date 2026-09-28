@@ -40,6 +40,7 @@ class DetailCollector:
         list_snapshot: BrowserSnapshot,
         records: list[dict[str, Any]],
         workspace: Path,
+        exchanges: list | None = None,
     ) -> DetailCollectionResult:
         detail_fields = [
             field for field in template.target.fields if field.source == SourcePage.DETAIL
@@ -97,6 +98,7 @@ class DetailCollector:
                         [enriched],
                         workspace,
                         attachments=detail_attachments,
+                        exchanges=list(exchanges or []),
                     )
                 )
             await self._return_to_list(adapter, template)
