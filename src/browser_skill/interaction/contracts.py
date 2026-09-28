@@ -135,12 +135,28 @@ def run_result_interaction(
     message: str,
     data: dict[str, Any],
 ) -> SkillInteraction:
+    validation = data.get("validation") if isinstance(data.get("validation"), dict) else {}
+    publishable = state == RunState.COMPLETED or (
+        state == RunState.PARTIAL and bool(validation.get("ok"))
+    )
+    lines = [message, f"Run ID: {run_id}", f"状态: {state.value}"]
+    actions: list[str] = []
+    if publishable:
+        actions = ["publish_template", "run_template"]
+        if state == RunState.PARTIAL:
+            lines.append(
+                "可选附件未全部成功（例如 missing），必填字段已通过。"
+                "确认业务可接受后，仍可用此 Run 发布模板。"
+            )
+    elif state == RunState.PARTIAL:
+        lines.append("必填校验未通过，请调整模板或页面映射后重新试跑。")
     return SkillInteraction(
         kind=InteractionKind.RUN_RESULT if state != RunState.FAILED else InteractionKind.ERROR,
         title="任务结果" if state != RunState.FAILED else "任务未完成",
-        text=f"{message}\nRun ID: {run_id}\n状态: {state.value}",
+        text="\n".join(lines),
         run_id=run_id,
         state=state,
+        actions=actions,
         data=data,
     )
 
@@ -156,7 +172,7 @@ def template_review_interaction(template: Any, *, mode: str) -> SkillInteraction
             f"版本：{template.version}\n"
             f"字段：{field_names}\n"
             f"附件：{attachment_names}\n"
-            "必须完成 Test Run 并通过后才能发布。"
+            "须完成 Test Run：COMPLETED，或 PARTIAL 且必填项已通过（可选附件 missing 可发布）。"
         ),
         actions=["test_template", "cancel_template"],
         data={
@@ -206,7 +222,7 @@ def mapping_review_interaction(report: Any, *, candidate_version: int | None) ->
     else:
         title = "Mapping 候选已生成"
         actions = ["test_template", "review_mapping", "cancel_template"]
-        result = "所有必填目标均已找到，必须通过 Test Run 后才能发布。"
+        result = "所有必填目标均已找到，必须通过 Test Run 后才能发布（可选附件失败可为 PARTIAL）。"
     return SkillInteraction(
         kind=InteractionKind.MAPPING_REVIEW,
         title=title,

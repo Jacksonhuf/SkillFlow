@@ -4,8 +4,9 @@ import json
 from pathlib import Path
 
 from browser_skill.errors import ErrorCode, SkillError
-from browser_skill.models import BrowserTemplate, RunState
+from browser_skill.models import BrowserTemplate
 from browser_skill.outputs.paths import contained_path, safe_filename
+from browser_skill.runtime.test_evidence import accepts_test_run_evidence
 from browser_skill.templates.store import TemplateStore
 
 
@@ -41,10 +42,11 @@ class TemplateLifecycleService:
         except (OSError, json.JSONDecodeError) as exc:
             raise SkillError(ErrorCode.VALIDATION_FAILED, "Test Run evidence is invalid") from exc
         expected = f"{template_id}@{version}"
-        if summary.get("template") != expected or summary.get("state") != RunState.COMPLETED.value:
+        if not accepts_test_run_evidence(summary, expected_template=expected):
             raise SkillError(
                 ErrorCode.VALIDATION_FAILED,
-                "Test Run does not prove this exact template version completed",
+                "试跑证据无效：须为同一模板版本，且状态为 COMPLETED，"
+                "或为 PARTIAL 且必填校验已通过（常见原因：可选附件未下载，status 为 missing）。",
                 stage="publish",
             )
         return self.store.publish(template_id, version, test_passed=True)
