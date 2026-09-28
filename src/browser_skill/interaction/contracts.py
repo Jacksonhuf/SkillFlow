@@ -135,7 +135,8 @@ def run_result_interaction(
     message: str,
     data: dict[str, Any],
 ) -> SkillInteraction:
-    validation = data.get("validation") if isinstance(data.get("validation"), dict) else {}
+    raw_validation = data.get("validation")
+    validation = raw_validation if isinstance(raw_validation, dict) else {}
     publishable = state == RunState.COMPLETED or (
         state == RunState.PARTIAL and bool(validation.get("ok"))
     )
