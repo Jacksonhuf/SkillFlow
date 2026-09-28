@@ -352,7 +352,7 @@
     return false;
   };
   async function submitJob(req, el, ctx) {
-    el.innerHTML = '<div class="notice">正在执行… 系统会自动操作 Chrome，期间请不要在那个窗口里点击。</div>';
+    el.innerHTML = '<div class="notice">正在执行… 系统会自动操作 Chrome，期间<strong>不要关闭</strong>弹出的 Chrome 窗口（可最小化），也尽量不要在那个窗口里点击。</div>';
     try {
       const r = await post('/api/jobs', req);
       if (!r.ok) { el.innerHTML = `<div class="notice bad">${esc(r.message)}</div>`; return null; }

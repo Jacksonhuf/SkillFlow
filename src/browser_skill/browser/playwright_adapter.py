@@ -82,6 +82,11 @@ def _missing_playwright(exc: Exception) -> SkillError:
     )
 
 
+def looks_like_browser_closed(exc: BaseException) -> bool:
+    message = f"{type(exc).__name__}: {exc}".casefold()
+    return "has been closed" in message or "target page, context or browser" in message
+
+
 class PlaywrightAdapter:
     """Drive the user's local Chrome through Playwright; implements BrowserAdapter."""
 
@@ -134,12 +139,55 @@ class PlaywrightAdapter:
     async def _ensure(self) -> Any:
         """Connect lazily; returns the active page."""
         async with self._connect_lock:
-            if self._context is None:
-                await self._connect()
-            if self._page is None or self._page.is_closed():
-                pages = [page for page in self._context.pages if not page.is_closed()]
-                self._page = pages[-1] if pages else await self._context.new_page()
-            return self._page
+            last_exc: Exception | None = None
+            for attempt in range(2):
+                try:
+                    if self._context is None:
+                        await self._connect()
+                    await self._refresh_page()
+                    return self._page
+                except SkillError:
+                    raise
+                except Exception as exc:
+                    last_exc = exc
+                    if attempt == 0 and looks_like_browser_closed(exc) and self.mode != "cdp":
+                        await self._teardown()
+                        continue
+                    break
+            if last_exc is not None:
+                if looks_like_browser_closed(last_exc):
+                    raise self._browser_closed_error(last_exc) from last_exc
+                raise last_exc
+            raise self._browser_closed_error()
+
+    async def _refresh_page(self) -> None:
+        if self._context is None:
+            raise self._browser_closed_error()
+        if self._page is not None and not self._page.is_closed():
+            return
+        pages = [page for page in self._context.pages if not page.is_closed()]
+        self._page = pages[-1] if pages else await self._context.new_page()
+
+    def _browser_closed_error(self, exc: Exception | None = None) -> SkillError:
+        if self.mode == "cdp":
+            message = (
+                "已连接的 Chrome 已关闭。请重新打开 Chrome（远程调试端口需保持开启），再重跑任务。"
+            )
+        else:
+            message = (
+                "自动化 Chrome 窗口已关闭。任务执行期间请勿关闭该窗口（可最小化）；"
+                "请重新运行任务，若页面要求登录请重新登录后再继续。"
+            )
+        return SkillError(
+            ErrorCode.EXTENSION_OFFLINE,
+            message,
+            stage="adapter",
+            retryable=True,
+            details={
+                "hint": "browser_window_closed",
+                "error": f"{type(exc).__name__}: {exc}"[:500] if exc else "",
+            },
+        )
 
     async def _connect(self) -> None:
         try:
@@ -338,7 +386,9 @@ class PlaywrightAdapter:
             data = await coroutine_factory()
         except SkillError:
             raise
-        except Exception as exc:  # surfaced to the runner as a failed command
+        except Exception as exc:
+            if looks_like_browser_closed(exc):
+                raise self._browser_closed_error(exc) from exc
             return self._result(
                 operation, False, error=f"{type(exc).__name__}: {exc}", started=started
             )
@@ -451,6 +501,8 @@ class PlaywrightAdapter:
         except SkillError:
             raise
         except Exception as exc:
+            if looks_like_browser_closed(exc):
+                raise self._browser_closed_error(exc) from exc
             raise SkillError(
                 ErrorCode.PAGE_NOT_FOUND,
                 "Unable to snapshot the current page",
