@@ -32,6 +32,26 @@ See `templates/inventory_feedback/1.yaml` for a complete example and
   and `json_path` (`$.data.list[*].orderNo`); Run reads the browser's observed JSON exchange first
   and falls back to DOM/table extraction when the exchange is missing.
 
+### Attachment acquisition ladder (Run)
+
+For each declared attachment the runtime tries, in order (still inside the user's browser session):
+
+1. **Learned network URL** — `learned.attachment_mappings` with `endpoint_hint` + `json_path` →
+   `fetch_resource` (Playwright context cookies).
+2. **Captured network file** — PDF/octet-stream bodies observed on xhr/fetch (≤20MB) during the
+   page session.
+3. **JSON file URL** — scan API responses for string URLs whose keys/values match attachment
+   semantics.
+4. **Direct link fetch** — stable `http(s) href` on a matched control → `fetch_resource` (works
+   when the portal serves the file without a browser download event).
+5. **Click download** — `click` + `expect_download` (classic portal download button).
+
+Matching uses `semantic`, `aliases`, learned hints, and `match_by` (row disambiguation; on detail
+pages links without embedded driver ids still match). Optional `workflow.hints` with
+`phase: attachments` expand collapsed panels before step 5.
+
+Use **Playwright adapter** for steps 1–4; chrome-use CLI remains click-download only.
+
 ## URL batch (detail_batch) templates
 
 - `run.mode: detail_batch` runs one detail page per value of `run.driver_variable`; the default
