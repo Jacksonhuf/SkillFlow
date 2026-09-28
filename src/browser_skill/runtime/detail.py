@@ -14,6 +14,7 @@ from browser_skill.models import (
     DownloadedFile,
     DownloadStatus,
     FieldSpec,
+    NetworkExchange,
     SourcePage,
 )
 from browser_skill.runtime.downloader import AttachmentDownloader
@@ -40,7 +41,7 @@ class DetailCollector:
         list_snapshot: BrowserSnapshot,
         records: list[dict[str, Any]],
         workspace: Path,
-        exchanges: list | None = None,
+        exchanges: list[NetworkExchange] | None = None,
     ) -> DetailCollectionResult:
         detail_fields = [
             field for field in template.target.fields if field.source == SourcePage.DETAIL
