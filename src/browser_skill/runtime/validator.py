@@ -7,6 +7,30 @@ from browser_skill.models import (
     ValidationIssue,
     ValidationReport,
 )
+from browser_skill.runtime.record_key import record_key_for
+
+
+def validation_failure_message(report: ValidationReport, *, max_items: int = 4) -> str:
+    if not report.issues:
+        return "Business-result validation failed"
+    labels = {
+        "record_key": "记录主键缺失或重复",
+        "min_records": "记录条数不足",
+        "max_records": "记录条数超出上限",
+        "required_field_missing": "必填字段缺失",
+        "required_attachment_missing": "必需附件缺失",
+        "pagination": "分页未采集完整",
+    }
+    parts: list[str] = []
+    for issue in report.issues[:max_items]:
+        label = labels.get(issue.code, issue.message)
+        if issue.record_key:
+            parts.append(f"{label}（{issue.record_key}）")
+        else:
+            parts.append(label)
+    extra = len(report.issues) - max_items
+    suffix = f"等共 {len(report.issues)} 项" if extra > 0 else ""
+    return "业务结果校验未通过：" + "；".join(parts) + (f"（{suffix}）" if suffix else "")
 
 
 class ResultValidator:
@@ -23,7 +47,7 @@ class ResultValidator:
         total_required = len(required_fields) * len(records)
         present_required = 0
         for index, record in enumerate(records):
-            record_key = self._record_key(template, record, fallback=str(index + 1))
+            record_key = record_key_for(template, record, fallback=str(index + 1))
             for field in required_fields:
                 if record.get(field.key) not in {None, ""}:
                     present_required += 1
@@ -47,7 +71,7 @@ class ResultValidator:
         if template.validation.pagination_complete and not pagination_complete:
             issues.append(ValidationIssue(code="pagination", message="Pagination is incomplete"))
         if template.validation.unique_record_keys and template.target.record_key:
-            keys = [self._record_key(template, record) for record in records]
+            keys = [record_key_for(template, record) for record in records]
             if None in keys or len(keys) != len(set(keys)):
                 issues.append(
                     ValidationIssue(
@@ -60,7 +84,7 @@ class ResultValidator:
         for attachment in required_attachments:
             expected_keys: list[str | None]
             if attachment.per_record:
-                expected_keys = [self._record_key(template, record) for record in records]
+                expected_keys = [record_key_for(template, record) for record in records]
             else:
                 expected_keys = [None]
             for record_key in expected_keys:
@@ -100,12 +124,3 @@ class ResultValidator:
             field_completeness=(present_required / total_required if total_required else 1.0),
             download_success_rate=(ok_files / len(files) if files else 1.0),
         )
-
-    @staticmethod
-    def _record_key(
-        template: BrowserTemplate, record: dict[str, object], fallback: str | None = None
-    ) -> str | None:
-        if not template.target.record_key:
-            return fallback
-        values = [str(record.get(key, "")) for key in template.target.record_key]
-        return "|".join(values) if all(values) else fallback
