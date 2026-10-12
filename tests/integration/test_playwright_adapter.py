@@ -110,12 +110,12 @@ class _Handler(BaseHTTPRequestHandler):
             self._send(b"%PDF-1.4 integration", "application/pdf")
         elif self.path.startswith("/iframe"):
             body = (
-                "<!doctype html><html><body>"
-                '<iframe title="contract PDF preview" src="/doc.pdf"></iframe>'
-                "<iframe srcdoc=\"<a id='inner' href='/file.bin' download>"
-                "nested attachment</a>\"></iframe>"
-                "</body></html>"
-            ).encode("utf-8")
+                b"<!doctype html><html><body>"
+                b'<iframe title="contract PDF preview" src="/doc.pdf"></iframe>'
+                b"<iframe srcdoc=\"<a id='inner' href='/file.bin' download>"
+                b"nested attachment</a>\"></iframe>"
+                b"</body></html>"
+            )
             self._send(body, "text/html; charset=utf-8")
         else:
             self._send(_PAGE.encode("utf-8"), "text/html; charset=utf-8")

@@ -413,6 +413,12 @@ class Runner:
                 exchanges=exchanges,
             )
         if needs_detail:
+            detail_attachments = [
+                item for item in template.target.attachments if item.source == "detail"
+            ]
+            attachment_workflow = any(
+                hint.phase == "attachments" for hint in template.workflow.hints
+            )
             detail_result = await self.detail_collector.collect(
                 self.adapter,
                 template,
@@ -420,6 +426,23 @@ class Runner:
                 context.records,
                 workspace.path,
                 exchanges=exchanges,
+                prepare_attachments=(
+                    (
+                        lambda snap: self._snapshot_for_attachments(
+                            template,
+                            values,
+                            snap,
+                            dialogs_supported=dialogs_supported,
+                        )
+                    )
+                    if detail_attachments and attachment_workflow
+                    else None
+                ),
+                refresh_exchanges=(
+                    (lambda: self._network_exchanges(capabilities))
+                    if detail_attachments and attachment_workflow and capabilities.network
+                    else None
+                ),
             )
             context.records = detail_result.records
             context.downloaded_files.extend(detail_result.files)
