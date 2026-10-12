@@ -402,6 +402,7 @@ class Runner:
         snapshot = await self._snapshot_for_attachments(
             template, values, snapshot, dialogs_supported=dialogs_supported
         )
+        await self._wait_for_attachment_network(capabilities)
         exchanges = await self._network_exchanges(capabilities)
         list_attachments = [item for item in template.target.attachments if item.source == "list"]
         if list_attachments:
@@ -434,7 +435,7 @@ class Runner:
                     else None
                 ),
                 refresh_exchanges=(
-                    (lambda: self._network_exchanges(capabilities))
+                    (lambda: self._refresh_attachment_exchanges(capabilities))
                     if detail_attachments and attachment_workflow and capabilities.network
                     else None
                 ),
@@ -662,6 +663,7 @@ class Runner:
             snapshot = await self._snapshot_for_attachments(
                 template, values, snapshot, dialogs_supported=capabilities.dialogs
             )
+            await self._wait_for_attachment_network(capabilities)
             if capabilities.network:
                 listing = await self.adapter.network_requests()
                 if listing.ok:
@@ -768,6 +770,21 @@ class Runner:
         clear = getattr(self.adapter, "clear_network_log", None)
         if callable(clear):
             await clear()
+
+    async def _wait_for_attachment_network(self, capabilities: BrowserCapabilities) -> None:
+        if not capabilities.network:
+            return
+        wait = getattr(self.adapter, "wait_for_attachment_network", None)
+        if callable(wait):
+            await wait()
+            return
+        await asyncio.sleep(0.35)
+
+    async def _refresh_attachment_exchanges(
+        self, capabilities: BrowserCapabilities
+    ) -> list[NetworkExchange]:
+        await self._wait_for_attachment_network(capabilities)
+        return await self._network_exchanges(capabilities)
 
     def _prepare_detail_attachment_snapshot(
         self,

@@ -755,6 +755,16 @@ class PlaywrightAdapter:
 
         return await self._guarded("screenshot", action)
 
+    async def wait_for_attachment_network(self) -> CommandResult:
+        async def action() -> Any:
+            page = await self._ensure()
+            with contextlib.suppress(Exception):
+                await page.wait_for_timeout(700)
+            await self._drain_captures()
+            return {"waited_ms": 700}
+
+        return await self._guarded("network.wait", action)
+
     async def start_expand_click_recording(self) -> CommandResult:
         async def action() -> Any:
             page = await self._ensure()

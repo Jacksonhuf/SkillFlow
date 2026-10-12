@@ -743,7 +743,9 @@
     return { index: t.index, title: t.title || '', headers: t.headers, columns };
   }
   $('wzExpandRecStart').onclick = async () => {
-    const r = await post('/api/action', { action: 'probe_expand_clicks', expand_click_recording: 'start' });
+    const url = $('wzUrl').value.trim();
+    if (!/^https?:\/\//i.test(url)) { alert('请先填写上方的示例地址'); return; }
+    const r = await post('/api/action', { action: 'probe_expand_clicks', expand_click_recording: 'start', url });
     if (!r || !r.ok) { alert((r && r.message) || '无法开始录制'); return; }
     $('wzExpandRecStart').classList.add('hidden');
     $('wzExpandRecStop').classList.remove('hidden');

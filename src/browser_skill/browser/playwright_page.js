@@ -208,6 +208,12 @@
 },
   startExpandClickRecording: () => {
   window.__ubsRecordedClicks = [];
+  const docs = [document];
+  for (const iframe of document.querySelectorAll("iframe")) {
+    try {
+      if (iframe.contentDocument) docs.push(iframe.contentDocument);
+    } catch (_e) { /* cross-origin */ }
+  }
   const handler = (e) => {
     const el = e.target && e.target.closest
       ? e.target.closest("button,a,[role='button'],[role='tab'],[role='link'],[role='menuitem']")
@@ -223,13 +229,20 @@
     list.push(label);
   };
   window.__ubsExpandClickHandler = handler;
-  document.addEventListener("click", handler, true);
-  return { started: true };
+  window.__ubsExpandClickDocs = docs;
+  for (const doc of docs) doc.addEventListener("click", handler, true);
+  return { started: true, frames: docs.length };
 },
   stopExpandClickRecording: () => {
   const handler = window.__ubsExpandClickHandler;
-  if (handler) document.removeEventListener("click", handler, true);
+  const docs = window.__ubsExpandClickDocs || [document];
+  if (handler) {
+    for (const doc of docs) {
+      try { doc.removeEventListener("click", handler, true); } catch (_e) {}
+    }
+  }
   window.__ubsExpandClickHandler = null;
+  window.__ubsExpandClickDocs = null;
   const clicks = Array.isArray(window.__ubsRecordedClicks) ? window.__ubsRecordedClicks.slice() : [];
   window.__ubsRecordedClicks = [];
   return { clicks };

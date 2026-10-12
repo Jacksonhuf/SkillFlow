@@ -198,6 +198,13 @@ class BrowserSkillApp:
                 return SkillResponse(ok=False, message="需要 expand_click_recording: start 或 stop")
             await self.runner.ensure_browser_ready()
             if mode == "start":
+                if request.url:
+                    opened = await self.adapter.open(request.url.strip())
+                    if not opened.ok:
+                        return SkillResponse(
+                            ok=False,
+                            message="无法打开示例页面，请检查地址或先在 Chrome 登录",
+                        )
                 start = getattr(self.adapter, "start_expand_click_recording", None)
                 if not callable(start):
                     return SkillResponse(
