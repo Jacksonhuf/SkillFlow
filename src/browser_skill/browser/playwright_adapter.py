@@ -342,10 +342,16 @@ class PlaywrightAdapter:
 
     # ------------------------------------------------------------------ helpers
 
-    def _locator(self, page: Any, target: str) -> Any:
+    async def _locator(self, page: Any, target: str) -> Any:
         target = target.strip()
         if target.startswith(_REF_PREFIX) and re.fullmatch(r"@e\d+", target):
-            return page.locator(f"[{_REF_ATTR}='{target[1:]}']").first
+            selector = f"[{_REF_ATTR}='{target[1:]}']"
+            for frame in page.frames:
+                locator = frame.locator(selector)
+                with contextlib.suppress(Exception):
+                    if await locator.count() > 0:
+                        return locator.first
+            return page.locator(selector).first
         if target.startswith(("xpath=", "//", "css=", "text=", "role=")):
             return page.locator(target).first
         if _CSS_LIKE.match(target):
@@ -562,7 +568,7 @@ class PlaywrightAdapter:
             if point is not None:  # vision fallback answers in viewport coordinates
                 await page.mouse.click(point[0], point[1])
             else:
-                await self._locator(page, target).click(timeout=self.timeout_ms)
+                await (await self._locator(page, target)).click(timeout=self.timeout_ms)
             if observe:
                 await self._settle(page)
                 # A popup may have replaced the active page while settling
@@ -574,7 +580,7 @@ class PlaywrightAdapter:
     async def fill(self, target: str, value: str, *, sensitive: bool = False) -> CommandResult:
         async def action() -> Any:
             page = await self._ensure()
-            await self._locator(page, target).fill(value, timeout=self.timeout_ms)
+            await (await self._locator(page, target)).fill(value, timeout=self.timeout_ms)
             return {"filled": True}
 
         return await self._guarded("fill", action)
@@ -582,7 +588,7 @@ class PlaywrightAdapter:
     async def type(self, target: str, value: str, *, sensitive: bool = False) -> CommandResult:
         async def action() -> Any:
             page = await self._ensure()
-            locator = self._locator(page, target)
+            locator = await self._locator(page, target)
             await locator.click(timeout=self.timeout_ms)
             await locator.press_sequentially(value, delay=20)
             return {"typed": True}
@@ -592,7 +598,7 @@ class PlaywrightAdapter:
     async def get_actions(self, target: str) -> CommandResult:
         async def action() -> Any:
             page = await self._ensure()
-            locator = self._locator(page, target)
+            locator = await self._locator(page, target)
             tag = str(await locator.evaluate("el => el.tagName.toLowerCase()"))
             actions = ["click"]
             if tag in {"input", "textarea", "select"} or await locator.evaluate(
@@ -663,7 +669,7 @@ class PlaywrightAdapter:
         async def action() -> Any:
             page = await self._ensure()
             path.parent.mkdir(parents=True, exist_ok=True)
-            locator = self._locator(page, target)
+            locator = await self._locator(page, target)
             async with page.expect_download(timeout=limit) as info:
                 await locator.click(timeout=min(limit, self.timeout_ms))
             download = await info.value

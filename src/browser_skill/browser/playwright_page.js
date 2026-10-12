@@ -53,41 +53,78 @@
     return i >= 0 ? i + 1 : null;
   };
 
-  const interactive = document.querySelectorAll(
-    "a[href],button,input,select,textarea,[role='button'],[role='link'],[role='tab'],[role='menuitem'],[role='option'],[role='checkbox'],[onclick],[contenteditable='true']"
-  );
   const disabled = (el) => el.disabled === true || el.getAttribute("aria-disabled") === "true" || !!el.closest("[aria-disabled='true'],.disabled,.ant-pagination-disabled,.is-disabled");
-  for (const el of interactive) {
-    if (out.elements.length >= MAX) break;
-    if (!visible(el) || disabled(el)) continue;  // disabled controls cannot be acted on
-    const item = { ref: "@" + refOf(el), role: roleOf(el), text: label(el) };
-    const name = el.getAttribute("name"); if (name) item.name = name;
-    const title = el.getAttribute("title"); if (title) item.title = title;
-    const aria = el.getAttribute("aria-label"); if (aria) item.aria_label = aria;
-    if (el.tagName.toLowerCase() === "a") item.href = el.href;
-    if ("value" in el && typeof el.value === "string" && el.type !== "password") item.value = el.value.slice(0, 200);
-    const dl = el.getAttribute("download"); if (dl !== null) item.filename = dl || (item.href || "").split("/").pop();
-    const row = rowIndexOf(el); if (row !== null) item.row_index = row;
+  const seen = new Set();
+  const pushElement = (item) => {
+    if (out.elements.length >= MAX) return;
+    if (seen.has(item.ref)) return;
+    seen.add(item.ref);
     out.elements.push(item);
-  }
-
-  const seen = new Set(out.elements.map((item) => item.ref));
-  const extraDownload = document.querySelectorAll(
-    "[download], a[href*='.pdf' i], a[href*='download' i], span[role='button'], div[role='button']"
-  );
-  for (const el of extraDownload) {
-    if (out.elements.length >= MAX) break;
-    if (!visible(el) || disabled(el)) continue;
-    const ref = "@" + refOf(el);
-    if (seen.has(ref)) continue;
-    seen.add(ref);
-    const item = { ref, role: roleOf(el), text: label(el) };
-    const title = el.getAttribute("title"); if (title) item.title = title;
-    const aria = el.getAttribute("aria-label"); if (aria) item.aria_label = aria;
-    if (el.tagName.toLowerCase() === "a") item.href = el.href;
-    const dl = el.getAttribute("download");
-    if (dl !== null) item.filename = dl || (item.href || "").split("/").pop();
-    out.elements.push(item);
+  };
+  const collectInteractive = (root, frameIndex) => {
+    const interactive = root.querySelectorAll(
+      "a[href],button,input,select,textarea,[role='button'],[role='link'],[role='tab'],[role='menuitem'],[role='option'],[role='checkbox'],[onclick],[contenteditable='true']"
+    );
+    for (const el of interactive) {
+      if (out.elements.length >= MAX) break;
+      if (!visible(el) || disabled(el)) continue;
+      const item = { ref: "@" + refOf(el), role: roleOf(el), text: label(el) };
+      if (frameIndex) item.frame_index = frameIndex;
+      const name = el.getAttribute("name"); if (name) item.name = name;
+      const title = el.getAttribute("title"); if (title) item.title = title;
+      const aria = el.getAttribute("aria-label"); if (aria) item.aria_label = aria;
+      if (el.tagName.toLowerCase() === "a") item.href = el.href;
+      if ("value" in el && typeof el.value === "string" && el.type !== "password") item.value = el.value.slice(0, 200);
+      const dl = el.getAttribute("download"); if (dl !== null) item.filename = dl || (item.href || "").split("/").pop();
+      const row = rowIndexOf(el); if (row !== null) item.row_index = row;
+      pushElement(item);
+    }
+    const extraDownload = root.querySelectorAll(
+      "[download], a[href*='.pdf' i], a[href*='download' i], span[role='button'], div[role='button']"
+    );
+    for (const el of extraDownload) {
+      if (out.elements.length >= MAX) break;
+      if (!visible(el) || disabled(el)) continue;
+      const ref = "@" + refOf(el);
+      if (seen.has(ref)) continue;
+      const item = { ref, role: roleOf(el), text: label(el) };
+      if (frameIndex) item.frame_index = frameIndex;
+      const title = el.getAttribute("title"); if (title) item.title = title;
+      const aria = el.getAttribute("aria-label"); if (aria) item.aria_label = aria;
+      if (el.tagName.toLowerCase() === "a") item.href = el.href;
+      const dl = el.getAttribute("download");
+      if (dl !== null) item.filename = dl || (item.href || "").split("/").pop();
+      pushElement(item);
+    }
+  };
+  collectInteractive(document, 0);
+  let frameIndex = 1;
+  for (const iframe of document.querySelectorAll("iframe")) {
+    if (!visible(iframe)) continue;
+    let doc = null;
+    try { doc = iframe.contentDocument; } catch (_e) { doc = null; }
+    if (doc && doc.body) collectInteractive(doc, frameIndex++);
+    const rawSrc = (iframe.getAttribute("src") || iframe.src || "").trim();
+    if (!rawSrc || rawSrc === "about:blank") continue;
+    let abs = rawSrc;
+    try { abs = new URL(rawSrc, location.href).href; } catch (_e) { continue; }
+    const title = (iframe.getAttribute("title") || iframe.getAttribute("aria-label") || "PDF预览").trim();
+    const pdfLike = /\.pdf(\?|#|$)/i.test(abs) || /pdf/i.test(title) || /pdf/i.test(rawSrc);
+    if (!pdfLike) continue;
+    const stub = document.createElement("a");
+    stub.href = abs;
+    stub.setAttribute("download", "");
+    stub.style.cssText = "position:fixed;left:-9999px;width:1px;height:1px;opacity:0;pointer-events:none";
+    document.body.appendChild(stub);
+    const item = {
+      ref: "@" + refOf(stub),
+      role: "link",
+      text: title.slice(0, 200) || "PDF预览",
+      href: abs,
+      filename: abs.split("/").pop().split("?")[0] || "preview.pdf",
+      iframe_preview: true,
+    };
+    pushElement(item);
   }
 
   const TABLE_SEL = "table,[role='grid'],[role='table'],[role='treegrid']";
