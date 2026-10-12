@@ -397,6 +397,8 @@ class Runner:
         if not template.target.attachments and not needs_detail:
             return
         self._transition(workspace, context, RunState.DOWNLOADING, page_url=snapshot.url)
+        if template.target.attachments and capabilities.network:
+            await self._clear_network_log()
         snapshot = await self._snapshot_for_attachments(
             template, values, snapshot, dialogs_supported=dialogs_supported
         )
@@ -427,14 +429,7 @@ class Runner:
                 workspace.path,
                 exchanges=exchanges,
                 prepare_attachments=(
-                    (
-                        lambda snap: self._snapshot_for_attachments(
-                            template,
-                            values,
-                            snap,
-                            dialogs_supported=dialogs_supported,
-                        )
-                    )
+                    (self._prepare_detail_attachment_snapshot(template, values, dialogs_supported))
                     if detail_attachments and attachment_workflow
                     else None
                 ),
@@ -662,10 +657,12 @@ class Runner:
                 phase="attachments",
                 attachment_count=len(template.target.attachments),
             )
+            if capabilities.network:
+                await self._clear_network_log()
             snapshot = await self._snapshot_for_attachments(
                 template, values, snapshot, dialogs_supported=capabilities.dialogs
             )
-            if any(hint.phase == "attachments" for hint in template.workflow.hints):
+            if capabilities.network:
                 listing = await self.adapter.network_requests()
                 if listing.ok:
                     exchanges = parse_exchanges(listing.data)
@@ -766,6 +763,28 @@ class Runner:
         if not listing.ok:
             return []
         return parse_exchanges(listing.data)
+
+    async def _clear_network_log(self) -> None:
+        clear = getattr(self.adapter, "clear_network_log", None)
+        if callable(clear):
+            await clear()
+
+    def _prepare_detail_attachment_snapshot(
+        self,
+        template: BrowserTemplate,
+        values: dict[str, Any],
+        dialogs_supported: bool,
+    ):
+        async def prepare(snapshot: BrowserSnapshot) -> BrowserSnapshot:
+            await self._clear_network_log()
+            return await self._snapshot_for_attachments(
+                template,
+                values,
+                snapshot,
+                dialogs_supported=dialogs_supported,
+            )
+
+        return prepare
 
     async def _snapshot_for_attachments(
         self,

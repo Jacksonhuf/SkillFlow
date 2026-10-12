@@ -129,6 +129,10 @@
       <table><thead><tr><th></th><th>附件名（可改）</th><th>来源</th><th>数量</th><th>类型</th></tr></thead><tbody id="wzAttRows"></tbody></table>
       <h5 style="margin-top:14px">运行前点击 <span class="muted">（附件阶段：展开折叠区 / 打开「附件」Tab，建议勾选推荐项）</span></h5>
       <table><thead><tr><th></th><th>按钮文案</th><th>说明</th></tr></thead><tbody id="wzExpandRows"></tbody></table>
+      <div class="row" style="margin-top:8px;align-items:center">
+        <input id="wzExpandManual" placeholder="手动添加按钮文案（与页面上显示一致）" style="flex:1;max-width:320px">
+        <button type="button" class="btn secondary" id="wzExpandAdd">添加</button>
+      </div>
       <div class="row"><button class="btn" id="wzNextBtn">下一步</button><button class="btn secondary" id="wzBackBtn1">重新探测</button></div>
     </div>
     <div class="card hidden" id="wzStep3">
@@ -735,6 +739,16 @@
     const columns = t.columns.filter(c => c.selected).map(c => ({ key: c.key, name: c.name, sample: c.sample, source: c.source, strategy: c.strategy, type: c.type, confidence: c.confidence, aliases: c.aliases || [], column: c.column }));
     return { index: t.index, title: t.title || '', headers: t.headers, columns };
   }
+  $('wzExpandAdd').onclick = () => {
+    const text = ($('wzExpandManual').value || '').trim();
+    if (!text) return;
+    wz.expands = wz.expands || [];
+    if (!wz.expands.some(e => e.target === text)) {
+      wz.expands.push({ target: text, reason: '手动添加', recommended: true, selected: true });
+    }
+    $('wzExpandManual').value = '';
+    wzRender();
+  };
   $('wzNextBtn').onclick = () => {
     const table = wzSelectedTable();
     if (table && !table.columns.length) { alert('记录行至少要勾选一列'); return; }

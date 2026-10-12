@@ -755,6 +755,11 @@ class PlaywrightAdapter:
 
         return await self._guarded("screenshot", action)
 
+    async def clear_network_log(self) -> CommandResult:
+        """Drop captured requests so attachment-phase XHR is not mixed with earlier pages."""
+        self._network.clear()
+        return self._result("network.clear", True)
+
     async def network_requests(self) -> CommandResult:
         await self._drain_captures()
         entries = []

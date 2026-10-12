@@ -5,7 +5,7 @@ import shutil
 import zipfile
 from pathlib import Path
 
-_PACKAGE_VERSION = "0.3.23"
+_PACKAGE_VERSION = "0.3.24"
 _SKILL_ID = "universal-browser"
 
 
