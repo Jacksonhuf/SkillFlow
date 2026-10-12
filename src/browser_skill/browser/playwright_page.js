@@ -205,5 +205,33 @@
   const el = args.el;
   const disabled = el.disabled === true || el.getAttribute("aria-disabled") === "true" || !!el.closest("[aria-disabled='true'],.disabled,.ant-pagination-disabled,.is-disabled");
   return { ref: "@" + ref, text: (el.innerText || el.value || "").trim().slice(0, 200), tag: el.tagName.toLowerCase(), disabled: disabled };
+},
+  startExpandClickRecording: () => {
+  window.__ubsRecordedClicks = [];
+  const handler = (e) => {
+    const el = e.target && e.target.closest
+      ? e.target.closest("button,a,[role='button'],[role='tab'],[role='link'],[role='menuitem']")
+      : null;
+    if (!el) return;
+    const label = (el.getAttribute("aria-label") || el.innerText || el.getAttribute("title") || "")
+      .trim().replace(/\s+/g, " ").slice(0, 60);
+    if (!label) return;
+    const folded = label.toLowerCase();
+    const list = window.__ubsRecordedClicks;
+    const last = list[list.length - 1];
+    if (last && last.toLowerCase() === folded) return;
+    list.push(label);
+  };
+  window.__ubsExpandClickHandler = handler;
+  document.addEventListener("click", handler, true);
+  return { started: true };
+},
+  stopExpandClickRecording: () => {
+  const handler = window.__ubsExpandClickHandler;
+  if (handler) document.removeEventListener("click", handler, true);
+  window.__ubsExpandClickHandler = null;
+  const clicks = Array.isArray(window.__ubsRecordedClicks) ? window.__ubsRecordedClicks.slice() : [];
+  window.__ubsRecordedClicks = [];
+  return { clicks };
 }
 })

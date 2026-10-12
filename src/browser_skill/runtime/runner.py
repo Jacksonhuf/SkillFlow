@@ -774,7 +774,7 @@ class Runner:
         template: BrowserTemplate,
         values: dict[str, Any],
         dialogs_supported: bool,
-    ):
+    ) -> Callable[[BrowserSnapshot], Awaitable[BrowserSnapshot]]:
         async def prepare(snapshot: BrowserSnapshot) -> BrowserSnapshot:
             await self._clear_network_log()
             return await self._snapshot_for_attachments(

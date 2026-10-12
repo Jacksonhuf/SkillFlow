@@ -17,6 +17,8 @@ class FakeBrowserAdapter:
         for operation, values in (script or {}).items():
             self.script[operation].extend(values)
         self.calls: list[tuple[str, tuple[Any, ...], dict[str, Any]]] = []
+        self._network_after_clear = False
+        self._recording_expands = False
 
     def _take(self, operation: str, default: T) -> T:
         self.calls.append((operation, (), {}))
@@ -132,10 +134,30 @@ class FakeBrowserAdapter:
 
     async def network_requests(self) -> CommandResult:
         self.calls.append(("network_requests", (), {}))
+        if self._network_after_clear:
+            self._network_after_clear = False
+            return self._take(
+                "network_after_clear",
+                CommandResult(ok=True, operation="network", data=[]),
+            )
         return self._take("network", CommandResult(ok=True, operation="network", data=[]))
+
+    async def start_expand_click_recording(self) -> CommandResult:
+        self.calls.append(("start_expand_click_recording", (), {}))
+        self._recording_expands = True
+        return CommandResult(ok=True, operation="probe.record_start", data={"started": True})
+
+    async def stop_expand_click_recording(self) -> CommandResult:
+        self.calls.append(("stop_expand_click_recording", (), {}))
+        self._recording_expands = False
+        return self._take(
+            "expand_click_recording",
+            CommandResult(ok=True, operation="probe.record_stop", data={"clicks": []}),
+        )
 
     async def clear_network_log(self) -> CommandResult:
         self.calls.append(("clear_network_log", (), {}))
+        self._network_after_clear = True
         return CommandResult(ok=True, operation="network.clear")
 
     async def screenshot(self) -> CommandResult:

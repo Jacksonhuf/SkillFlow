@@ -755,6 +755,20 @@ class PlaywrightAdapter:
 
         return await self._guarded("screenshot", action)
 
+    async def start_expand_click_recording(self) -> CommandResult:
+        async def action() -> Any:
+            page = await self._ensure()
+            return await page.evaluate(_page_script("startExpandClickRecording"))
+
+        return await self._guarded("probe.record_start", action)
+
+    async def stop_expand_click_recording(self) -> CommandResult:
+        async def action() -> Any:
+            page = await self._ensure()
+            return await page.evaluate(_page_script("stopExpandClickRecording"))
+
+        return await self._guarded("probe.record_stop", action)
+
     async def clear_network_log(self) -> CommandResult:
         """Drop captured requests so attachment-phase XHR is not mixed with earlier pages."""
         self._network.clear()
