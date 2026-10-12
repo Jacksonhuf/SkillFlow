@@ -348,10 +348,22 @@ class Runner:
             message = "任务产生部分结果"
         if stats and stats["skipped"] and not all_skipped:
             message += f"（跳过 {stats['skipped']} 条此前已采集）"
+        attachment_failures = [
+            {
+                "attachment_key": item.attachment_key,
+                "record_key": item.record_key,
+                "status": item.status.value,
+                "acquisition_method": item.acquisition_method,
+                "failure_detail": item.failure_detail,
+            }
+            for item in context.downloaded_files
+            if item.status != DownloadStatus.OK
+        ]
         data: dict[str, Any] = {
             "artifacts": artifacts,
             "output_dir": str(workspace.path),
             "validation": report.model_dump(mode="json"),
+            "attachment_failures": attachment_failures,
             "execution_contract": contract_payload(),
             "pipeline": pipeline_data.get("pipeline"),
         }

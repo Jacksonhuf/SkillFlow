@@ -536,6 +536,9 @@ class DownloadedFile(StrictModel):
     status: DownloadStatus
     # Set when the same source URL was already fetched in this run and the bytes were copied
     copied_from: str | None = None
+    # Ladder step that produced the file, or the last attempts when status != ok
+    acquisition_method: str | None = None
+    failure_detail: str | None = None
 
 
 class ValidationIssue(StrictModel):
@@ -686,6 +689,19 @@ class ProbeAttachmentCandidate(StrictModel):
     types: list[str] = Field(default_factory=list)
     sample_href: str | None = None
     confidence: float = Field(default=0.5, ge=0.0, le=1.0)
+    source: Literal["dom", "network"] = "dom"
+    endpoint_hint: str | None = Field(default=None, max_length=500)
+    json_path: str | None = Field(default=None, max_length=500)
+    sample_file_url: str | None = None
+
+
+class ProbeWorkflowCandidate(StrictModel):
+    """Pre-attachment UI step (expand panel, open attachments tab, etc.)."""
+
+    target: str = Field(min_length=1, max_length=120)
+    phase: Literal["navigate", "attachments"] = "attachments"
+    reason: str = Field(default="", max_length=200)
+    recommended: bool = True
 
 
 class ProbeTableCandidate(StrictModel):
@@ -706,6 +722,7 @@ class UrlProbeReport(StrictModel):
     auth_state: AuthState = AuthState.UNKNOWN
     fields: list[ProbeFieldCandidate] = Field(default_factory=list)
     attachments: list[ProbeAttachmentCandidate] = Field(default_factory=list)
+    workflow_candidates: list[ProbeWorkflowCandidate] = Field(default_factory=list)
     tables: list[ProbeTableCandidate] = Field(default_factory=list)
     warnings: list[str] = Field(default_factory=list)
     network_exchanges: int = Field(default=0, ge=0)
@@ -738,6 +755,8 @@ class ProbeDraftInput(StrictModel):
     required_keys: list[str] = Field(default_factory=list)
     run: dict[str, Any] = Field(default_factory=dict)
     page_hints: list[str] = Field(default_factory=list, max_length=20)
+    # Button/link labels to click in the attachments workflow phase before downloading
+    attachment_expands: list[str] = Field(default_factory=list, max_length=20)
 
     @model_validator(mode="after")
     def _needs_something_to_collect(self) -> ProbeDraftInput:

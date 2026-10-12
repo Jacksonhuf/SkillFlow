@@ -276,6 +276,43 @@ def test_probe_offers_grids_as_table_candidates_but_not_key_value_tables() -> No
     assert not any(item.source == "table" for item in report.fields)
 
 
+def test_probe_offers_expand_workflow_for_attachment_panel() -> None:
+    snapshot = _detail_snapshot(
+        elements=[
+            {"ref": "@x1", "role": "button", "text": "展开更多"},
+            {"ref": "@x2", "role": "tab", "text": "附件列表"},
+        ]
+    )
+    adapter = FakeBrowserAdapter({"snapshot": [snapshot]})
+    report = asyncio.run(
+        UrlProber().probe(adapter, SAMPLE_URL, capabilities=BrowserCapabilities(snapshot=True))
+    )
+    targets = {item.target for item in report.workflow_candidates}
+    assert "展开更多" in targets
+    assert "附件列表" in targets
+
+
+def test_probe_network_json_suggests_attachment_mapping() -> None:
+    exchange = {
+        "url": "https://portal.example.com/api/orders/ORD-2024-0917/files",
+        "status": 200,
+        "content_type": "application/json",
+        "body": {"data": {"invoiceFileUrl": "https://portal.example.com/static/inv.pdf"}},
+    }
+    adapter = FakeBrowserAdapter(
+        {
+            "snapshot": [_detail_snapshot(elements=[])],
+            "network": [CommandResult(ok=True, operation="network", data=[exchange])],
+        }
+    )
+    caps = BrowserCapabilities(snapshot=True, network=True)
+    report = asyncio.run(UrlProber().probe(adapter, SAMPLE_URL, capabilities=caps))
+    net = [item for item in report.attachments if item.source == "network"]
+    assert net
+    assert net[0].json_path
+    assert net[0].endpoint_hint
+
+
 def test_probe_without_network_capability_warns_and_uses_text() -> None:
     adapter = FakeBrowserAdapter({"snapshot": [_detail_snapshot()]})
 

@@ -126,7 +126,9 @@
       <h5 style="margin-top:14px">记录行 <span class="muted">（页面里的表格：选一个作为记录行，每行输出一条记录，页面字段自动带到每行）</span></h5>
       <div id="wzTableList"></div>
       <h5 style="margin-top:14px">附件</h5>
-      <table><thead><tr><th></th><th>附件名（可改）</th><th>数量</th><th>类型</th></tr></thead><tbody id="wzAttRows"></tbody></table>
+      <table><thead><tr><th></th><th>附件名（可改）</th><th>来源</th><th>数量</th><th>类型</th></tr></thead><tbody id="wzAttRows"></tbody></table>
+      <h5 style="margin-top:14px">运行前点击 <span class="muted">（附件阶段：展开折叠区 / 打开「附件」Tab，建议勾选推荐项）</span></h5>
+      <table><thead><tr><th></th><th>按钮文案</th><th>说明</th></tr></thead><tbody id="wzExpandRows"></tbody></table>
       <div class="row"><button class="btn" id="wzNextBtn">下一步</button><button class="btn secondary" id="wzBackBtn1">重新探测</button></div>
     </div>
     <div class="card hidden" id="wzStep3">
@@ -295,6 +297,12 @@
     }
     const v = resp.data && resp.data.validation;
     if (v) html += `<div class="muted">记录 ${v.record_count} · 附件 ${v.download_count} · 字段完整度 ${(v.field_completeness * 100).toFixed(0)}%</div>`;
+    const failedAtt = resp.data && resp.data.artifacts && resp.data.attachment_failures;
+    if (failedAtt && failedAtt.length) {
+      html += '<div class="notice warn" style="margin-top:6px"><div>部分附件未成功：</div><ul style="margin:4px 0 0 18px">'
+        + failedAtt.slice(0, 6).map(a => `<li><code>${esc(a.attachment_key)}</code> ${esc(a.status)}${a.failure_detail ? ' · ' + esc(a.failure_detail) : ''}</li>`).join('')
+        + '</ul></div>';
+    }
     const items = (resp.data && resp.data.items) || (resp.data && resp.data.error && resp.data.error.details && resp.data.error.details.items);
     if (items) {
       html += `<div class="muted" style="margin-top:6px">批量：共 ${items.total} 条 · 成功 ${items.ok} · 部分 ${items.partial} · 失败 ${items.failed}${items.skipped ? ' · 已跳过 ' + items.skipped : ''}${items.pending ? ' · 未跑 ' + items.pending : ''}</div>`;
@@ -555,7 +563,12 @@
     $('wzAttRows').innerHTML = wz.atts.map((a, i) => `<tr>
       <td><input type="checkbox" data-a-sel="${i}" ${a.selected ? 'checked' : ''} style="width:auto"></td>
       <td><input data-a-name="${i}" value="${esc(a.name)}" style="max-width:220px"></td>
-      <td>${a.count}</td><td class="muted">${esc((a.types || []).join(', ') || '-')}</td></tr>`).join('') || '<tr><td colspan="4" class="muted">页面上没有发现可下载的附件。</td></tr>';
+      <td><span class="badge">${a.source === 'network' ? '接口' : '页面'}</span>${a.json_path ? '<span class="muted" title="' + esc(a.json_path) + '"> · JSON</span>' : ''}</td>
+      <td>${a.count}</td><td class="muted">${esc((a.types || []).join(', ') || '-')}</td></tr>`).join('') || '<tr><td colspan="5" class="muted">页面上没有发现可下载的附件；若接口里有文件链接，请确认已开启 Playwright 网络采集。</td></tr>';
+    $('wzExpandRows').innerHTML = (wz.expands || []).map((e, i) => `<tr>
+      <td><input type="checkbox" data-e-sel="${i}" ${e.selected ? 'checked' : ''} style="width:auto"></td>
+      <td><code>${esc(e.target)}</code></td><td class="muted">${esc(e.reason || '')}</td></tr>`).join('')
+      || '<tr><td colspan="3" class="muted">未发现需要预先点击的按钮；若附件在折叠区，请先在 Chrome 展开后重新探测。</td></tr>';
     if (!$('wzUrlTemplate').dataset.edited) $('wzUrlTemplate').value = wzRenderTemplate();
     document.querySelectorAll('[data-var-sel]').forEach(el => el.onchange = () => { wz.vars[el.dataset.varSel].selected = el.checked; wzRender(); });
     document.querySelectorAll('[data-var-name]').forEach(el => el.onchange = () => { const v = wz.vars[el.dataset.varName]; const old = v.name; v.name = slug(el.value) || old; wz.fields.filter(f => f.source === 'url' && f.key === old).forEach(f => { f.key = v.name; }); wzRender(); });
@@ -564,6 +577,7 @@
     document.querySelectorAll('[data-f-key]').forEach(el => el.onchange = () => { wz.fields.forEach((f, i) => { f.isKey = String(i) === el.dataset.fKey; if (f.isKey) f.selected = true; }); wzRender(); });
     document.querySelectorAll('[data-a-sel]').forEach(el => el.onchange = () => { wz.atts[el.dataset.aSel].selected = el.checked; });
     document.querySelectorAll('[data-a-name]').forEach(el => el.onchange = () => { wz.atts[el.dataset.aName].name = el.value.trim() || wz.atts[el.dataset.aName].name; });
+    document.querySelectorAll('[data-e-sel]').forEach(el => el.onchange = () => { wz.expands[el.dataset.eSel].selected = el.checked; });
   }
   // Record rows: one radio group over the grids found on the page (+ "no table"), columns per grid.
   function wzRenderTables() {
@@ -606,6 +620,7 @@
     wzApplyRecommended();
     if (!wz.fields.some(f => f.isKey) && wz.fields.length) { wz.fields[0].isKey = true; wz.fields[0].selected = true; }
     wz.atts = p.attachments.map(a => ({ ...a, selected: true }));
+    wz.expands = (p.workflow_candidates || []).map(e => ({ ...e, selected: e.recommended }));
     wz.tables = (p.tables || []).map(t => ({ ...t, columns: t.columns.map(c => ({ ...c, selected: true })) }));
     // Default: the recommended grid with the most rows becomes the record rows
     const best = wz.tables.findIndex(t => t.recommended);
@@ -741,13 +756,18 @@
     const driver = selVars.length ? selVars[0].name : 'detail_url';
     const keyField = wz.fields.find(f => f.isKey && f.selected);
     const fields = wz.fields.filter(f => f.selected).map(f => ({ key: f.key, name: f.name, sample: f.sample, source: f.source, strategy: f.strategy, type: f.type, confidence: f.confidence, endpoint_hint: f.endpoint_hint, json_path: f.json_path, aliases: f.aliases || [] }));
-    const attachments = wz.atts.filter(a => a.selected).map(a => ({ key: a.key, name: a.name, count: a.count, types: a.types, sample_href: a.sample_href, confidence: a.confidence }));
+    const attachments = wz.atts.filter(a => a.selected).map(a => ({
+      key: a.key, name: a.name, count: a.count, types: a.types, sample_href: a.sample_href,
+      confidence: a.confidence, source: a.source, endpoint_hint: a.endpoint_hint,
+      json_path: a.json_path, sample_file_url: a.sample_file_url,
+    }));
+    const attachment_expands = (wz.expands || []).filter(e => e.selected).map(e => e.target);
     const urlTemplate = selVars.length ? $('wzUrlTemplate').value.trim() : null;
     return {
       template_id: $('wzId').value.trim(), name: $('wzName').value.trim(), description: $('wzDesc').value.trim(),
       sample_url: wz.probe.url_analysis.url, url_template: urlTemplate, driver_variable: driver,
       driver_prompt: selVars.length ? (wz.fields.find(f => f.source === 'url' && f.key === driver) || {}).name || null : '详情页地址',
-      fields, attachments, table: wzSelectedTable(), record_key: keyField ? [keyField.key] : [],
+      fields, attachments, attachment_expands, table: wzSelectedTable(), record_key: keyField ? [keyField.key] : [],
       run: {
         per_item_delay_ms: Number($('wzDelay').value) || 0,
         on_item_error: $('wzOnErr').value,

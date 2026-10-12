@@ -98,6 +98,35 @@ def test_compile_produces_valid_detail_batch_draft() -> None:
     assert any(signal.url_contains == "/orders" for signal in template.auth.login_check.any)
 
 
+def test_attachment_expands_compile_to_workflow_hints() -> None:
+    draft = _draft(attachment_expands=["展开更多", "附件列表"])
+    template = ProbeDraftCompiler().compile(draft, version=1)
+    assert len(template.workflow.hints) == 2
+    assert all(hint.phase == "attachments" for hint in template.workflow.hints)
+    assert {hint.target for hint in template.workflow.hints} == {"展开更多", "附件列表"}
+
+
+def test_network_attachment_mapping_uses_preferred_source() -> None:
+    draft = _draft(
+        attachments=[
+            {
+                "key": "invoice",
+                "name": "发票",
+                "count": 1,
+                "types": ["pdf"],
+                "confidence": 0.9,
+                "source": "network",
+                "endpoint_hint": "/api/files",
+                "json_path": "$.data.fileUrl",
+            }
+        ]
+    )
+    template = ProbeDraftCompiler().compile(draft, version=1)
+    mapping = template.learned.attachment_mappings["invoice"]
+    assert mapping.preferred_source == AcquisitionSource.NETWORK
+    assert mapping.json_path == "$.data.fileUrl"
+
+
 def test_driver_field_is_added_when_not_ticked() -> None:
     draft = _draft(
         fields=[
