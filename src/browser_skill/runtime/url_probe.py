@@ -27,6 +27,7 @@ from browser_skill.models import (
     ProbeAttachmentCandidate,
     ProbeFieldCandidate,
     ProbeTableCandidate,
+    ProbeWorkflowCandidate,
     SignalSpec,
     UrlAnalysis,
     UrlProbeReport,
@@ -49,6 +50,32 @@ _COMMON_QUERY_KEYS = {"tab", "lang", "locale", "page", "size", "sort", "order", 
 _FILE_EXTENSIONS = ("pdf", "xlsx", "xls", "docx", "doc", "csv", "zip", "jpg", "jpeg", "png")
 _DOWNLOAD_WORDS = ("下载", "附件", "凭证", "发票", "合同", "download", "attachment")
 _EXPAND_WORDS = ("展开更多", "查看更多", "加载更多", "展开", "更多", "show more", "load more")
+_ATTACHMENT_PANEL_WORDS = (
+    "附件",
+    "发票",
+    "合同",
+    "凭证",
+    "文件",
+    "下载",
+    "导出",
+    "attachment",
+    "invoice",
+)
+_NETWORK_FILE_KEY_HINTS = (
+    "file",
+    "url",
+    "download",
+    "attach",
+    "pdf",
+    "invoice",
+    "contract",
+    "evidence",
+    "发票",
+    "附件",
+    "合同",
+    "凭证",
+    "导出",
+)
 # Response-envelope / paging / tracing keys: never business data, so never offered as fields.
 # Compared after camelCase→snake_case folding (``pageSize`` → ``page_size``).
 _JSON_NOISE_KEYS = frozenset(
@@ -445,11 +472,19 @@ class UrlProber:
             warnings.append("当前浏览器不支持读取网络响应，字段候选仅来自页面文字。")
         fields = self.field_candidates(analysis, snapshot, exchanges)
         attachments = self.attachment_candidates(snapshot)
+        attachments = self._merge_attachment_candidates(
+            attachments, self.network_attachment_candidates(exchanges, analysis.host)
+        )
+        workflow_candidates = self.workflow_candidates(snapshot)
         samples = {v.sample: v for v in analysis.variables if v.selected}
         tables = self.table_candidates(snapshot, samples)
         if not fields and not tables:
             warnings.append("未在页面上识别到字段候选，请确认页面已完全加载。")
-        if any(
+        if workflow_candidates:
+            warnings.append(
+                "建议在「运行前点击」中勾选展开/附件区按钮，否则附件可能藏在折叠面板里。"
+            )
+        elif any(
             str(element.get("text", "")).strip().casefold() in _EXPAND_WORDS
             for element in snapshot.elements
         ):
@@ -462,6 +497,7 @@ class UrlProber:
             auth_state=auth_state,
             fields=fields,
             attachments=attachments,
+            workflow_candidates=workflow_candidates,
             tables=tables,
             warnings=warnings,
             network_exchanges=len(exchanges),
@@ -678,6 +714,113 @@ class UrlProber:
         ]
         candidates.sort(key=lambda item: -item.confidence)
         return candidates[:_MAX_ATTACHMENTS]
+
+    def network_attachment_candidates(
+        self,
+        exchanges: list[NetworkExchange],
+        host: str,
+    ) -> list[ProbeAttachmentCandidate]:
+        """Suggest attachment mappings from JSON responses (file URLs in API payloads)."""
+        samples: dict[str, UrlVariableSuggestion] = {}
+        used: set[str] = set()
+        candidates: list[ProbeAttachmentCandidate] = []
+        for exchange in relevant_exchanges(exchanges, samples):
+            flat: list[tuple[str, Any]] = []
+            _flatten(exchange.body, "$", 0, flat)
+            endpoint_hint = generalize_endpoint(urlsplit(exchange.url).path or "/", samples)
+            for path, raw in flat:
+                if not isinstance(raw, str) or len(raw) > 2000:
+                    continue
+                key_fold = path.casefold()
+                if not any(hint in key_fold for hint in _NETWORK_FILE_KEY_HINTS):
+                    continue
+                file_url = raw
+                if raw.startswith("/"):
+                    parts = urlsplit(exchange.url)
+                    file_url = f"{parts.scheme}://{parts.netloc}{raw}"
+                if not file_url.startswith(("http://", "https://")):
+                    continue
+                if (urlsplit(file_url).hostname or "").casefold() != host.casefold():
+                    continue
+                label = _json_key_label(path)
+                name = label or "接口附件"
+                ext = _extension_of(file_url) or _extension_of(label)
+                key = machine_key(name, fallback=f"net_attachment_{len(candidates) + 1}", used=used)
+                candidates.append(
+                    ProbeAttachmentCandidate(
+                        key=key,
+                        name=name,
+                        count=1,
+                        types=[ext] if ext else [],
+                        confidence=0.75,
+                        source="network",
+                        endpoint_hint=endpoint_hint,
+                        json_path=path,
+                        sample_file_url=file_url,
+                        sample_href=file_url,
+                    )
+                )
+        candidates.sort(key=lambda item: -item.confidence)
+        return candidates[:_MAX_ATTACHMENTS]
+
+    @staticmethod
+    def _merge_attachment_candidates(
+        dom: list[ProbeAttachmentCandidate],
+        network: list[ProbeAttachmentCandidate],
+    ) -> list[ProbeAttachmentCandidate]:
+        by_name: dict[str, ProbeAttachmentCandidate] = {}
+        for item in dom:
+            by_name[item.name.casefold()] = item
+        for item in network:
+            folded = item.name.casefold()
+            existing = by_name.get(folded)
+            if existing is None:
+                by_name[folded] = item
+                continue
+            if item.json_path and not existing.json_path:
+                by_name[folded] = item.model_copy(
+                    update={
+                        "key": existing.key,
+                        "confidence": max(existing.confidence, item.confidence),
+                    }
+                )
+        merged = list(by_name.values())
+        merged.sort(key=lambda item: (-(item.json_path is not None), -item.confidence))
+        return merged[:_MAX_ATTACHMENTS]
+
+    def workflow_candidates(self, snapshot: BrowserSnapshot) -> list[ProbeWorkflowCandidate]:
+        seen: set[str] = set()
+        out: list[ProbeWorkflowCandidate] = []
+        for element in snapshot.elements:
+            text = str(element.get("text") or element.get("name") or "").strip()
+            if not text or len(text) > 40:
+                continue
+            folded = text.casefold()
+            if folded in seen:
+                continue
+            reason = ""
+            recommended = False
+            if any(word in folded for word in _EXPAND_WORDS):
+                reason = "展开隐藏内容（字段/附件可能在折叠区）"
+                recommended = True
+            elif any(word in folded for word in _ATTACHMENT_PANEL_WORDS):
+                role = str(element.get("role") or "").casefold()
+                if role in {"button", "tab", "link", ""}:
+                    reason = "打开附件/下载相关区域"
+                    recommended = True
+            if not reason:
+                continue
+            seen.add(folded)
+            out.append(
+                ProbeWorkflowCandidate(
+                    target=text,
+                    phase="attachments",
+                    reason=reason,
+                    recommended=recommended,
+                )
+            )
+        out.sort(key=lambda item: (not item.recommended, item.target))
+        return out[:15]
 
 
 def _extension_of(value: str) -> str | None:

@@ -32,6 +32,8 @@ from browser_skill.models import (
     VariableSpec,
     VariableType,
     VariableValidation,
+    WorkflowHint,
+    WorkflowSpec,
 )
 
 _PLACEHOLDER = re.compile(r"\{([a-z][a-z0-9_]*)\}")
@@ -190,12 +192,23 @@ class ProbeDraftCompiler:
                     destination_subdir=f"attachments/{item.key}",
                 )
             )
-            learned.attachment_mappings[item.key] = LearnedMapping(
-                page=SourcePage.DETAIL,
-                strategy="semantic",
-                hints=[item.name],
-                confidence=item.confidence,
-            )
+            if item.json_path and item.endpoint_hint:
+                learned.attachment_mappings[item.key] = LearnedMapping(
+                    page=SourcePage.DETAIL,
+                    strategy="semantic",
+                    hints=[item.name],
+                    confidence=item.confidence,
+                    preferred_source=AcquisitionSource.NETWORK,
+                    endpoint_hint=item.endpoint_hint,
+                    json_path=item.json_path,
+                )
+            else:
+                learned.attachment_mappings[item.key] = LearnedMapping(
+                    page=SourcePage.DETAIL,
+                    strategy="semantic",
+                    hints=[item.name],
+                    confidence=item.confidence,
+                )
 
         url_template = (draft.url_template or "").strip() or None
         if url_template and driver not in _PLACEHOLDER.findall(url_template):
@@ -222,6 +235,13 @@ class ProbeDraftCompiler:
             prompt=prompt[:200],
             validation=VariableValidation(regex=draft.driver_regex) if draft.driver_regex else None,
         )
+        workflow_hints: list[WorkflowHint] = []
+        for label in draft.attachment_expands:
+            text = label.strip()
+            if text:
+                workflow_hints.append(
+                    WorkflowHint(action="query", target=text, phase="attachments")
+                )
         return BrowserTemplate(
             schema_version="2.0",
             template_id=draft.template_id,
@@ -243,6 +263,7 @@ class ProbeDraftCompiler:
             ),
             variables={driver: variable},
             run=run,
+            workflow=WorkflowSpec(hints=workflow_hints),
             target=TargetSpec(fields=fields, attachments=attachments, record_key=record_key),
             learned=LearnedSpec(
                 page_hints=list(draft.page_hints),

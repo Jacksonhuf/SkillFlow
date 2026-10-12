@@ -112,6 +112,7 @@ class AttachmentDownloader:
                     attachment_key=spec.key,
                     relative_path="",
                     status=DownloadStatus.MISSING,
+                    failure_detail="no_dom_target",
                 )
             ]
 
@@ -186,12 +187,14 @@ class AttachmentDownloader:
         )
         path = workspace / relative
         path.parent.mkdir(parents=True, exist_ok=True)
+        ladder: list[str] = []
 
         async def finalize(
             *,
             content_type: str = "",
             source_url: str | None = None,
             copied_from: str | None = None,
+            method_name: str | None = None,
         ) -> DownloadedFile:
             nonlocal path, relative
             ext_final = attach.guess_extension(content_type, source_url or "", path)
@@ -231,6 +234,7 @@ class AttachmentDownloader:
             cache = self._cache_for(workspace)
             if status == DownloadStatus.OK and source_url:
                 cache.setdefault(source_url, path)
+            fail_detail = " → ".join(ladder) if status != DownloadStatus.OK else None
             return DownloadedFile(
                 record_key=record_key,
                 attachment_key=spec.key,
@@ -240,10 +244,27 @@ class AttachmentDownloader:
                 sha256=file_sha256(path) if status == DownloadStatus.OK else None,
                 status=status,
                 copied_from=copied_from,
+                acquisition_method=method_name if status == DownloadStatus.OK else None,
+                failure_detail=fail_detail,
             )
+
+        href = str((element or {}).get("href") or "")
+        preview_link = href.startswith(("blob:", "javascript:")) or (
+            target.startswith(("blob:", "javascript:")) if target else False
+        )
+        if preview_link:
+            ladder.append("preview_link")
+            binary = attach.network_binary_match(exchanges, mapping, terms, template)
+            if binary and attach.write_network_binary(binary, path):
+                return await finalize(
+                    content_type=binary.content_type,
+                    source_url=binary.url,
+                    method_name="network_binary",
+                )
 
         # 1) Learned network JSON → file URL
         if mapping and exchanges:
+            ladder.append("network_json")
             file_url = attach.network_json_file_url(exchanges, mapping, record)
             if file_url:
                 ok, copied = await self._cached_or_fetch(
@@ -256,14 +277,24 @@ class AttachmentDownloader:
                     page_url=snapshot.url or "",
                 )
                 if ok:
-                    return await finalize(source_url=file_url, copied_from=copied)
+                    return await finalize(
+                        source_url=file_url,
+                        copied_from=copied,
+                        method_name="network_json",
+                    )
 
         # 2) Captured binary response
+        ladder.append("network_binary")
         binary = attach.network_binary_match(exchanges, mapping, terms, template)
         if binary and attach.write_network_binary(binary, path):
-            return await finalize(content_type=binary.content_type, source_url=binary.url)
+            return await finalize(
+                content_type=binary.content_type,
+                source_url=binary.url,
+                method_name="network_binary",
+            )
 
         # 3) JSON bodies mentioning attachment-like URLs
+        ladder.append("json_scan")
         for exchange in exchanges:
             if exchange.body is None or exchange.status >= 400:
                 continue
@@ -280,8 +311,13 @@ class AttachmentDownloader:
                     page_url=snapshot.url or "",
                 )
                 if ok:
-                    return await finalize(source_url=file_url, copied_from=copied)
+                    return await finalize(
+                        source_url=file_url,
+                        copied_from=copied,
+                        method_name="json_scan",
+                    )
 
+        ladder.append("session_fetch")
         source = attach.stable_http_url(snapshot, element)
         if source:
             ok, copied = await self._cached_or_fetch(
@@ -294,20 +330,31 @@ class AttachmentDownloader:
                 page_url=snapshot.url or "",
             )
             if ok:
-                return await finalize(source_url=source, copied_from=copied)
+                return await finalize(
+                    source_url=source,
+                    copied_from=copied,
+                    method_name="session_fetch",
+                )
 
         if target:
+            ladder.append("click_download")
             result = await adapter.download(target, path, timeout_ms=attachment_timeout_ms)
             complete = await self._wait_for_file(adapter, path) if result.ok else False
             if complete:
-                return await finalize(source_url=source)
+                return await finalize(source_url=source, method_name="click_download")
 
         if not target:
+            ladder.append("network_binary_fallback")
             binary = attach.network_binary_match(exchanges, None, terms, template)
             if binary and attach.write_network_binary(binary, path):
-                return await finalize(content_type=binary.content_type, source_url=binary.url)
+                return await finalize(
+                    content_type=binary.content_type,
+                    source_url=binary.url,
+                    method_name="network_binary",
+                )
 
-        return await finalize()
+        ladder.append("failed")
+        return await finalize(method_name="failed")
 
     async def _cached_or_fetch(
         self,
