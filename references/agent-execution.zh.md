@@ -32,7 +32,7 @@
   - `state == PARTIAL` 且 `failed_values` 非空：如实告知哪些编号失败（`batch.json` 里有 `reason`，如 `E_PAGE_NOT_FOUND`、`required_field_missing:*`），并可**只重跑失败项**：把 `failed_values` 作为新的 `--var` 值再次 `run`。
   - `on_item_error: stop` 的模板在第一条失败就结束；`error.details.items` 里同样有进度。
 - **登录过期**：批量中途 `WAIT_USER_AUTH` 时，用户在 Chrome 登录后 `resume <run_id>`，已完成的项不会重跑。
-- 不要为了「更快」自行并发或改写 URL；`per_item_delay_ms` / `concurrency` 由模板决定。
+- 不要为了「更快」自行并发或改写 URL；`per_item_delay_ms` / `concurrency`（1–4）由模板决定。自 **0.3.29** 起，Playwright 引擎会按 `concurrency` 并行处理多项（`execution.jsonl` 事件 `concurrency_parallel`）；chrome-use 仍串行（`concurrency_sequential`）。Agent 不要自行起多进程或多浏览器会话「加速」。
 
 ## 用一个网址新建批量模板（`probe`）
 

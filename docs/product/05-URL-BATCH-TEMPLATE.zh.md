@@ -104,7 +104,7 @@ system:
 run:
   mode: detail_batch           # list | detail_batch（默认 list）
   driver_variable: order_no    # 每个值渲染一次 url_template
-  concurrency: 1               # 同一 Chrome 会话建议 1；多标签可 2~3
+  concurrency: 1               # 1–4；Playwright 多 tab 并行（0.3.29+），chrome-use 仍串行
   per_item_delay_ms: 300
   on_item_error: continue      # continue | stop
   dedupe_values: true
@@ -387,7 +387,7 @@ py scripts\invoke.py probe https://portal.example.com/orders/ORD-2024-0917/detai
 | 阶段 | 内容 | 主要文件 |
 |------|------|----------|
 | **P1 · Schema + 渲染**（已完成） | `RunSpec`、`url_template`、`multiple`、渲染与校验、旧模板兼容测试 | `models.py`, `interaction/variables.py`, `runtime/policy.py` |
-| **P2 · Runner 批量**（已完成） | `detail_batch` 循环、`batch.json`、续跑、失败汇总、多附件命名；并发暂为串行 | `runtime/runner.py`, `runtime/batch.py`, `outputs/writer.py` |
+| **P2 · Runner 批量**（已完成） | `detail_batch` 循环、`batch.json`、续跑、失败汇总、多附件命名 | `runtime/runner.py`, `runtime/batch.py`, `outputs/writer.py` |
 | **P3 · Probe**（已完成） | `probe_url` 动作：URL 分析 + DOM/Network 候选 + 置信度；`create_from_probe` 编译草稿；运行期新增文本 label/value 与详情页 JSON 取值 | `runtime/url_probe.py`, `runtime/probe_compiler.py`, `acquire/label_value.py`, `app.py` |
 | **P4 · 向导 UI**（已完成） | 新建模板 3 步页（探测 → 勾选 → 命名/试跑/发布）、运行页多值输入（多行 / 文件导入选列）、逐项进度、失败项一键重跑、历史页批量明细；旧样本流程折叠 | `console/ui.html`, `console/server.py`, `runtime/runner.py`（`progress_listener`） |
 | **P5 · CLI/Agent**（已完成） | `--var` 重复聚合为数组；`--var-file/--var-column/--var-name`（txt / CSV / TSV / XLSX 读一列，请求字段 `values_file/values_column/values_variable`）；`probe` 子命令；`run`/`test` 输出批量统计；执行契约文档新增批量与 probe 章节 | `skill-scripts/invoke.py`, `cli.py`, `interaction/value_files.py`, `references/agent-execution.zh.md`, `SKILL.md` |
