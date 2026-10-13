@@ -47,7 +47,7 @@ CLI 等价：`probe-record start <URL>` → 在 Chrome 操作 → `probe-record 
 
 ## 6. 已知限制（0.3.27）
 
-- `run.concurrency` 大于 1 时**仍串行**执行批量项（多标签并发待后续版本）。
+- `run.concurrency` 大于 1 时**仍串行**执行批量项（**0.3.29+** Playwright 已支持多标签并行，见 `UPGRADE-0.3.29.zh.md`）。
 - **跨域 iframe** 无法读 DOM；请用录制展开或网络附件映射。
 - 站点定制仅含轻量 `site_profiles`（华为 / efinance 类提示），非完整插件体系。
 

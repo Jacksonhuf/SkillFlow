@@ -179,6 +179,41 @@ def test_batch_logs_concurrency_parallel_when_playwright_capability_enabled(
     assert not any(e.get("event") == "concurrency_sequential" for e in events)
 
 
+def test_parallel_batch_auth_pause_still_resumes_pending_items(
+    tmp_path: Path, template_data: dict[str, Any]
+) -> None:
+    template = _batch_template(template_data, concurrency=2)
+    adapter = FakeBrowserAdapter(
+        {
+            "capabilities": [
+                BrowserCapabilities(
+                    snapshot=True,
+                    find=True,
+                    download=True,
+                    downloads=True,
+                    tabs=True,
+                    parallel_batch=True,
+                )
+            ],
+            "snapshot": [
+                HOME,
+                _detail("ORD-0001"),
+                LOGIN,
+                HOME,
+                _detail("ORD-0002"),
+            ],
+        }
+    )
+    runner = Runner(adapter, tmp_path)
+    paused = asyncio.run(
+        runner.run(template, {"order_no": ["ORD-0001", "ORD-0002"]})
+    )
+    assert paused.state == RunState.WAIT_USER_AUTH
+    resumed = asyncio.run(runner.resume(tmp_path / str(paused.run_id)))
+    assert resumed.ok is True
+    assert resumed.data["items"]["ok"] == 2
+
+
 def test_batch_logs_concurrency_sequential_when_template_requests_parallelism(
     tmp_path: Path, template_data: dict[str, Any]
 ) -> None:
