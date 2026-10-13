@@ -597,7 +597,12 @@ class Runner:
                 self._check_cancelled(workspace, context)
                 batch_page = getattr(self.adapter, "batch_page", None)
                 if batch_page is None:
-                    return
+                    raise SkillError(
+                        ErrorCode.CHROME_USE_UNAVAILABLE,
+                        "当前浏览器适配器不支持并行批量（缺少 batch_page）",
+                        stage="EXTRACTING",
+                        details={"item": item.value},
+                    )
                 try:
                     async with batch_page():
                         result = await self._run_batch_item(

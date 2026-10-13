@@ -226,6 +226,25 @@ def test_fold_progress_records_parallel_concurrency() -> None:
     assert progress["parallel_effective"] == 1
 
 
+def test_fold_progress_tracks_multiple_active_batch_items() -> None:
+    progress: dict[str, Any] = {"parallel_effective": 2}
+    progress = _fold_progress(
+        progress, {"event": "item_started", "index": 0, "value": "ORD-0001"}
+    )
+    assert progress["current"] == "ORD-0001"
+    progress = _fold_progress(
+        progress, {"event": "item_started", "index": 1, "value": "ORD-0002"}
+    )
+    assert progress["current"] is None
+    assert progress["active"] == {"0": "ORD-0001", "1": "ORD-0002"}
+    progress = _fold_progress(
+        progress, {"event": "item_finished", "index": 0, "value": "ORD-0001"}
+    )
+    assert progress["done"] == 1
+    assert progress["active"] == {"1": "ORD-0002"}
+    assert progress["current"] == "ORD-0002"
+
+
 def test_meta_reports_version_and_busy_port_falls_back(console: ConsoleServer) -> None:
     from browser_skill import __version__
 

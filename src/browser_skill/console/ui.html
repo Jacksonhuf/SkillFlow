@@ -355,7 +355,11 @@
     }
     const phase = p && p.phase && phaseLabel[p.phase] ? phaseLabel[p.phase] : '执行中';
     if (p && p.phase === 'attachments' && p.attachment_count) tail += ` · ${p.attachment_count} 类附件（未触发下载时会等到超时）`;
-    if (p && p.parallel_effective > 1) tail += ` · 并行 ${p.parallel_effective} 路`;
+    if (p && p.parallel_effective > 1) {
+      tail += ` · 并行 ${p.parallel_effective} 路`;
+      const active = p.active && typeof p.active === 'object' ? Object.keys(p.active).length : 0;
+      if (active > 1) tail += `（${active} 条进行中）`;
+    }
     return `${phase}… ${tail}`;
   }
   window.__dl = async (ev, href) => {
