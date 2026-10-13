@@ -13,7 +13,7 @@ import pytest
 
 from browser_skill.app import BrowserSkillApp
 from browser_skill.browser.fake import FakeBrowserAdapter
-from browser_skill.console.server import ConsoleServer
+from browser_skill.console.server import ConsoleServer, _fold_progress
 from browser_skill.errors import SkillError
 from browser_skill.models import BrowserSnapshot, BrowserTemplate
 from browser_skill.templates.store import TemplateStore
@@ -213,6 +213,17 @@ def test_console_refuses_non_loopback_bind(tmp_path: Path) -> None:
     app = BrowserSkillApp(tmp_path / "t", tmp_path / "r", FakeBrowserAdapter())
     with pytest.raises(SkillError):
         ConsoleServer(app, host="0.0.0.0", port=0)
+
+
+def test_fold_progress_records_parallel_concurrency() -> None:
+    progress: dict[str, Any] = {}
+    progress = _fold_progress(
+        progress,
+        {"event": "concurrency_parallel", "effective": 3, "configured": 3},
+    )
+    assert progress["parallel_effective"] == 3
+    progress = _fold_progress(progress, {"event": "concurrency_sequential", "effective": 1})
+    assert progress["parallel_effective"] == 1
 
 
 def test_meta_reports_version_and_busy_port_falls_back(console: ConsoleServer) -> None:

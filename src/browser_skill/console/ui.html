@@ -145,6 +145,7 @@
       <label>说明（可选）</label><input id="wzDesc">
       <a href="#" id="wzAdvToggle" class="muted" style="display:inline-block;margin-top:10px">高级设置</a>
       <div id="wzAdv" class="hidden">
+        <label>并行条数（1–4，仅 Playwright 引擎生效；chrome-use 仍串行）</label><input id="wzConcurrency" type="number" value="1" min="1" max="4" step="1">
         <label>每条之间等待（毫秒）</label><input id="wzDelay" type="number" value="300" min="0">
         <label>单条最长处理（毫秒，含打开 SPA 与附件）</label><input id="wzItemTimeout" type="number" value="180000" min="30000" step="1000">
         <label>每个附件下载等待（毫秒）</label><input id="wzAttachTimeout" type="number" value="45000" min="5000" step="1000">
@@ -354,6 +355,7 @@
     }
     const phase = p && p.phase && phaseLabel[p.phase] ? phaseLabel[p.phase] : '执行中';
     if (p && p.phase === 'attachments' && p.attachment_count) tail += ` · ${p.attachment_count} 类附件（未触发下载时会等到超时）`;
+    if (p && p.parallel_effective > 1) tail += ` · 并行 ${p.parallel_effective} 路`;
     return `${phase}… ${tail}`;
   }
   window.__dl = async (ev, href) => {
@@ -811,6 +813,7 @@
       driver_prompt: selVars.length ? (wz.fields.find(f => f.source === 'url' && f.key === driver) || {}).name || null : '详情页地址',
       fields, attachments, attachment_expands, table: wzSelectedTable(), record_key: keyField ? [keyField.key] : [],
       run: {
+        concurrency: Math.min(4, Math.max(1, Number($('wzConcurrency').value) || 1)),
         per_item_delay_ms: Number($('wzDelay').value) || 0,
         on_item_error: $('wzOnErr').value,
         skip_if_exists: $('wzSkipDone').checked,

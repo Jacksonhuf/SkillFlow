@@ -350,7 +350,7 @@ py scripts\invoke.py probe https://portal.example.com/orders/ORD-2024-0917/detai
 | 优化 | 做法 | 收益 |
 |------|------|------|
 | **Network 优先** | 探测时若接口 JSON 覆盖所勾字段，运行时直接读响应，不解析 DOM | 更快、抗改版 |
-| **并发多标签**（待做） | `concurrency` 2~3 时用 Playwright 多 page 同 context；前置条件：适配器 per-page 句柄 | 单机吞吐提升 2~3 倍；默认 1 保证稳定 |
+| **并发多标签**（0.3.29+ Playwright） | `run.concurrency` 2–4：每项独立 tab、共享 context/cookie；chrome-use 仍串行 | 单机吞吐提升 2~3 倍；默认 1 保证稳定 |
 | **限速与抖动** | `per_item_delay_ms` + 随机 ±30% | 降低被风控概率 |
 | **断点续跑** | `batch.json` 每项状态；`resume` 只跑未完成 | 中途登录过期/断网不重来 |
 | **增量运行** | 可选 `run.skip_if_exists`：扫描 `runs/*/batch.json`（同 `template_id`）中上次 `ok` 的编号，本次标记 `skipped` 不打开页面 | 每日补数只跑新增 |
@@ -391,7 +391,7 @@ py scripts\invoke.py probe https://portal.example.com/orders/ORD-2024-0917/detai
 | **P3 · Probe**（已完成） | `probe_url` 动作：URL 分析 + DOM/Network 候选 + 置信度；`create_from_probe` 编译草稿；运行期新增文本 label/value 与详情页 JSON 取值 | `runtime/url_probe.py`, `runtime/probe_compiler.py`, `acquire/label_value.py`, `app.py` |
 | **P4 · 向导 UI**（已完成） | 新建模板 3 步页（探测 → 勾选 → 命名/试跑/发布）、运行页多值输入（多行 / 文件导入选列）、逐项进度、失败项一键重跑、历史页批量明细；旧样本流程折叠 | `console/ui.html`, `console/server.py`, `runtime/runner.py`（`progress_listener`） |
 | **P5 · CLI/Agent**（已完成） | `--var` 重复聚合为数组；`--var-file/--var-column/--var-name`（txt / CSV / TSV / XLSX 读一列，请求字段 `values_file/values_column/values_variable`）；`probe` 子命令；`run`/`test` 输出批量统计；执行契约文档新增批量与 probe 章节 | `skill-scripts/invoke.py`, `cli.py`, `interaction/value_files.py`, `references/agent-execution.zh.md`, `SKILL.md` |
-| **P6 · 优化**（部分完成） | 已完成：增量运行 `run.skip_if_exists`、附件去重、失败一键重跑；**附件 P2**（0.3.23–0.3.27：iframe/网络窗口/录制运行前点击，见 `UPGRADE-0.3.27.zh.md`）。未做：并发多标签——`concurrency>1` 时仍串行，`execution.jsonl` 记录 `concurrency_sequential` | `runtime/batch.py`, `runtime/runner.py`, `runtime/downloader.py`, `console/ui.html` |
+| **P6 · 优化**（部分完成） | 已完成：增量运行 `run.skip_if_exists`、附件去重、失败一键重跑；**附件 P2**（0.3.23–0.3.27）；**Playwright 并发多标签**（0.3.29：`run.concurrency` 2–4 时每项独立 tab，事件 `concurrency_parallel`；chrome-use 仍串行并记录 `concurrency_sequential`） | `runtime/batch.py`, `runtime/runner.py`, `browser/playwright_adapter.py`, `console/ui.html` |
 
 各阶段可独立合并；P1–P2 先落地即可用 CLI 批量跑，P3–P4 提供业务用户体验。
 

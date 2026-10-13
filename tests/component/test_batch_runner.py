@@ -7,7 +7,13 @@ from pathlib import Path
 from typing import Any
 
 from browser_skill.browser.fake import FakeBrowserAdapter
-from browser_skill.models import BrowserSnapshot, BrowserTemplate, CommandResult, RunState
+from browser_skill.models import (
+    BrowserCapabilities,
+    BrowserSnapshot,
+    BrowserTemplate,
+    CommandResult,
+    RunState,
+)
 from browser_skill.runtime.runner import Runner
 
 HOME = BrowserSnapshot(url="https://example.internal/home", text="退出登录 订单中心")
@@ -135,6 +141,42 @@ def test_batch_run_visits_every_value_and_downloads_named_attachments(
     assert events.count("item_started") == 3
     assert events.count("item_finished") == 3
     assert "batch_finished" in events
+
+
+def test_batch_logs_concurrency_parallel_when_playwright_capability_enabled(
+    tmp_path: Path, template_data: dict[str, Any]
+) -> None:
+    template = _batch_template(template_data, concurrency=2)
+    adapter = FakeBrowserAdapter(
+        {
+            "capabilities": [
+                BrowserCapabilities(
+                    snapshot=True,
+                    find=True,
+                    download=True,
+                    downloads=True,
+                    tabs=True,
+                    parallel_batch=True,
+                )
+            ],
+            "snapshot": [HOME, _detail("ORD-0001"), _detail("ORD-0002"), _detail("ORD-0003")],
+        }
+    )
+    response = asyncio.run(
+        Runner(adapter, tmp_path).run(template, {"order_no": ["ORD-0001", "ORD-0002", "ORD-0003"]})
+    )
+    assert response.ok is True
+    assert sum(1 for call in adapter.calls if call[0] == "batch_page") == 3
+    workspace = tmp_path / str(response.run_id)
+    events = [
+        json.loads(line)
+        for line in (workspace / "execution.jsonl").read_text(encoding="utf-8").splitlines()
+    ]
+    parallel = [e for e in events if e.get("event") == "concurrency_parallel"]
+    assert len(parallel) == 1
+    assert parallel[0]["configured"] == 2
+    assert parallel[0]["effective"] == 2
+    assert not any(e.get("event") == "concurrency_sequential" for e in events)
 
 
 def test_batch_logs_concurrency_sequential_when_template_requests_parallelism(

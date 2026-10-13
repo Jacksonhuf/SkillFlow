@@ -146,6 +146,7 @@ def test_required_keys_and_run_overrides_are_applied() -> None:
     draft = _draft(
         required_keys=["customer_name"],
         run={
+            "concurrency": 3,
             "per_item_delay_ms": 0,
             "on_item_error": "stop",
             "capture_tables": True,
@@ -163,6 +164,7 @@ def test_required_keys_and_run_overrides_are_applied() -> None:
     assert template.run.on_item_error == "stop"
     assert template.run.capture_tables is True
     assert template.run.per_item_delay_ms == 0
+    assert template.run.concurrency == 3
     assert template.variables["order_no"].validation is not None
     assert template.variables["order_no"].validation.regex == r"ORD-\d{4}-\d{4}"
 

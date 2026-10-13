@@ -21,6 +21,9 @@ import json
 import re
 import time
 from collections import deque
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
+from contextvars import ContextVar
 from pathlib import Path
 from typing import Any
 
@@ -65,6 +68,7 @@ _NEXT_PAGE_TEXTS = ("下一页", "下页", "Next", "next page", "›", "»")
 _CSS_LIKE = re.compile(r"^(?:[#.\[]|[a-zA-Z][\w-]*(?:[#.\[:>\s]|$))")
 
 _PAGE_SCRIPTS = Path(__file__).with_name("playwright_page.js")
+_active_page: ContextVar[Any | None] = ContextVar("ubs_active_page", default=None)
 
 
 def _page_script(name: str) -> str:
@@ -136,8 +140,17 @@ class PlaywrightAdapter:
     def connected(self) -> bool:
         return self._context is not None
 
+    def _scoped_page(self) -> Any | None:
+        page = _active_page.get()
+        if page is not None and not page.is_closed():
+            return page
+        return None
+
     async def _ensure(self) -> Any:
         """Connect lazily; returns the active page."""
+        scoped = self._scoped_page()
+        if scoped is not None:
+            return scoped
         async with self._connect_lock:
             last_exc: Exception | None = None
             for attempt in range(2):
@@ -289,6 +302,11 @@ class PlaywrightAdapter:
                     body_base64 = base64.b64encode(raw).decode("ascii")
                 elif is_json and size <= _MAX_BODY_BYTES:
                     body_text = raw.decode("utf-8", errors="replace")
+            page_id = 0
+            with contextlib.suppress(Exception):
+                frame = response.frame
+                if frame is not None:
+                    page_id = id(frame.page)
             self._network.append(
                 {
                     "url": response.url,
@@ -300,6 +318,7 @@ class PlaywrightAdapter:
                     "size": size,
                     "resource_type": request.resource_type,
                     "captured_at": time.time(),
+                    "page_id": page_id,
                 }
             )
         except Exception:  # capture is best effort; never break navigation
@@ -437,6 +456,7 @@ class PlaywrightAdapter:
             dialogs=True,
             network=True,
             screenshot=True,
+            parallel_batch=True,
         )
 
     async def capabilities_payload(self) -> dict[str, Any]:
@@ -781,15 +801,41 @@ class PlaywrightAdapter:
 
         return await self._guarded("probe.record_stop", action)
 
-    async def clear_network_log(self) -> CommandResult:
-        """Drop captured requests so attachment-phase XHR is not mixed with earlier pages."""
+    def _page_network_entries(self, page: Any) -> list[dict[str, Any]]:
+        page_id = id(page)
+        return [dict(entry) for entry in self._network if entry.get("page_id", 0) == page_id]
+
+    def _drop_page_network(self, page: Any) -> None:
+        page_id = id(page)
+        kept = [entry for entry in self._network if entry.get("page_id", 0) != page_id]
         self._network.clear()
+        self._network.extend(kept)
+
+    @asynccontextmanager
+    async def batch_page(self) -> AsyncIterator[Any]:
+        """Dedicated tab for one concurrent detail_batch item (shared cookies/context)."""
+        await self._ensure()
+        assert self._context is not None
+        page = await self._context.new_page()
+        token = _active_page.set(page)
+        try:
+            yield page
+        finally:
+            _active_page.reset(token)
+            with contextlib.suppress(Exception):
+                await page.close()
+
+    async def clear_network_log(self) -> CommandResult:
+        """Drop captured requests for the active page only."""
+        page = await self._ensure()
+        self._drop_page_network(page)
         return self._result("network.clear", True)
 
     async def network_requests(self) -> CommandResult:
         await self._drain_captures()
+        page = await self._ensure()
         entries = []
-        for entry in self._network:
+        for entry in self._page_network_entries(page):
             item = dict(entry)
             body = item.get("body")
             if isinstance(body, str):

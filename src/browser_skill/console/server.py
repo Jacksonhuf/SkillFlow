@@ -195,6 +195,10 @@ def _fold_progress(progress: dict[str, Any], event: dict[str, Any]) -> dict[str,
         progress["phase"] = event.get("phase")
         if event.get("attachment_count") is not None:
             progress["attachment_count"] = event.get("attachment_count")
+    elif name == "concurrency_parallel":
+        progress["parallel_effective"] = int(event.get("effective") or 1)
+    elif name == "concurrency_sequential":
+        progress["parallel_effective"] = 1
     return dict(progress)
 
 

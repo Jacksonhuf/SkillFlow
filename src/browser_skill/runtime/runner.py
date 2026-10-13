@@ -492,7 +492,12 @@ class Runner:
                 values=[item.value for item in skipped[:50]],
             )
         pending = [item for item in batch.items if not item.done]
-        if template.run.concurrency > 1:
+        parallel_batch = (
+            template.run.concurrency > 1
+            and capabilities.parallel_batch
+            and hasattr(self.adapter, "batch_page")
+        )
+        if template.run.concurrency > 1 and not parallel_batch:
             self._event(
                 workspace,
                 context,
@@ -501,45 +506,224 @@ class Runner:
                 effective=1,
                 reason="browser_adapter_single_active_page",
             )
-        for position, item in enumerate(pending):
-            self._check_cancelled(workspace, context)
-            self._event(
-                workspace, context, "item_started", index=item.index, value=item.value, url=item.url
+        if parallel_batch:
+            paused = await self._run_batch_parallel(
+                workspace, context, template, capabilities, pending
             )
-            try:
-                outcome = await self._process_batch_item(
-                    workspace,
-                    context,
-                    template,
-                    context.variables,
-                    batch.driver_variable,
-                    item,
-                    capabilities,
-                )
-            except _SessionExpired:
-                self._transition(workspace, context, RunState.WAIT_USER_AUTH, page_url=item.url)
-                self._event(
-                    workspace, context, "item_deferred", index=item.index, reason="auth_required"
-                )
-                return SkillResponse(
-                    ok=False,
-                    message="批量执行中登录已失效，请在 Chrome 中重新登录后使用此 run_id 恢复。",
-                    run_id=context.run_id,
-                    state=RunState.WAIT_USER_AUTH,
-                    data={"auth_state": AuthState.UNAUTHENTICATED.value, "items": batch.stats()},
-                )
-            except SkillError as exc:
-                if exc.code == ErrorCode.RUN_CANCELLED:
-                    raise
-                outcome = ItemOutcome(
-                    status=BatchItemStatus.FAILED, reason=exc.code.value, error=exc.as_dict()
-                )
-            item.status = outcome.status
-            item.reason = outcome.reason
-            item.error = outcome.error
-            item.record_count = len(outcome.records)
-            item.file_count = sum(file.status == DownloadStatus.OK for file in outcome.files)
-            item.finished_at = datetime.now(UTC)
+            if paused is not None:
+                return paused
+        else:
+            for position, item in enumerate(pending):
+                self._check_cancelled(workspace, context)
+                try:
+                    stop_error = await self._run_batch_item(
+                        workspace,
+                        context,
+                        template,
+                        capabilities,
+                        item,
+                        batch_lock=None,
+                    )
+                except _SessionExpired:
+                    self._transition(workspace, context, RunState.WAIT_USER_AUTH, page_url=item.url)
+                    self._event(
+                        workspace,
+                        context,
+                        "item_deferred",
+                        index=item.index,
+                        reason="auth_required",
+                    )
+                    return SkillResponse(
+                        ok=False,
+                        message=(
+                            "批量执行中登录已失效，"
+                            "请在 Chrome 中重新登录后使用此 run_id 恢复。"
+                        ),
+                        run_id=context.run_id,
+                        state=RunState.WAIT_USER_AUTH,
+                        data={
+                            "auth_state": AuthState.UNAUTHENTICATED.value,
+                            "items": batch.stats(),
+                        },
+                    )
+                if stop_error is not None:
+                    raise stop_error
+                if position + 1 < len(pending) and template.run.per_item_delay_ms:
+                    await asyncio.sleep(self._item_delay_seconds(template.run.per_item_delay_ms))
+        stats = batch.stats()
+        self._event(workspace, context, "batch_finished", **stats)
+        if stats["failed"] == stats["total"] and stats["total"]:
+            raise SkillError(
+                ErrorCode.VALIDATION_FAILED,
+                "所有批量项均失败，未产生任何记录",
+                stage="EXTRACTING",
+                repairable=True,
+                details={"items": stats},
+            )
+        return None
+
+    async def _run_batch_parallel(
+        self,
+        workspace: RunWorkspace,
+        context: RunContext,
+        template: BrowserTemplate,
+        capabilities: BrowserCapabilities,
+        pending: list[BatchItemState],
+    ) -> SkillResponse | None:
+        batch = context.batch
+        assert batch is not None
+        effective = min(template.run.concurrency, len(pending)) if pending else 1
+        self._event(
+            workspace,
+            context,
+            "concurrency_parallel",
+            configured=template.run.concurrency,
+            effective=effective,
+        )
+        sem = asyncio.Semaphore(template.run.concurrency)
+        batch_lock = asyncio.Lock()
+        stop_parallel = False
+        stop_error: SkillError | None = None
+        auth_item: BatchItemState | None = None
+        tasks: list[asyncio.Task[None]] = []
+
+        async def run_one(item: BatchItemState) -> None:
+            nonlocal stop_parallel, stop_error, auth_item
+            if stop_parallel:
+                return
+            async with sem:
+                if stop_parallel:
+                    return
+                self._check_cancelled(workspace, context)
+                batch_page = getattr(self.adapter, "batch_page", None)
+                if batch_page is None:
+                    return
+                try:
+                    async with batch_page():
+                        result = await self._run_batch_item(
+                            workspace,
+                            context,
+                            template,
+                            capabilities,
+                            item,
+                            batch_lock=batch_lock,
+                        )
+                except _SessionExpired:
+                    async with batch_lock:
+                        if auth_item is None:
+                            auth_item = item
+                            stop_parallel = True
+                    for task in tasks:
+                        if task is not asyncio.current_task():
+                            task.cancel()
+                    return
+                except SkillError as exc:
+                    if exc.code == ErrorCode.RUN_CANCELLED:
+                        stop_parallel = True
+                        for task in tasks:
+                            if task is not asyncio.current_task():
+                                task.cancel()
+                        raise
+                    async with batch_lock:
+                        if stop_error is None:
+                            stop_error = exc
+                            stop_parallel = True
+                    for task in tasks:
+                        if task is not asyncio.current_task():
+                            task.cancel()
+                    return
+                if result is not None:
+                    async with batch_lock:
+                        if stop_error is None:
+                            stop_error = result
+                            stop_parallel = True
+                    for task in tasks:
+                        if task is not asyncio.current_task():
+                            task.cancel()
+                    return
+                if template.run.per_item_delay_ms and not stop_parallel:
+                    await asyncio.sleep(self._item_delay_seconds(template.run.per_item_delay_ms))
+
+        for item in pending:
+            tasks.append(asyncio.create_task(run_one(item)))
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+        for result in results:
+            if isinstance(result, SkillError) and result.code == ErrorCode.RUN_CANCELLED:
+                raise result
+            if isinstance(result, BaseException) and not isinstance(result, asyncio.CancelledError):
+                raise result
+
+        if auth_item is not None:
+            self._transition(workspace, context, RunState.WAIT_USER_AUTH, page_url=auth_item.url)
+            self._event(
+                workspace,
+                context,
+                "item_deferred",
+                index=auth_item.index,
+                reason="auth_required",
+            )
+            return SkillResponse(
+                ok=False,
+                message="批量执行中登录已失效，请在 Chrome 中重新登录后使用此 run_id 恢复。",
+                run_id=context.run_id,
+                state=RunState.WAIT_USER_AUTH,
+                data={"auth_state": AuthState.UNAUTHENTICATED.value, "items": batch.stats()},
+            )
+        if stop_error is not None:
+            raise stop_error
+        return None
+
+    async def _run_batch_item(
+        self,
+        workspace: RunWorkspace,
+        context: RunContext,
+        template: BrowserTemplate,
+        capabilities: BrowserCapabilities,
+        item: BatchItemState,
+        *,
+        batch_lock: asyncio.Lock | None,
+    ) -> SkillError | None:
+        """Process one batch row; returns a stop error or None on success."""
+        batch = context.batch
+        assert batch is not None
+
+        async def emit(event: str, **data: Any) -> None:
+            if batch_lock is None:
+                self._event(workspace, context, event, **data)
+                return
+            async with batch_lock:
+                self._event(workspace, context, event, **data)
+
+        await emit(
+            "item_started", index=item.index, value=item.value, url=item.url
+        )
+        try:
+            outcome = await self._process_batch_item(
+                workspace,
+                context,
+                template,
+                context.variables,
+                batch.driver_variable,
+                item,
+                capabilities,
+            )
+        except _SessionExpired:
+            raise
+        except SkillError as exc:
+            if exc.code == ErrorCode.RUN_CANCELLED:
+                raise
+            outcome = ItemOutcome(
+                status=BatchItemStatus.FAILED, reason=exc.code.value, error=exc.as_dict()
+            )
+
+        item.status = outcome.status
+        item.reason = outcome.reason
+        item.error = outcome.error
+        item.record_count = len(outcome.records)
+        item.file_count = sum(file.status == DownloadStatus.OK for file in outcome.files)
+        item.finished_at = datetime.now(UTC)
+
+        async def commit() -> SkillError | None:
             context.records.extend(outcome.records)
             context.downloaded_files.extend(outcome.files)
             self._persist_batch(workspace, context)
@@ -555,7 +739,7 @@ class Runner:
                 file_count=item.file_count,
             )
             if item.status == BatchItemStatus.FAILED and template.run.on_item_error == "stop":
-                raise SkillError(
+                return SkillError(
                     ErrorCode.FIELD_MAPPING_FAILED
                     if outcome.error is None
                     else ErrorCode(outcome.error["code"]),
@@ -563,19 +747,12 @@ class Runner:
                     stage="EXTRACTING",
                     details={"items": batch.stats(), "item": item.model_dump(mode="json")},
                 )
-            if position + 1 < len(pending) and template.run.per_item_delay_ms:
-                await asyncio.sleep(self._item_delay_seconds(template.run.per_item_delay_ms))
-        stats = batch.stats()
-        self._event(workspace, context, "batch_finished", **stats)
-        if stats["failed"] == stats["total"] and stats["total"]:
-            raise SkillError(
-                ErrorCode.VALIDATION_FAILED,
-                "所有批量项均失败，未产生任何记录",
-                stage="EXTRACTING",
-                repairable=True,
-                details={"items": stats},
-            )
-        return None
+            return None
+
+        if batch_lock is None:
+            return await commit()
+        async with batch_lock:
+            return await commit()
 
     async def _process_batch_item(
         self,
