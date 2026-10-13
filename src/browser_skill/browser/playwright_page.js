@@ -193,6 +193,13 @@
     first.headers.forEach((text, col) => { if (out.elements.length < MAX) out.elements.push({ role: "columnheader", column_index: col, text: text, table_index: 0 }); });
     first.rows.forEach((row, r) => row.forEach((text, col) => { if (out.elements.length < MAX) out.elements.push({ role: "cell", row_index: r + 1, column_index: col, text: text, table_index: 0 }); }));
   }
+  let crossOriginIframes = 0;
+  for (const iframe of document.querySelectorAll("iframe")) {
+    try {
+      if (!iframe.contentDocument || !iframe.contentDocument.body) crossOriginIframes += 1;
+    } catch (_e) { crossOriginIframes += 1; }
+  }
+  out.meta = { cross_origin_iframes: crossOriginIframes };
   document.documentElement.setAttribute(REF + "-counter", String(counter));
   return out;
 },

@@ -52,6 +52,11 @@ pages links without embedded driver ids still match). Optional `workflow.hints` 
 
 Use **Playwright adapter** for steps 1–4; chrome-use CLI remains click-download only.
 
+Probe may suggest `workflow_candidates` (expand / attachment tabs). The wizard can **record**
+pre-attachment clicks (`probe_expand_clicks`) or set `attachment_expands` manually; these compile
+to `workflow.hints` with `phase: attachments`. Same-origin iframe controls and PDF preview
+iframes are included in Playwright snapshots (`frame_index`, `iframe_preview` links).
+
 ## URL batch (detail_batch) templates
 
 - `run.mode: detail_batch` runs one detail page per value of `run.driver_variable`; the default

@@ -77,6 +77,7 @@ def snapshot_from_data(data: Any) -> BrowserSnapshot:
                 for item in (data.get("tables") or [])
                 if isinstance(item, dict) and isinstance(item.get("rows"), list)
             ],
+            "meta": data.get("meta") if isinstance(data.get("meta"), dict) else {},
         }
         if not aliases["text"] and isinstance(data.get("snapshot"), str):
             aliases["text"] = data["snapshot"]

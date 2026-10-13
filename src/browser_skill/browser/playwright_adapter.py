@@ -521,12 +521,14 @@ class PlaywrightAdapter:
             if "ref" in element and "target" not in element:
                 element["target"] = element["ref"]
         tables = raw.get("tables", []) if isinstance(raw, dict) else []
+        meta = raw.get("meta", {}) if isinstance(raw, dict) else {}
         return BrowserSnapshot(
             url=str(raw.get("url", "")),
             title=str(raw.get("title", "")),
             text=str(raw.get("text", "")),
             elements=elements,
             tables=[TableData.model_validate(item) for item in tables if isinstance(item, dict)],
+            meta=meta if isinstance(meta, dict) else {},
         )
 
     async def find(self, description: str) -> CommandResult:

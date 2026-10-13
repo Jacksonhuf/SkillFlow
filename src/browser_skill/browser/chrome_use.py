@@ -195,6 +195,26 @@ class ChromeUseAdapter:
     async def network_requests(self) -> CommandResult:
         return await self._run(["network", "list", "--json"])
 
+    async def clear_network_log(self) -> CommandResult:
+        return CommandResult(ok=True, operation="network.clear")
+
+    async def wait_for_attachment_network(self) -> CommandResult:
+        return CommandResult(ok=True, operation="network.wait")
+
+    async def start_expand_click_recording(self) -> CommandResult:
+        return CommandResult(
+            ok=False,
+            operation="probe.record_start",
+            safe_stderr="expand click recording requires Playwright engine",
+        )
+
+    async def stop_expand_click_recording(self) -> CommandResult:
+        return CommandResult(
+            ok=False,
+            operation="probe.record_stop",
+            safe_stderr="expand click recording requires Playwright engine",
+        )
+
     async def screenshot(self) -> CommandResult:
         return await self._run(["screenshot", "--json"])
 
@@ -328,6 +348,26 @@ class ChromeUseToolAdapter:
 
     async def network_requests(self) -> CommandResult:
         return await self._call("network.list")
+
+    async def clear_network_log(self) -> CommandResult:
+        return CommandResult(ok=True, operation="network.clear")
+
+    async def wait_for_attachment_network(self) -> CommandResult:
+        return CommandResult(ok=True, operation="network.wait")
+
+    async def start_expand_click_recording(self) -> CommandResult:
+        return CommandResult(
+            ok=False,
+            operation="probe.record_start",
+            safe_stderr="expand click recording requires Playwright engine",
+        )
+
+    async def stop_expand_click_recording(self) -> CommandResult:
+        return CommandResult(
+            ok=False,
+            operation="probe.record_stop",
+            safe_stderr="expand click recording requires Playwright engine",
+        )
 
     async def screenshot(self) -> CommandResult:
         return await self._call("screenshot")

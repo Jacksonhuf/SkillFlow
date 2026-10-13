@@ -511,6 +511,7 @@ class BrowserSnapshot(StrictModel):
     elements: list[dict[str, Any]] = Field(default_factory=list)
     records: list[dict[str, Any]] = Field(default_factory=list)
     tables: list[TableData] = Field(default_factory=list)
+    meta: dict[str, Any] = Field(default_factory=dict)
 
 
 class AuthState(StrEnum):
