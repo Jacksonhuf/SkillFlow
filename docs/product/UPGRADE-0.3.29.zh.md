@@ -5,6 +5,7 @@
 - 模板 `run.concurrency` 设为 **2–4** 时，在 **Playwright** 引擎下会并行打开多个标签页处理 `detail_batch` 项（同一浏览器上下文，共享登录态）。
 - `execution.jsonl` 会记录 `concurrency_parallel`（含 `configured` / `effective`）。
 - **chrome-use** 适配器仍按单页串行执行；`concurrency > 1` 时继续记录 `concurrency_sequential`。
+- 控制台「创建 URL 批量模板」→ **高级设置** → **并行条数** 会写入模板；运行中进度条会显示「并行 N 路」。
 
 ## 安装
 

@@ -350,7 +350,7 @@ py scripts\invoke.py probe https://portal.example.com/orders/ORD-2024-0917/detai
 | 优化 | 做法 | 收益 |
 |------|------|------|
 | **Network 优先** | 探测时若接口 JSON 覆盖所勾字段，运行时直接读响应，不解析 DOM | 更快、抗改版 |
-| **并发多标签**（待做） | `concurrency` 2~3 时用 Playwright 多 page 同 context；前置条件：适配器 per-page 句柄 | 单机吞吐提升 2~3 倍；默认 1 保证稳定 |
+| **并发多标签**（0.3.29+ Playwright） | `run.concurrency` 2–4：每项独立 tab、共享 context/cookie；chrome-use 仍串行 | 单机吞吐提升 2~3 倍；默认 1 保证稳定 |
 | **限速与抖动** | `per_item_delay_ms` + 随机 ±30% | 降低被风控概率 |
 | **断点续跑** | `batch.json` 每项状态；`resume` 只跑未完成 | 中途登录过期/断网不重来 |
 | **增量运行** | 可选 `run.skip_if_exists`：扫描 `runs/*/batch.json`（同 `template_id`）中上次 `ok` 的编号，本次标记 `skipped` 不打开页面 | 每日补数只跑新增 |
