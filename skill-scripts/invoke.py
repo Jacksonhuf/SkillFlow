@@ -145,6 +145,17 @@ def main(argv: list[str] | None = None) -> int:
     )
     probe_p.add_argument("url", help="A detail page URL you are logged in to")
 
+    rec_p = sub.add_parser(
+        "probe-record",
+        help="Record pre-attachment button clicks in Chrome (Playwright engine only)",
+    )
+    rec_p.add_argument("mode", choices=["start", "stop"], help="start or stop recording")
+    rec_p.add_argument(
+        "url",
+        nargs="?",
+        help="Detail page URL to open when mode=start (required for start)",
+    )
+
     resume_p = sub.add_parser("resume", help="Resume after Chrome login")
     resume_p.add_argument("run_id")
     resume_p.add_argument("--var", action="append", default=[])
@@ -242,6 +253,18 @@ def main(argv: list[str] | None = None) -> int:
             return _print_response(response)
         if args.command == "probe":
             response = await app.handle(SkillRequest(action="probe_url", url=args.url))
+            return _print_response(response)
+        if args.command == "probe-record":
+            if args.mode == "start" and not args.url:
+                print("probe-record start requires a URL", file=sys.stderr)
+                return 2
+            response = await app.handle(
+                SkillRequest(
+                    action="probe_expand_clicks",
+                    expand_click_recording=args.mode,
+                    url=args.url,
+                )
+            )
             return _print_response(response)
         if args.command == "resume":
             response = await app.handle(

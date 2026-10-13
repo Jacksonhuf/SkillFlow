@@ -35,6 +35,7 @@ from browser_skill.models import (
 )
 from browser_skill.runtime.auth import AuthClassifier
 from browser_skill.runtime.sample_analyzer import SampleAnalyzer
+from browser_skill.runtime.site_profiles import augment_workflow_candidates, profile_warnings
 
 VARIABLE_THRESHOLD = 0.6
 _MAX_FIELDS = 60
@@ -475,11 +476,23 @@ class UrlProber:
         attachments = self._merge_attachment_candidates(
             attachments, self.network_attachment_candidates(exchanges, analysis.host)
         )
-        workflow_candidates = self.workflow_candidates(snapshot)
+        workflow_candidates = augment_workflow_candidates(
+            analysis.host,
+            snapshot,
+            self.workflow_candidates(snapshot),
+        )
         samples = {v.sample: v for v in analysis.variables if v.selected}
         tables = self.table_candidates(snapshot, samples)
         if not fields and not tables:
             warnings.append("未在页面上识别到字段候选，请确认页面已完全加载。")
+        cross_iframes = int(snapshot.meta.get("cross_origin_iframes") or 0)
+        if cross_iframes:
+            warnings.append(
+                "检测到跨域 iframe，附件可能在预览框内；请用 Playwright 并录制运行前点击。"
+            )
+        for note in profile_warnings(analysis.host):
+            if note not in warnings:
+                warnings.append(note)
         if workflow_candidates:
             warnings.append(
                 "建议在「运行前点击」中勾选展开/附件区按钮，否则附件可能藏在折叠面板里。"

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from dataclasses import field as dc_field
 from pathlib import Path
@@ -42,6 +43,8 @@ class DetailCollector:
         records: list[dict[str, Any]],
         workspace: Path,
         exchanges: list[NetworkExchange] | None = None,
+        prepare_attachments: Callable[[BrowserSnapshot], Awaitable[BrowserSnapshot]] | None = None,
+        refresh_exchanges: Callable[[], Awaitable[list[NetworkExchange]]] | None = None,
     ) -> DetailCollectionResult:
         detail_fields = [
             field for field in template.target.fields if field.source == SourcePage.DETAIL
@@ -91,15 +94,21 @@ class DetailCollector:
             enriched = {**record, **self._extract_fields(detail_fields, detail)}
             merged_records.append(enriched)
             if detail_attachments:
+                attachment_snapshot = detail
+                if prepare_attachments is not None:
+                    attachment_snapshot = await prepare_attachments(detail)
+                detail_exchanges = list(exchanges or [])
+                if refresh_exchanges is not None:
+                    detail_exchanges = await refresh_exchanges()
                 files.extend(
                     await self.downloader.collect(
                         adapter,
                         template,
-                        detail,
+                        attachment_snapshot,
                         [enriched],
                         workspace,
                         attachments=detail_attachments,
-                        exchanges=list(exchanges or []),
+                        exchanges=detail_exchanges,
                     )
                 )
             await self._return_to_list(adapter, template)

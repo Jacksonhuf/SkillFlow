@@ -106,6 +106,17 @@ class _Handler(BaseHTTPRequestHandler):
                 "application/octet-stream",
                 {"Content-Disposition": 'attachment; filename="proof.bin"'},
             )
+        elif self.path.startswith("/doc.pdf"):
+            self._send(b"%PDF-1.4 integration", "application/pdf")
+        elif self.path.startswith("/iframe"):
+            body = (
+                b"<!doctype html><html><body>"
+                b'<iframe title="contract PDF preview" src="/doc.pdf"></iframe>'
+                b"<iframe srcdoc=\"<a id='inner' href='/file.bin' download>"
+                b"nested attachment</a>\"></iframe>"
+                b"</body></html>"
+            )
+            self._send(body, "text/html; charset=utf-8")
         else:
             self._send(_PAGE.encode("utf-8"), "text/html; charset=utf-8")
 
@@ -251,6 +262,26 @@ def test_runner_paginates_over_network_with_playwright(
     events = (run_dir / "execution.jsonl").read_text(encoding="utf-8")
     assert '"event": "network_extraction"' in events
     assert '"network_pages": 2' in events
+
+
+def test_snapshot_includes_iframe_links(site: str, tmp_path: Path) -> None:
+    async def scenario() -> None:
+        adapter = _adapter(tmp_path)
+        try:
+            assert (await adapter.open(site + "/iframe")).ok
+            snapshot = await adapter.snapshot()
+            hrefs = [e.get("href") for e in snapshot.elements if e.get("href")]
+            assert any(h and h.endswith("/doc.pdf") for h in hrefs)
+            inner = [e for e in snapshot.elements if e.get("text") == "nested attachment"]
+            assert inner and inner[0].get("frame_index") == 1
+            target = inner[0]["target"]
+            out = tmp_path / "inner.bin"
+            assert (await adapter.download(target, out)).ok
+            assert out.read_bytes().startswith(b"PROOF")
+        finally:
+            await adapter.close()
+
+    asyncio.run(scenario())
 
 
 def test_runner_falls_back_to_dom_table_without_learned_network(

@@ -129,6 +129,13 @@
       <table><thead><tr><th></th><th>附件名（可改）</th><th>来源</th><th>数量</th><th>类型</th></tr></thead><tbody id="wzAttRows"></tbody></table>
       <h5 style="margin-top:14px">运行前点击 <span class="muted">（附件阶段：展开折叠区 / 打开「附件」Tab，建议勾选推荐项）</span></h5>
       <table><thead><tr><th></th><th>按钮文案</th><th>说明</th></tr></thead><tbody id="wzExpandRows"></tbody></table>
+      <div class="row" style="margin-top:8px;align-items:center;flex-wrap:wrap;gap:8px">
+        <input id="wzExpandManual" placeholder="手动添加按钮文案（与页面上显示一致）" style="flex:1;max-width:320px">
+        <button type="button" class="btn secondary" id="wzExpandAdd">添加</button>
+        <button type="button" class="btn secondary" id="wzExpandRecStart">开始录制</button>
+        <button type="button" class="btn secondary hidden" id="wzExpandRecStop">结束录制</button>
+        <span id="wzExpandRecHint" class="muted"></span>
+      </div>
       <div class="row"><button class="btn" id="wzNextBtn">下一步</button><button class="btn secondary" id="wzBackBtn1">重新探测</button></div>
     </div>
     <div class="card hidden" id="wzStep3">
@@ -735,6 +742,41 @@
     const columns = t.columns.filter(c => c.selected).map(c => ({ key: c.key, name: c.name, sample: c.sample, source: c.source, strategy: c.strategy, type: c.type, confidence: c.confidence, aliases: c.aliases || [], column: c.column }));
     return { index: t.index, title: t.title || '', headers: t.headers, columns };
   }
+  $('wzExpandRecStart').onclick = async () => {
+    const url = $('wzUrl').value.trim();
+    if (!/^https?:\/\//i.test(url)) { alert('请先填写上方的示例地址'); return; }
+    const r = await post('/api/action', { action: 'probe_expand_clicks', expand_click_recording: 'start', url });
+    if (!r || !r.ok) { alert((r && r.message) || '无法开始录制'); return; }
+    $('wzExpandRecStart').classList.add('hidden');
+    $('wzExpandRecStop').classList.remove('hidden');
+    $('wzExpandRecHint').textContent = '请在 Chrome 里依次点击要展开的按钮/Tab，然后点「结束录制」。';
+  };
+  $('wzExpandRecStop').onclick = async () => {
+    const r = await post('/api/action', { action: 'probe_expand_clicks', expand_click_recording: 'stop' });
+    $('wzExpandRecStart').classList.remove('hidden');
+    $('wzExpandRecStop').classList.add('hidden');
+    $('wzExpandRecHint').textContent = '';
+    if (!r || !r.ok) { alert((r && r.message) || '录制失败'); return; }
+    const clicks = (r.data && r.data.clicks) || [];
+    wz.expands = wz.expands || [];
+    for (const target of clicks) {
+      if (!wz.expands.some(e => e.target === target)) {
+        wz.expands.push({ target, reason: '录制', recommended: true, selected: true });
+      }
+    }
+    wzRender();
+    if (clicks.length) $('wzExpandRecHint').textContent = `已加入 ${clicks.length} 个运行前点击步骤。`;
+  };
+  $('wzExpandAdd').onclick = () => {
+    const text = ($('wzExpandManual').value || '').trim();
+    if (!text) return;
+    wz.expands = wz.expands || [];
+    if (!wz.expands.some(e => e.target === text)) {
+      wz.expands.push({ target: text, reason: '手动添加', recommended: true, selected: true });
+    }
+    $('wzExpandManual').value = '';
+    wzRender();
+  };
   $('wzNextBtn').onclick = () => {
     const table = wzSelectedTable();
     if (table && !table.columns.length) { alert('记录行至少要勾选一列'); return; }

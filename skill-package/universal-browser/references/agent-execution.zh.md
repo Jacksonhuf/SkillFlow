@@ -43,6 +43,8 @@
 - 让用户确认要保留的字段 / 附件和主键后，调用 `create_from_probe`（请求体 `probe_draft`：`template_id`、`name`、`sample_url`、`url_template`、`driver_variable`、勾选的 `fields`、`attachments`、`record_key`、`required_keys`），再 `test` 若干编号，`COMPLETED` 后 `publish`。
 - 要抓**表格的每一行**（明细行、付款记录等）时，在 `probe_draft` 里加 `table: {index, title, headers, columns: [勾选的列]}`（直接取自 `data.probe.tables[i]`，`columns` 只保留需要的列）。生成的模板 `run.capture_tables: true`，每一行输出一条记录，自动带上页面字段和 `row_no`（行号，主键之一）；附件仍按页面下载一次。`fields` 可为空（只要表格行）。列 key 与页面字段 key 不能重名。
 - 业务用户更适合在本地界面「新建模板」里完成同样三步（探测 → 勾选 → 试跑/发布）。
+- 附件在折叠区/Tab 内时：向导步骤 2 使用 **开始录制 → 在 Chrome 点展开 → 结束录制**，或手动添加「运行前点击」文案；CLI 等价命令：`probe-record start <URL>` / `probe-record stop`（需 Playwright 引擎）。
+- `data.probe.workflow_candidates` 与 `attachment_expands` 会编译为 `workflow.hints`（`phase: attachments`）。Playwright 下附件优先走网络抓取与 `session_fetch`，chrome-use 仍以点击下载为主。
 
 ## 本地界面（可选，同一引擎）
 
@@ -74,6 +76,7 @@
 
 ## 与附件相关
 
-- 模板声明 `attachments` 时，运行前会检查 chrome-use 是否具备 **find + download + downloads**。
-- 定位顺序：snapshot `elements` → 语义 `find` → `download` 到 run 工作区。
+- 模板声明 `attachments` 时，运行前会检查浏览器是否具备 **find + download + downloads**（网络附件阶梯建议 Playwright）。
+- Playwright：展开 workflow 后会短暂等待并刷新网络缓冲，再匹配 `network_binary` / `session_fetch`；同源 iframe 内控件会进入 snapshot，PDF 预览 iframe 会生成可抓取链接。
+- chrome-use：仍以 snapshot → `find` → `download` 为主；不支持录制运行前点击。
 - snapshot 若为 `interactive`/`nodes` 等字段，引擎会自动归一化为 `elements`。

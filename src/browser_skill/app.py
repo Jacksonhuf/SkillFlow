@@ -192,6 +192,45 @@ class BrowserSkillApp:
                     "interaction": interaction.model_dump(mode="json"),
                 },
             )
+        if request.action == "probe_expand_clicks":
+            mode = request.expand_click_recording
+            if mode not in {"start", "stop"}:
+                return SkillResponse(ok=False, message="需要 expand_click_recording: start 或 stop")
+            await self.runner.ensure_browser_ready()
+            if mode == "start":
+                if request.url:
+                    opened = await self.adapter.open(request.url.strip())
+                    if not opened.ok:
+                        return SkillResponse(
+                            ok=False,
+                            message="无法打开示例页面，请检查地址或先在 Chrome 登录",
+                        )
+                start = getattr(self.adapter, "start_expand_click_recording", None)
+                if not callable(start):
+                    return SkillResponse(
+                        ok=False,
+                        message="当前浏览器引擎不支持录制点击，请使用 Playwright 引擎",
+                    )
+                result = await start()
+                return SkillResponse(
+                    ok=result.ok,
+                    message="已开始录制：请在 Chrome 点击要展开的按钮，再点「结束录制」",
+                    data=result.data or {},
+                )
+            stop = getattr(self.adapter, "stop_expand_click_recording", None)
+            if not callable(stop):
+                return SkillResponse(ok=False, message="当前浏览器引擎不支持录制点击")
+            result = await stop()
+            clicks = []
+            if isinstance(result.data, dict):
+                raw = result.data.get("clicks")
+                if isinstance(raw, list):
+                    clicks = [str(item) for item in raw if str(item).strip()]
+            return SkillResponse(
+                ok=result.ok,
+                message=f"录制结束，共 {len(clicks)} 个步骤",
+                data={"clicks": clicks},
+            )
         if request.action == "probe_url":
             if not request.url:
                 return SkillResponse(ok=False, message="探测需要 url")

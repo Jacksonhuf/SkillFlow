@@ -511,6 +511,7 @@ class BrowserSnapshot(StrictModel):
     elements: list[dict[str, Any]] = Field(default_factory=list)
     records: list[dict[str, Any]] = Field(default_factory=list)
     tables: list[TableData] = Field(default_factory=list)
+    meta: dict[str, Any] = Field(default_factory=dict)
 
 
 class AuthState(StrEnum):
@@ -817,9 +818,11 @@ class SkillRequest(StrictModel):
         "repair",
         "probe",
         "probe_url",
+        "probe_expand_clicks",
         "create_from_probe",
         "validate_acceptance",
     ] = "start"
+    expand_click_recording: Literal["start", "stop"] | None = None
     selector: str | int | None = None
     template_id: str | None = None
     run_id: str | None = None

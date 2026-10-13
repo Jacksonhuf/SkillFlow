@@ -397,9 +397,12 @@ class Runner:
         if not template.target.attachments and not needs_detail:
             return
         self._transition(workspace, context, RunState.DOWNLOADING, page_url=snapshot.url)
+        if template.target.attachments and capabilities.network:
+            await self._clear_network_log()
         snapshot = await self._snapshot_for_attachments(
             template, values, snapshot, dialogs_supported=dialogs_supported
         )
+        await self._wait_for_attachment_network(capabilities)
         exchanges = await self._network_exchanges(capabilities)
         list_attachments = [item for item in template.target.attachments if item.source == "list"]
         if list_attachments:
@@ -413,6 +416,12 @@ class Runner:
                 exchanges=exchanges,
             )
         if needs_detail:
+            detail_attachments = [
+                item for item in template.target.attachments if item.source == "detail"
+            ]
+            attachment_workflow = any(
+                hint.phase == "attachments" for hint in template.workflow.hints
+            )
             detail_result = await self.detail_collector.collect(
                 self.adapter,
                 template,
@@ -420,6 +429,16 @@ class Runner:
                 context.records,
                 workspace.path,
                 exchanges=exchanges,
+                prepare_attachments=(
+                    (self._prepare_detail_attachment_snapshot(template, values, dialogs_supported))
+                    if detail_attachments and attachment_workflow
+                    else None
+                ),
+                refresh_exchanges=(
+                    (lambda: self._refresh_attachment_exchanges(capabilities))
+                    if detail_attachments and attachment_workflow and capabilities.network
+                    else None
+                ),
             )
             context.records = detail_result.records
             context.downloaded_files.extend(detail_result.files)
@@ -639,10 +658,13 @@ class Runner:
                 phase="attachments",
                 attachment_count=len(template.target.attachments),
             )
+            if capabilities.network:
+                await self._clear_network_log()
             snapshot = await self._snapshot_for_attachments(
                 template, values, snapshot, dialogs_supported=capabilities.dialogs
             )
-            if any(hint.phase == "attachments" for hint in template.workflow.hints):
+            await self._wait_for_attachment_network(capabilities)
+            if capabilities.network:
                 listing = await self.adapter.network_requests()
                 if listing.ok:
                     exchanges = parse_exchanges(listing.data)
@@ -743,6 +765,43 @@ class Runner:
         if not listing.ok:
             return []
         return parse_exchanges(listing.data)
+
+    async def _clear_network_log(self) -> None:
+        clear = getattr(self.adapter, "clear_network_log", None)
+        if callable(clear):
+            await clear()
+
+    async def _wait_for_attachment_network(self, capabilities: BrowserCapabilities) -> None:
+        if not capabilities.network:
+            return
+        wait = getattr(self.adapter, "wait_for_attachment_network", None)
+        if callable(wait):
+            await wait()
+            return
+        await asyncio.sleep(0.35)
+
+    async def _refresh_attachment_exchanges(
+        self, capabilities: BrowserCapabilities
+    ) -> list[NetworkExchange]:
+        await self._wait_for_attachment_network(capabilities)
+        return await self._network_exchanges(capabilities)
+
+    def _prepare_detail_attachment_snapshot(
+        self,
+        template: BrowserTemplate,
+        values: dict[str, Any],
+        dialogs_supported: bool,
+    ) -> Callable[[BrowserSnapshot], Awaitable[BrowserSnapshot]]:
+        async def prepare(snapshot: BrowserSnapshot) -> BrowserSnapshot:
+            await self._clear_network_log()
+            return await self._snapshot_for_attachments(
+                template,
+                values,
+                snapshot,
+                dialogs_supported=dialogs_supported,
+            )
+
+        return prepare
 
     async def _snapshot_for_attachments(
         self,
