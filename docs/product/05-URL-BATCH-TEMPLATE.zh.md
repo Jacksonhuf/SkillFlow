@@ -391,7 +391,7 @@ py scripts\invoke.py probe https://portal.example.com/orders/ORD-2024-0917/detai
 | **P3 · Probe**（已完成） | `probe_url` 动作：URL 分析 + DOM/Network 候选 + 置信度；`create_from_probe` 编译草稿；运行期新增文本 label/value 与详情页 JSON 取值 | `runtime/url_probe.py`, `runtime/probe_compiler.py`, `acquire/label_value.py`, `app.py` |
 | **P4 · 向导 UI**（已完成） | 新建模板 3 步页（探测 → 勾选 → 命名/试跑/发布）、运行页多值输入（多行 / 文件导入选列）、逐项进度、失败项一键重跑、历史页批量明细；旧样本流程折叠 | `console/ui.html`, `console/server.py`, `runtime/runner.py`（`progress_listener`） |
 | **P5 · CLI/Agent**（已完成） | `--var` 重复聚合为数组；`--var-file/--var-column/--var-name`（txt / CSV / TSV / XLSX 读一列，请求字段 `values_file/values_column/values_variable`）；`probe` 子命令；`run`/`test` 输出批量统计；执行契约文档新增批量与 probe 章节 | `skill-scripts/invoke.py`, `cli.py`, `interaction/value_files.py`, `references/agent-execution.zh.md`, `SKILL.md` |
-| **P6 · 优化**（部分完成） | 已完成：增量运行 `run.skip_if_exists`（同模板此前 `ok` 的编号标记 `skipped`，全部已完成时直接 COMPLETED；向导高级选项可勾选）、附件去重（同一 run 内相同文档 URL 只下载一次，其余复制，`copied_from` 记录来源）、失败一键重跑（控制台 / CLI 提示）。未做：并发多标签——适配器只有单活动页 API（`open/snapshot/download` 都作用于当前页），需先给 Playwright 与 chrome-use 适配器加 per-page 句柄，`concurrency` 仍按顺序执行 | `runtime/batch.py`, `runtime/runner.py`, `runtime/downloader.py`, `console/ui.html` |
+| **P6 · 优化**（部分完成） | 已完成：增量运行 `run.skip_if_exists`、附件去重、失败一键重跑；**附件 P2**（0.3.23–0.3.27：iframe/网络窗口/录制运行前点击，见 `UPGRADE-0.3.27.zh.md`）。未做：并发多标签——`concurrency>1` 时仍串行，`execution.jsonl` 记录 `concurrency_sequential` | `runtime/batch.py`, `runtime/runner.py`, `runtime/downloader.py`, `console/ui.html` |
 
 各阶段可独立合并；P1–P2 先落地即可用 CLI 批量跑，P3–P4 提供业务用户体验。
 

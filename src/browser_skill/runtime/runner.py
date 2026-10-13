@@ -492,6 +492,15 @@ class Runner:
                 values=[item.value for item in skipped[:50]],
             )
         pending = [item for item in batch.items if not item.done]
+        if template.run.concurrency > 1:
+            self._event(
+                workspace,
+                context,
+                "concurrency_sequential",
+                configured=template.run.concurrency,
+                effective=1,
+                reason="browser_adapter_single_active_page",
+            )
         for position, item in enumerate(pending):
             self._check_cancelled(workspace, context)
             self._event(
