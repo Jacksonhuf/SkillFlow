@@ -1,12 +1,17 @@
 from __future__ import annotations
 
+import asyncio
 from collections import defaultdict, deque
+from collections.abc import AsyncIterator, Awaitable, Callable
+from contextlib import asynccontextmanager
+from contextvars import ContextVar
 from pathlib import Path
 from typing import Any, TypeVar, cast
 
 from browser_skill.models import BrowserCapabilities, BrowserSnapshot, CommandResult
 
 T = TypeVar("T")
+_fake_batch_depth: ContextVar[int] = ContextVar("fake_batch_depth", default=0)
 
 
 class FakeBrowserAdapter:
@@ -19,6 +24,13 @@ class FakeBrowserAdapter:
         self.calls: list[tuple[str, tuple[Any, ...], dict[str, Any]]] = []
         self._network_after_clear = False
         self._recording_expands = False
+        self._parallel_browser_lock = asyncio.Lock()
+
+    async def _with_batch_lock(self, action: Callable[[], Awaitable[T]]) -> T:
+        if _fake_batch_depth.get() > 0:
+            async with self._parallel_browser_lock:
+                return await action()
+        return await action()
 
     def _take(self, operation: str, default: T) -> T:
         self.calls.append((operation, (), {}))
@@ -58,8 +70,11 @@ class FakeBrowserAdapter:
         return payload
 
     async def open(self, url: str) -> CommandResult:
-        self.calls.append(("open", (url,), {}))
-        return self._take("open_result", CommandResult(ok=True, operation="open", data=url))
+        async def action() -> CommandResult:
+            self.calls.append(("open", (url,), {}))
+            return self._take("open_result", CommandResult(ok=True, operation="open", data=url))
+
+        return await self._with_batch_lock(action)
 
     async def adopt_tab(self, match: str) -> CommandResult:
         self.calls.append(("adopt_tab", (match,), {}))
@@ -69,8 +84,11 @@ class FakeBrowserAdapter:
         return self._take("list_tabs", CommandResult(ok=True, operation="list_tabs", data=[]))
 
     async def snapshot(self, *, interactive: bool = True, diff: bool = False) -> BrowserSnapshot:
-        self.calls.append(("snapshot_args", (), {"interactive": interactive, "diff": diff}))
-        return self._take("snapshot", BrowserSnapshot())
+        async def action() -> BrowserSnapshot:
+            self.calls.append(("snapshot_args", (), {"interactive": interactive, "diff": diff}))
+            return self._take("snapshot", BrowserSnapshot())
+
+        return await self._with_batch_lock(action)
 
     async def find(self, description: str) -> CommandResult:
         self.calls.append(("find", (description,), {}))
@@ -97,12 +115,15 @@ class FakeBrowserAdapter:
     async def download(
         self, target: str, path: Path, *, timeout_ms: int | None = None
     ) -> CommandResult:
-        self.calls.append(("download", (target, path), {"timeout_ms": timeout_ms}))
-        result = self._take("download_result", CommandResult(ok=True, operation="download"))
-        if result.ok and not path.exists():
-            path.parent.mkdir(parents=True, exist_ok=True)
-            path.write_bytes(b"fake download")
-        return result
+        async def action() -> CommandResult:
+            self.calls.append(("download", (target, path), {"timeout_ms": timeout_ms}))
+            result = self._take("download_result", CommandResult(ok=True, operation="download"))
+            if result.ok and not path.exists():
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_bytes(b"fake download")
+            return result
+
+        return await self._with_batch_lock(action)
 
     async def fetch_resource(
         self, url: str, path: Path, *, timeout_ms: int | None = None
@@ -156,9 +177,22 @@ class FakeBrowserAdapter:
         )
 
     async def clear_network_log(self) -> CommandResult:
-        self.calls.append(("clear_network_log", (), {}))
-        self._network_after_clear = True
-        return CommandResult(ok=True, operation="network.clear")
+        async def action() -> CommandResult:
+            self.calls.append(("clear_network_log", (), {}))
+            self._network_after_clear = True
+            return CommandResult(ok=True, operation="network.clear")
+
+        return await self._with_batch_lock(action)
+
+    @asynccontextmanager
+    async def batch_page(self) -> AsyncIterator[None]:
+        depth = _fake_batch_depth.get()
+        token = _fake_batch_depth.set(depth + 1)
+        self.calls.append(("batch_page", (), {}))
+        try:
+            yield None
+        finally:
+            _fake_batch_depth.reset(token)
 
     async def screenshot(self) -> CommandResult:
         self.calls.append(("screenshot", (), {}))

@@ -103,9 +103,10 @@ iframes are included in Playwright snapshots (`frame_index`, `iframe_preview` li
   they are downloaded once per item, named after the first record. When the grid is missing
   the page yields a single record which then fails on the required `row_no`. Templates without
   `learned.table` keep the old behaviour (adapter-provided `records`).
-- `concurrency` is accepted but items run sequentially: the browser adapters expose one active
-  page (`open` / `snapshot` / `download` all act on it), so multi-tab execution needs per-page
-  handles in both the Playwright and chrome-use adapters first.
+- `concurrency` (1–4) runs up to that many `detail_batch` items at once when the browser adapter
+  reports `parallel_batch` (Playwright: one tab per item, shared cookies/context). chrome-use and
+  other adapters still run items sequentially and log `concurrency_sequential` in `execution.jsonl`.
+  Parallel runs log `concurrency_parallel` with `configured` and `effective` concurrency.
 - Detail-page field acquisition order: structured elements/records → learned network mapping
   (`preferred_source: network`, `endpoint_hint` may contain `{variable}` placeholders such as
   `/api/orders/{order_no}`, `json_path` like `$.data.amount`) → label/value pairs parsed from

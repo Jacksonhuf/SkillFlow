@@ -468,6 +468,8 @@ class BrowserCapabilities(StrictModel):
     dialogs: bool = False
     network: bool = False
     screenshot: bool = False
+    # Playwright: one tab per concurrent detail_batch item (same browser context).
+    parallel_batch: bool = False
 
 
 class NetworkExchange(StrictModel):
