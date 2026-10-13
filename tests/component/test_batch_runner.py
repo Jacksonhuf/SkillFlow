@@ -137,6 +137,28 @@ def test_batch_run_visits_every_value_and_downloads_named_attachments(
     assert "batch_finished" in events
 
 
+def test_batch_logs_concurrency_sequential_when_template_requests_parallelism(
+    tmp_path: Path, template_data: dict[str, Any]
+) -> None:
+    template = _batch_template(template_data, concurrency=3)
+    adapter = FakeBrowserAdapter(
+        {"snapshot": [HOME, _detail("ORD-0001"), _detail("ORD-0002")]}
+    )
+    response = asyncio.run(
+        Runner(adapter, tmp_path).run(template, {"order_no": ["ORD-0001", "ORD-0002"]})
+    )
+    assert response.ok is True
+    workspace = tmp_path / str(response.run_id)
+    events = [
+        json.loads(line)
+        for line in (workspace / "execution.jsonl").read_text(encoding="utf-8").splitlines()
+    ]
+    seq = [e for e in events if e.get("event") == "concurrency_sequential"]
+    assert len(seq) == 1
+    assert seq[0]["configured"] == 3
+    assert seq[0]["effective"] == 1
+
+
 def test_failed_item_yields_partial_run_with_failed_values(
     tmp_path: Path, template_data: dict[str, Any]
 ) -> None:
