@@ -183,14 +183,29 @@ def _fold_progress(progress: dict[str, Any], event: dict[str, Any]) -> dict[str,
         progress["skipped"] = count
         progress["done"] = int(progress.get("done", 0)) + count
     elif name == "item_started":
-        progress["current"] = event.get("value")
+        active = dict(progress.get("active") or {})
+        index = event.get("index")
+        if index is not None:
+            active[str(index)] = event.get("value")
+        progress["active"] = active
         progress["current_index"] = event.get("index")
+        progress["current"] = event.get("value") if len(active) <= 1 else None
     elif name in {"item_finished", "item_failed"}:
         progress["done"] = int(progress.get("done", 0)) + 1
         if name == "item_failed":
             progress["failed"] = int(progress.get("failed", 0)) + 1
-        progress["current"] = None
-        progress.pop("phase", None)
+        active = dict(progress.get("active") or {})
+        index = event.get("index")
+        if index is not None:
+            active.pop(str(index), None)
+        progress["active"] = active
+        if active:
+            progress["current"] = next(iter(active.values()))
+            progress["current_index"] = next(iter(active.keys()), None)
+        else:
+            progress["current"] = None
+            progress.pop("current_index", None)
+            progress.pop("phase", None)
     elif name == "item_progress":
         progress["phase"] = event.get("phase")
         if event.get("attachment_count") is not None:
