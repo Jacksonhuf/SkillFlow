@@ -379,9 +379,14 @@
         ).join(' · ') + '</div>';
       }
       const pickEmpty = items.pick_field_empty_values || failGroups.pick_field_empty || [];
+      const listNavFail = items.list_navigation_failure_values || failGroups.list_navigation || [];
       if (ctx && ctx.driver && ctx.template_id && pickEmpty.length) {
         html += `<div class="row" style="margin-top:4px"><button class="btn secondary" id="retryPickEmptyBtn">重跑点选空列 ${pickEmpty.length} 条</button>`
           + `<span class="muted">（含 partial，建议先 0.3.37+ 重新点选或试跑）</span></div>`;
+      }
+      if (ctx && ctx.driver && ctx.template_id && listNavFail.length) {
+        html += `<div class="row" style="margin-top:4px"><button class="btn secondary" id="retryListNavBtn">重跑列表进详情失败 ${listNavFail.length} 条</button>`
+          + `<span class="muted">（检查列表页录制/搜索文案或重新录制列表导航）</span></div>`;
       }
       if (items.failed_values && items.failed_values.length) {
         html += `<div class="row"><span class="muted">失败的编号：${esc(items.failed_values.slice(0, 20).join('、'))}${items.failed_values.length > 20 ? ' …' : ''}</span>`
@@ -406,6 +411,8 @@
     if (rf) rf.onclick = () => launchBatchRetry(ctx, items.failed_values, el);
     const rp = $('retryPickEmptyBtn');
     if (rp) rp.onclick = () => launchBatchRetry(ctx, pickEmpty, el);
+    const rln = $('retryListNavBtn');
+    if (rln) rln.onclick = () => launchBatchRetry(ctx, listNavFail, el);
   }
   function progressText(action, p) {
     const phaseLabel = {
@@ -582,6 +589,7 @@
       const groups = batchFailureGroups(d.batch.items, st);
       const failed = d.batch.items.filter(i => i.status === 'failed').map(i => i.value);
       const pickEmpty = st.pick_field_empty_values || groups.pick_field_empty || [];
+      const listNavFail = st.list_navigation_failure_values || groups.list_navigation || [];
       html += `<h4>批量明细 <span class="muted">共 ${d.batch.items.length} · 成功 ${st.ok ?? '-'} · 部分 ${st.partial ?? '-'} · 失败 ${st.failed ?? '-'}${st.skipped ? ' · 已跳过 ' + st.skipped : ''}</span></h4>`;
       if (Object.keys(groups).length) {
         html += '<div class="notice warn" style="margin-top:6px"><div>按原因汇总（可分类重跑）：</div><ul style="margin:4px 0 0 18px">'
@@ -595,9 +603,13 @@
       if (failed.length && d.template_id) {
         html += `<div class="row" style="margin-top:0"><button class="btn secondary" id="runRetryBtn">只重跑失败的 ${failed.length} 条</button>`;
         if (pickEmpty.length) html += `<button class="btn secondary" id="runRetryPickBtn">重跑点选空列 ${pickEmpty.length} 条</button>`;
+        if (listNavFail.length) html += `<button class="btn secondary" id="runRetryListNavBtn">重跑列表进详情 ${listNavFail.length} 条</button>`;
         html += '</div>';
-      } else if (pickEmpty.length && d.template_id) {
-        html += `<div class="row" style="margin-top:0"><button class="btn secondary" id="runRetryPickBtn">重跑点选空列 ${pickEmpty.length} 条</button></div>`;
+      } else if ((pickEmpty.length || listNavFail.length) && d.template_id) {
+        html += `<div class="row" style="margin-top:0">`;
+        if (pickEmpty.length) html += `<button class="btn secondary" id="runRetryPickBtn">重跑点选空列 ${pickEmpty.length} 条</button>`;
+        if (listNavFail.length) html += `<button class="btn secondary" id="runRetryListNavBtn">重跑列表进详情 ${listNavFail.length} 条</button>`;
+        html += '</div>';
       }
       const bucketKeys = Object.keys(groups);
       if (bucketKeys.length) {
@@ -636,6 +648,13 @@
       const pickVals = (d.batch.stats && d.batch.stats.pick_field_empty_values)
         || batchValuesForBucket(d.batch.items, 'pick_field_empty');
       launchBatchRetry(runCtx, pickVals, holder);
+    };
+    const retryListNav = $('runRetryListNavBtn');
+    if (retryListNav) retryListNav.onclick = () => {
+      const holder = document.createElement('div'); $('runDetail').prepend(holder);
+      const navVals = (d.batch.stats && d.batch.stats.list_navigation_failure_values)
+        || batchValuesForBucket(d.batch.items, 'list_navigation');
+      launchBatchRetry(runCtx, navVals, holder);
     };
     document.querySelectorAll('.batch-retry-group').forEach(btn => {
       btn.onclick = () => {

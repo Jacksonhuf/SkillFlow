@@ -656,6 +656,7 @@ class BatchProgress(StrictModel):
             ],
             "failure_groups": failure_groups,
             "pick_field_empty_values": failure_groups.get("pick_field_empty", []),
+            "list_navigation_failure_values": failure_groups.get("list_navigation", []),
         }
 
 
