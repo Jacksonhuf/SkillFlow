@@ -252,10 +252,18 @@ class BrowserSkillApp:
                         message="当前浏览器引擎不支持点选字段，请使用 Playwright 引擎",
                     )
                 result = await start()
+                payload: dict[str, Any] = dict(result.data) if isinstance(result.data, dict) else {}
+                try:
+                    snapshot = await self.adapter.snapshot(interactive=True)
+                    payload["cross_origin_iframes"] = int(
+                        (snapshot.meta or {}).get("cross_origin_iframes") or 0
+                    )
+                except Exception:
+                    payload.setdefault("cross_origin_iframes", 0)
                 return SkillResponse(
                     ok=result.ok,
                     message="点选模式已开启：在 Chrome 里点击要采集的字段值，再点「结束点选」",
-                    data=result.data or {},
+                    data=payload,
                 )
             stop = getattr(self.adapter, "stop_field_pick_recording", None)
             if not callable(stop):

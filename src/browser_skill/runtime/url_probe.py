@@ -488,7 +488,8 @@ class UrlProber:
         cross_iframes = int(snapshot.meta.get("cross_origin_iframes") or 0)
         if cross_iframes:
             warnings.append(
-                "检测到跨域 iframe，附件可能在预览框内；请用 Playwright 并录制运行前点击。"
+                "检测到跨域 iframe：附件可能在预览框内（请录制运行前点击）；"
+                "iframe 内字段无法用点选，请用页面文字/接口候选或同源区域点选。"
             )
         for note in profile_warnings(analysis.host):
             if note not in warnings:
