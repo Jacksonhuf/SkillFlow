@@ -190,7 +190,7 @@ learned:
 run(template, variables={order_no: [v1, v2, ...]})
   ├─ 解析驱动值：去重 / 校验 regex / 截断 max_items
   ├─ AUTH_CHECK：open(entry_url) → 未登录 → WAIT_USER_AUTH（resume 后从第一个未完成项继续）
-  ├─ for each value (按 concurrency 分批):
+  ├─ for each pending value（`concurrency` 路并行时 Playwright 每项 `batch_page` 独立 tab，共享 cookie）:
   │     url = value if (accept_full_urls and is_http_url(value)) else render(url_template, {order_no: value})
   │     policy.require_url_allowed(url)          # 渲染后 / 直传 URL 均校验 host 白名单
   │     open(url) → snapshot
