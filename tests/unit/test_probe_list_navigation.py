@@ -5,7 +5,7 @@ from pathlib import Path
 
 from browser_skill.app import BrowserSkillApp, _list_nav_semantics_from_steps
 from browser_skill.browser.fake import FakeBrowserAdapter
-from browser_skill.models import SkillRequest
+from browser_skill.models import BrowserSnapshot, CommandResult, SkillRequest
 from browser_skill.runtime.probe_compiler import ProbeDraftCompiler
 
 SAMPLE_URL = "https://portal.example.com/orders/ORD-2024-0917/detail?tab=files"
@@ -62,6 +62,46 @@ def test_probe_list_navigation_stop_returns_semantics(tmp_path: Path) -> None:
     assert response.data["list_nav_action_semantic"] == ["查询"]
     assert response.data["list_nav_input_ref"] == "@e3"
     assert response.data["list_nav_action_ref"] == "@e4"
+
+
+def test_probe_list_navigation_stop_realigns_refs_from_snapshot(tmp_path: Path) -> None:
+    adapter = FakeBrowserAdapter(
+        {
+            "list_nav_recording": [
+                CommandResult(
+                    ok=True,
+                    operation="probe.list_nav_stop",
+                    data={
+                        "steps": [
+                            {"kind": "input", "label": "订单号", "ref": "@e3"},
+                            {"kind": "action", "label": "查询", "ref": "@e4"},
+                        ]
+                    },
+                )
+            ],
+            "snapshot": [
+                BrowserSnapshot(
+                    elements=[
+                        {"ref": "@e10", "placeholder": "订单号"},
+                        {"ref": "@e11", "text": "查询"},
+                    ],
+                )
+            ],
+        }
+    )
+    app = BrowserSkillApp(tmp_path / "templates", tmp_path / "runs", adapter)
+    response = asyncio.run(
+        app.handle(
+            SkillRequest(
+                action="probe_list_navigation",
+                list_nav_recording="stop",
+            )
+        )
+    )
+    assert response.ok is True
+    assert response.data["refs_realigned"] == 2
+    assert response.data["list_nav_input_ref"] == "@e10"
+    assert response.data["list_nav_action_ref"] == "@e11"
 
 
 def test_compiler_merges_recorded_list_nav_semantics() -> None:
