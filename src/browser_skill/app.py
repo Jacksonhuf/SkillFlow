@@ -254,10 +254,20 @@ class BrowserSkillApp:
                         message="当前浏览器引擎不支持列表导航录制，请使用 Playwright 引擎",
                     )
                 result = await start()
+                start_data: dict[str, Any] = (
+                    dict(result.data) if isinstance(result.data, dict) else {}
+                )
+                try:
+                    snapshot = await self.adapter.snapshot(interactive=True)
+                    start_data["cross_origin_iframes"] = int(
+                        (snapshot.meta or {}).get("cross_origin_iframes") or 0
+                    )
+                except Exception:
+                    start_data.setdefault("cross_origin_iframes", 0)
                 return SkillResponse(
                     ok=result.ok,
                     message="请依次点击：① 搜索输入框 ② 搜索/查询按钮（可选 ③ 结果行「详情」链接）",
-                    data=result.data or {},
+                    data=start_data,
                 )
             stop = getattr(self.adapter, "stop_list_nav_recording", None)
             if not callable(stop):
@@ -715,24 +725,32 @@ def _list_nav_semantics_from_steps(steps: list[dict[str, Any]]) -> dict[str, Any
     input_ref: str | None = None
     action_ref: str | None = None
     row_ref: str | None = None
+    input_frame: int | None = None
+    action_frame: int | None = None
+    row_frame: int | None = None
     for step in steps:
         label = str(step.get("label") or "").strip()
         if not label:
             continue
         kind = str(step.get("kind") or "action")
         ref = _list_nav_step_ref(step)
+        frame_raw = step.get("frame_index")
+        frame = frame_raw if isinstance(frame_raw, int) and frame_raw >= 0 else None
         if kind == "input":
             inputs.append(label)
             if input_ref is None and ref:
                 input_ref = ref
+                input_frame = frame
         elif kind == "row":
             rows.append(label)
             if row_ref is None and ref:
                 row_ref = ref
+                row_frame = frame
         else:
             actions.append(label)
             if action_ref is None and ref:
                 action_ref = ref
+                action_frame = frame
     return {
         "list_nav_input_semantic": inputs,
         "list_nav_action_semantic": actions,
@@ -743,6 +761,9 @@ def _list_nav_semantics_from_steps(steps: list[dict[str, Any]]) -> dict[str, Any
         "list_nav_input_label": inputs[0] if inputs else None,
         "list_nav_action_label": actions[0] if actions else None,
         "list_nav_row_label": rows[0] if rows else None,
+        "list_nav_input_frame_index": input_frame,
+        "list_nav_action_frame_index": action_frame,
+        "list_nav_row_frame_index": row_frame,
     }
 
 

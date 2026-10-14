@@ -1001,7 +1001,10 @@
     if (!r || !r.ok) { alert((r && r.message) || '无法开始录制'); return; }
     $('wzListNavRecStart').classList.add('hidden');
     $('wzListNavRecStop').classList.remove('hidden');
-    $('wzListNavRecHint').textContent = r.message || '';
+    let hint = r.message || '';
+    const cross = r.data && Number(r.data.cross_origin_iframes);
+    if (cross > 0) hint += ` 注意：有 ${cross} 个跨域 iframe，其内部无法录制。`;
+    $('wzListNavRecHint').textContent = hint;
   };
   $('wzListNavRecStop').onclick = async () => {
     const r = await post('/api/action', { action: 'probe_list_navigation', list_nav_recording: 'stop' });
@@ -1015,6 +1018,12 @@
       inputRef: (r.data && r.data.list_nav_input_ref) || null,
       actionRef: (r.data && r.data.list_nav_action_ref) || null,
       rowRef: (r.data && r.data.list_nav_row_ref) || null,
+      inputFrame: (r.data && r.data.list_nav_input_frame_index != null)
+        ? r.data.list_nav_input_frame_index : null,
+      actionFrame: (r.data && r.data.list_nav_action_frame_index != null)
+        ? r.data.list_nav_action_frame_index : null,
+      rowFrame: (r.data && r.data.list_nav_row_frame_index != null)
+        ? r.data.list_nav_row_frame_index : null,
     };
     const parts = [];
     if (wz.listNav.input.length) parts.push('输入框：' + wz.listNav.input.join('、'));
@@ -1050,6 +1059,9 @@
       list_nav_input_label: (wz.listNav && wz.listNav.input && wz.listNav.input[0]) || null,
       list_nav_action_label: (wz.listNav && wz.listNav.action && wz.listNav.action[0]) || null,
       list_nav_row_label: (wz.listNav && wz.listNav.row && wz.listNav.row[0]) || null,
+      list_nav_input_frame_index: (wz.listNav && wz.listNav.inputFrame != null) ? wz.listNav.inputFrame : null,
+      list_nav_action_frame_index: (wz.listNav && wz.listNav.actionFrame != null) ? wz.listNav.actionFrame : null,
+      list_nav_row_frame_index: (wz.listNav && wz.listNav.rowFrame != null) ? wz.listNav.rowFrame : null,
       driver_prompt: selVars.length ? (wz.fields.find(f => f.source === 'url' && f.key === driver) || {}).name || null : '详情页地址',
       fields, attachments, attachment_expands, table: wzSelectedTable(), record_key: keyField ? [keyField.key] : [],
       run: {

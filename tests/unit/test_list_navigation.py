@@ -66,6 +66,18 @@ def test_snapshot_has_ref() -> None:
     assert snapshot_has_ref(snapshot, "@e9") is False
 
 
+def test_snapshot_has_ref_respects_frame_index() -> None:
+    snapshot = BrowserSnapshot(
+        elements=[
+            {"ref": "@e3", "text": "主文档", "frame_index": 0},
+            {"ref": "@e3", "text": "iframe", "frame_index": 1},
+        ],
+    )
+    assert snapshot_has_ref(snapshot, "@e3", frame_index=1) is True
+    assert snapshot_has_ref(snapshot, "@e3", frame_index=0) is True
+    assert snapshot_has_ref(snapshot, "@e3", frame_index=2) is False
+
+
 def test_reconcile_list_nav_steps_updates_refs() -> None:
     steps = [
         {"kind": "input", "label": "订单号", "ref": "@e3"},
@@ -88,6 +100,16 @@ def test_ref_for_label_when_ref_number_changed() -> None:
         elements=[{"ref": "@e12", "text": "订单号", "role": "textbox"}],
     )
     assert ref_for_label_on_snapshot(snapshot, "订单号") == "@e12"
+
+
+def test_ref_for_label_scoped_to_frame() -> None:
+    snapshot = BrowserSnapshot(
+        elements=[
+            {"ref": "@e1", "placeholder": "订单号", "frame_index": 0},
+            {"ref": "@e9", "placeholder": "订单号", "frame_index": 1},
+        ],
+    )
+    assert ref_for_label_on_snapshot(snapshot, "订单号", frame_index=1) == "@e9"
 
 
 def test_detail_link_target_prefers_link_with_driver_text() -> None:

@@ -145,6 +145,9 @@ class ListNavigationSpec(StrictModel):
     search_input_label: str | None = Field(default=None, max_length=60)
     search_action_label: str | None = Field(default=None, max_length=60)
     row_link_label: str | None = Field(default=None, max_length=60)
+    search_input_frame_index: int | None = Field(default=None, ge=0)
+    search_action_frame_index: int | None = Field(default=None, ge=0)
+    row_link_frame_index: int | None = Field(default=None, ge=0)
 
 
 class RunSpec(StrictModel):
@@ -818,6 +821,9 @@ class ProbeDraftInput(StrictModel):
     list_nav_input_label: str | None = Field(default=None, max_length=60)
     list_nav_action_label: str | None = Field(default=None, max_length=60)
     list_nav_row_label: str | None = Field(default=None, max_length=60)
+    list_nav_input_frame_index: int | None = Field(default=None, ge=0)
+    list_nav_action_frame_index: int | None = Field(default=None, ge=0)
+    list_nav_row_frame_index: int | None = Field(default=None, ge=0)
 
     @model_validator(mode="after")
     def _needs_something_to_collect(self) -> ProbeDraftInput:
