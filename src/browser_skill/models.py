@@ -125,11 +125,28 @@ class RunMode(StrEnum):
     DETAIL_BATCH = "detail_batch"
 
 
+class ListNavigationSpec(StrictModel):
+    """Open a list page, search by driver value, then click through to the detail page."""
+
+    enabled: bool = False
+    list_url: HttpUrl | None = None
+    search_input_semantic: list[str] = Field(
+        default_factory=lambda: ["订单号", "编号", "关键字", "单号", "搜索"]
+    )
+    search_action_semantic: list[str] = Field(
+        default_factory=lambda: ["搜索", "查询", "搜 索", "Search"]
+    )
+    row_link_semantic: list[str] = Field(
+        default_factory=lambda: ["详情", "查看", "明细", "进入"]
+    )
+
+
 class RunSpec(StrictModel):
     """How a template is executed. Defaults reproduce the classic list workflow."""
 
     mode: RunMode = RunMode.LIST
     driver_variable: str | None = None
+    list_navigation: ListNavigationSpec = Field(default_factory=ListNavigationSpec)
     concurrency: int = Field(default=1, ge=1, le=4)
     per_item_delay_ms: int = Field(default=300, ge=0, le=60_000)
     on_item_error: Literal["continue", "stop"] = "continue"
@@ -451,9 +468,15 @@ class BrowserTemplate(StrictModel):
                 raise ValueError(f"run.driver_variable references unknown variable: {driver}")
             if not spec.multiple:
                 raise ValueError("run.driver_variable must be declared with multiple: true")
-            if not self.system.url_template and not self.run.accept_full_urls:
+            list_nav = self.run.list_navigation.enabled
+            if (
+                not self.system.url_template
+                and not self.run.accept_full_urls
+                and not list_nav
+            ):
                 raise ValueError(
-                    "detail_batch templates need system.url_template or accept_full_urls"
+                    "detail_batch templates need url_template, accept_full_urls, "
+                    "or run.list_navigation.enabled"
                 )
         elif self.run.driver_variable is not None:
             raise ValueError("run.driver_variable is only valid when run.mode is detail_batch")
@@ -777,6 +800,9 @@ class ProbeDraftInput(StrictModel):
     page_hints: list[str] = Field(default_factory=list, max_length=20)
     # Button/link labels to click in the attachments workflow phase before downloading
     attachment_expands: list[str] = Field(default_factory=list, max_length=20)
+    # Driver value is not in URL: open list page, search, click detail (sample_url = list page).
+    navigate_from_list: bool = False
+    list_page_url: HttpUrl | None = None
 
     @model_validator(mode="after")
     def _needs_something_to_collect(self) -> ProbeDraftInput:

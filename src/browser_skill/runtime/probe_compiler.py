@@ -18,6 +18,7 @@ from browser_skill.models import (
     LearnedMapping,
     LearnedSpec,
     LearnedTable,
+    ListNavigationSpec,
     LoginCheckSpec,
     OutputSpec,
     ProbeDraftInput,
@@ -221,13 +222,24 @@ class ProbeDraftCompiler:
                 )
 
         url_template = (draft.url_template or "").strip() or None
-        if url_template and driver not in _PLACEHOLDER.findall(url_template):
+        if draft.navigate_from_list:
+            url_template = None
+        elif url_template and driver not in _PLACEHOLDER.findall(url_template):
             raise ValueError(f"url_template 必须包含 {{{driver}}} 占位符")
 
         run_overrides = {k: v for k, v in draft.run.items() if k in _ALLOWED_RUN_KEYS}
         if draft.table is not None:
             run_overrides["capture_tables"] = True
-        run = RunSpec(mode=RunMode.DETAIL_BATCH, driver_variable=driver, **run_overrides)
+        list_page = draft.list_page_url
+        if draft.navigate_from_list and list_page is None:
+            list_page = draft.sample_url
+        list_nav = ListNavigationSpec(enabled=draft.navigate_from_list, list_url=list_page)
+        run = RunSpec(
+            mode=RunMode.DETAIL_BATCH,
+            driver_variable=driver,
+            list_navigation=list_nav,
+            **run_overrides,
+        )
 
         first_segment = urlsplit(str(draft.sample_url)).path.strip("/").split("/")[0]
         login_signals = [SignalSpec(semantic_element="退出登录")]

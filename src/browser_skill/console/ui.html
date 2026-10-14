@@ -158,6 +158,7 @@
         <label>单条最长处理（毫秒，含打开 SPA 与附件）</label><input id="wzItemTimeout" type="number" value="180000" min="30000" step="1000">
         <label>每个附件下载等待（毫秒）</label><input id="wzAttachTimeout" type="number" value="45000" min="5000" step="1000">
         <label>某一条失败时</label><select id="wzOnErr"><option value="continue">继续其余（结果标记为部分成功，可只重跑失败项）</option><option value="stop">立即停止</option></select>
+        <label style="display:flex;gap:6px;align-items:center;margin-top:10px"><input type="checkbox" id="wzNavigateFromList" style="width:auto">编号不在 URL 中：从<strong>列表页</strong>搜索编号再进详情（步骤 1 示例 URL 请填列表页，可不填 URL 模板）</label>
         <label style="display:flex;gap:6px;align-items:center;margin-top:10px"><input type="checkbox" id="wzSkipDone" style="width:auto">增量：以前已成功采集过的编号自动跳过（适合每日补数）</label>
       </div>
       <p class="muted" style="margin-bottom:10px">顺序：<strong>① 保存草稿</strong>（已写入本机）→ <strong>② 试跑</strong>（看下方结果与预览）→ <strong>③ 发布</strong>（出现在「运行任务」列表）。仅保存不发布：完成 ① 即可。</p>
@@ -997,10 +998,13 @@
       json_path: a.json_path, sample_file_url: a.sample_file_url,
     }));
     const attachment_expands = (wz.expands || []).filter(e => e.selected).map(e => e.target);
-    const urlTemplate = selVars.length ? $('wzUrlTemplate').value.trim() : null;
+    const navigateFromList = $('wzNavigateFromList').checked;
+    const urlTemplate = navigateFromList ? null : (selVars.length ? $('wzUrlTemplate').value.trim() : null);
     return {
       template_id: $('wzId').value.trim(), name: $('wzName').value.trim(), description: $('wzDesc').value.trim(),
       sample_url: wz.probe.url_analysis.url, url_template: urlTemplate, driver_variable: driver,
+      navigate_from_list: navigateFromList,
+      list_page_url: navigateFromList ? wz.probe.url_analysis.url : null,
       driver_prompt: selVars.length ? (wz.fields.find(f => f.source === 'url' && f.key === driver) || {}).name || null : '详情页地址',
       fields, attachments, attachment_expands, table: wzSelectedTable(), record_key: keyField ? [keyField.key] : [],
       run: {

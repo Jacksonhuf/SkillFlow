@@ -402,7 +402,7 @@ py scripts\invoke.py probe https://portal.example.com/orders/ORD-2024-0917/detai
 | 风险 | 对策 |
 |------|------|
 | 页面数据需点击后才出现 | 向导「高级」允许录一次点击为 `workflow.hints`；probe 提示「检测到展开按钮」 |
-| ID 在 URL 中不显式（如内部数字 id） | **已定（P1）**：驱动值可直接是完整 `http(s)` URL（host ∈ `allowed_hosts`），此时跳过 `url_template` 渲染；用户从列表页复制链接或导出一列 URL 即可。「列表页搜索 → 详情」作为后续增强 |
+| ID 在 URL 中不显式（如内部数字 id） | **已定（P1）**：驱动值可为完整 `http(s)` URL；或开启 **`run.list_navigation`**（向导「从列表页搜索进详情」，**0.3.39+**）：列表页搜索 → 点详情再采集 |
 | 站点风控 | 默认并发 1、延迟、随机抖动；失败可续跑 |
 | 详情页含子表 | **已定**：第一版仅多附件；可选 `run.capture_tables: true` 把详情页表格原样存到 `runs/<run_id>/tables/<主键>.json`，后续 `sub_records` 直接升级 |
 | 登录过期于中途 | 项级 `auth_required` → 整体 `WAIT_USER_AUTH`，`resume` 继续 |
