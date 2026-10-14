@@ -655,7 +655,7 @@
   $('refreshRuns').onclick = loadRuns;
 
   // ---- 新建模板向导（给一个 URL → 勾选 → 试跑 → 发布）
-  const wz = { probe: null, vars: [], fields: [], atts: [], tables: [], tableIndex: -1, created: null, testRun: null, draftFp: '', listNav: { input: [], action: [], row: [] } };
+  const wz = { probe: null, vars: [], fields: [], atts: [], tables: [], tableIndex: -1, created: null, testRun: null, draftFp: '', listNav: { input: [], action: [], row: [], inputRef: null, actionRef: null, rowRef: null } };
   const validKey = (s) => /^[a-z][a-z0-9_]{0,63}$/.test(s);
   const slug = (s) => String(s || '').toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '').replace(/^[^a-z]+/, '');
   async function wzRefreshConcurrencyHint() {
@@ -1012,6 +1012,9 @@
       input: (r.data && r.data.list_nav_input_semantic) || [],
       action: (r.data && r.data.list_nav_action_semantic) || [],
       row: (r.data && r.data.list_nav_row_semantic) || [],
+      inputRef: (r.data && r.data.list_nav_input_ref) || null,
+      actionRef: (r.data && r.data.list_nav_action_ref) || null,
+      rowRef: (r.data && r.data.list_nav_row_ref) || null,
     };
     const parts = [];
     if (wz.listNav.input.length) parts.push('输入框：' + wz.listNav.input.join('、'));
@@ -1041,6 +1044,9 @@
       list_nav_input_semantic: (wz.listNav && wz.listNav.input) || [],
       list_nav_action_semantic: (wz.listNav && wz.listNav.action) || [],
       list_nav_row_semantic: (wz.listNav && wz.listNav.row) || [],
+      list_nav_input_ref: (wz.listNav && wz.listNav.inputRef) || null,
+      list_nav_action_ref: (wz.listNav && wz.listNav.actionRef) || null,
+      list_nav_row_ref: (wz.listNav && wz.listNav.rowRef) || null,
       driver_prompt: selVars.length ? (wz.fields.find(f => f.source === 'url' && f.key === driver) || {}).name || null : '详情页地址',
       fields, attachments, attachment_expands, table: wzSelectedTable(), record_key: keyField ? [keyField.key] : [],
       run: {

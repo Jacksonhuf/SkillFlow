@@ -4,7 +4,11 @@ import json
 from typing import Any
 
 from browser_skill.models import BrowserSnapshot, BrowserTemplate, RunMode
-from browser_skill.runtime.list_navigation import detail_link_target, list_navigation_active
+from browser_skill.runtime.list_navigation import (
+    detail_link_target,
+    list_navigation_active,
+    snapshot_has_ref,
+)
 from browser_skill.runtime.url_batch import plan_batch_items
 
 
@@ -52,6 +56,12 @@ def test_plan_batch_uses_list_url_for_business_ids(template_data: dict[str, Any]
     items = plan_batch_items(template, {}, ["ORD-1", "https://example.internal/direct"])
     assert items[0].url == "https://example.internal/orders"
     assert items[1].url == "https://example.internal/direct"
+
+
+def test_snapshot_has_ref() -> None:
+    snapshot = BrowserSnapshot(elements=[{"ref": "@e3", "text": "x"}])
+    assert snapshot_has_ref(snapshot, "@e3") is True
+    assert snapshot_has_ref(snapshot, "@e9") is False
 
 
 def test_detail_link_target_prefers_link_with_driver_text() -> None:

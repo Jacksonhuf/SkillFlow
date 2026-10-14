@@ -15,6 +15,30 @@ def list_navigation_active(template: BrowserTemplate, driver_value: str) -> bool
     return bool(nav.enabled and not is_full_url(driver_value))
 
 
+def snapshot_has_ref(snapshot: BrowserSnapshot, ref: str) -> bool:
+    for element in snapshot.elements:
+        el_ref = str(element.get("ref") or element.get("target") or "")
+        if el_ref == ref:
+            return True
+    return False
+
+
+async def resolve_navigation_target(
+    adapter: BrowserAdapter,
+    locator: LocatorService,
+    snapshot: BrowserSnapshot,
+    *,
+    dom_ref: str | None,
+    semantics: list[str],
+    required: bool = True,
+) -> str:
+    if dom_ref and dom_ref.startswith("@e") and snapshot_has_ref(snapshot, dom_ref):
+        return dom_ref
+    located = await locator.locate(adapter, snapshot, semantics, required=required)
+    assert located is not None
+    return located.target
+
+
 def detail_link_target(
     snapshot: BrowserSnapshot,
     driver_value: str,
@@ -73,11 +97,14 @@ async def navigate_list_to_detail(
     if not nav.enabled:
         return snapshot
 
-    input_loc = await locator.locate(
-        adapter, snapshot, nav.search_input_semantic, required=True
+    input_target = await resolve_navigation_target(
+        adapter,
+        locator,
+        snapshot,
+        dom_ref=nav.search_input_ref,
+        semantics=nav.search_input_semantic,
     )
-    assert input_loc is not None
-    filled = await adapter.fill(input_loc.target, driver_value)
+    filled = await adapter.fill(input_target, driver_value)
     if not filled.ok:
         raise SkillError(
             ErrorCode.ELEMENT_NOT_FOUND,
@@ -86,11 +113,14 @@ async def navigate_list_to_detail(
             repairable=True,
         )
 
-    action_loc = await locator.locate(
-        adapter, snapshot, nav.search_action_semantic, required=True
+    action_target = await resolve_navigation_target(
+        adapter,
+        locator,
+        snapshot,
+        dom_ref=nav.search_action_ref,
+        semantics=nav.search_action_semantic,
     )
-    assert action_loc is not None
-    clicked = await adapter.click(action_loc.target, observe=True)
+    clicked = await adapter.click(action_target, observe=True)
     if not clicked.ok:
         raise SkillError(
             ErrorCode.ELEMENT_NOT_FOUND,
@@ -103,16 +133,19 @@ async def navigate_list_to_detail(
     if current.url:
         policy.require_url_allowed(current.url, template)
 
-    detail_target = detail_link_target(current, driver_value, nav.row_link_semantic)
+    detail_target: str | None = None
+    if nav.row_link_ref and snapshot_has_ref(current, nav.row_link_ref):
+        detail_target = nav.row_link_ref
     if detail_target is None:
-        detail_loc = await locator.locate(
+        detail_target = detail_link_target(current, driver_value, nav.row_link_semantic)
+    if detail_target is None:
+        detail_target = await resolve_navigation_target(
             adapter,
+            locator,
             current,
-            [f"{driver_value} {nav.row_link_semantic[0]}"],
-            required=True,
+            dom_ref=None,
+            semantics=[f"{driver_value} {nav.row_link_semantic[0]}"],
         )
-        assert detail_loc is not None
-        detail_target = detail_loc.target
 
     opened = await adapter.click(detail_target, observe=True)
     if not opened.ok:
