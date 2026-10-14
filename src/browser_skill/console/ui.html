@@ -113,6 +113,7 @@
     <div class="card hidden" id="wzStep2">
       <h4>2. 勾选要采集的内容</h4>
       <div id="wzWarnings"></div>
+      <div id="wzTeachRecWarn" class="notice warn hidden" style="margin-top:6px"></div>
       <h5>地址里会变化的部分（变量）</h5>
       <table><thead><tr><th></th><th>变量名（可改）</th><th>示例值</th><th>位置</th><th>置信度</th></tr></thead><tbody id="wzVarRows"></tbody></table>
       <label>URL 模板：运行时把 {变量} 换成每个编号；不勾选变量时需直接提供完整地址</label><input id="wzUrlTemplate">
@@ -675,7 +676,40 @@
   $('refreshRuns').onclick = loadRuns;
 
   // ---- 新建模板向导（给一个 URL → 勾选 → 试跑 → 发布）
-  const wz = { probe: null, vars: [], fields: [], atts: [], tables: [], tableIndex: -1, created: null, testRun: null, draftFp: '', listNav: { input: [], action: [], row: [], inputRef: null, actionRef: null, rowRef: null } };
+  const wz = { probe: null, vars: [], fields: [], atts: [], tables: [], tableIndex: -1, created: null, testRun: null, draftFp: '', teachReady: true, teachDetail: '', listNav: { input: [], action: [], row: [], inputRef: null, actionRef: null, rowRef: null } };
+  function wzTeachRecordingBlocked() {
+    if (wz.teachReady !== false) return false;
+    alert(wz.teachDetail || '当前浏览器引擎不支持向导录制（点选/展开/列表导航）。请在首页环境检测中切换 Playwright 或升级 Host 插件。');
+    return true;
+  }
+  function wzApplyTeachRecordingGate() {
+    const ready = wz.teachReady !== false;
+    ['wzPickStart', 'wzExpandRecStart', 'wzListNavRecStart'].forEach(id => {
+      const el = $(id);
+      if (el) el.disabled = !ready;
+    });
+    const warn = $('wzTeachRecWarn');
+    if (!warn) return;
+    if (ready) {
+      warn.classList.add('hidden');
+      warn.textContent = '';
+    } else {
+      warn.classList.remove('hidden');
+      warn.textContent = wz.teachDetail || '当前引擎缺少向导录制能力；点选、展开步骤与列表导航录制已禁用。';
+    }
+  }
+  async function wzRefreshTeachRecording() {
+    try {
+      const r = await api('/api/setup');
+      const teach = (r.setup && r.setup.steps || []).find(s => s.key === 'teach');
+      wz.teachReady = teach ? teach.ok : true;
+      wz.teachDetail = teach && !teach.ok ? teach.detail : '';
+    } catch (e) {
+      wz.teachReady = true;
+      wz.teachDetail = '';
+    }
+    wzApplyTeachRecordingGate();
+  }
   const validKey = (s) => /^[a-z][a-z0-9_]{0,63}$/.test(s);
   const slug = (s) => String(s || '').toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '').replace(/^[^a-z]+/, '');
   async function wzRefreshConcurrencyHint() {
@@ -696,6 +730,7 @@
   function wzShow(step) {
     [1, 2, 3].forEach(n => $('wzStep' + n).classList.toggle('hidden', n > step));
     $('wzStep' + step).scrollIntoView({ behavior: 'smooth' });
+    if (step === 2 || step === 3) wzRefreshTeachRecording();
     if (step === 3) wzRefreshConcurrencyHint();
   }
   function wzRenderTemplate() {
@@ -917,6 +952,7 @@
     return { index: t.index, title: t.title || '', headers: t.headers, columns };
   }
     $('wzPickStart').onclick = async () => {
+    if (wzTeachRecordingBlocked()) return;
     const url = $('wzUrl').value.trim();
     if (!/^https?:\/\//i.test(url)) { alert('请先填写上方的示例地址'); return; }
     const r = await post('/api/action', { action: 'probe_field_pick', field_pick_recording: 'start', url });
@@ -961,6 +997,7 @@
     el.insertAdjacentHTML('beforeend', `<div class="notice bad" style="margin-top:8px">点选字段未出现在试跑结果中：${esc(names)}。请确认仍在同一详情页；已发布模板在 0.3.35+ 会按点选样本文本回退匹配。仍为空时可重新点选并保存草稿，或改用页面文字/接口字段。</div>`);
   }
   $('wzExpandRecStart').onclick = async () => {
+    if (wzTeachRecordingBlocked()) return;
     const url = $('wzUrl').value.trim();
     if (!/^https?:\/\//i.test(url)) { alert('请先填写上方的示例地址'); return; }
     const r = await post('/api/action', { action: 'probe_expand_clicks', expand_click_recording: 'start', url });
@@ -1018,6 +1055,7 @@
     $('wzListNavRecBox').classList.toggle('hidden', !$('wzNavigateFromList').checked);
   };
   $('wzListNavRecStart').onclick = async () => {
+    if (wzTeachRecordingBlocked()) return;
     const url = $('wzUrl').value.trim();
     if (!/^https?:\/\//i.test(url)) { alert('请先填写步骤 1 的列表页地址'); return; }
     const r = await post('/api/action', { action: 'probe_list_navigation', list_nav_recording: 'start', url });
@@ -1207,6 +1245,7 @@
       const r = await post('/api/setup/repair', { action });
       if (!r.ok) { alert(r.message || '修复失败'); return; }
       setupData = r.setup; renderSetup();
+      if (typeof wzRefreshTeachRecording === 'function') await wzRefreshTeachRecording();
     } catch (e) { alert(e.message); }
     finally { btn.disabled = false; btn.textContent = '一键修复'; }
   }
