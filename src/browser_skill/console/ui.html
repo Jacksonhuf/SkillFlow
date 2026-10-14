@@ -829,7 +829,10 @@
     }
     wzRender();
     if (fields.length) {
-      $('wzPickHint').textContent = `已加入 ${fields.length} 个点选字段；请保存草稿并试跑，确认预览表中出现这些列。`;
+      const aligned = r.data && Number(r.data.refs_realigned);
+      let tail = '请保存草稿并试跑，确认预览表中出现这些列。';
+      if (r.data && r.data.snapshot_refreshed) tail = '已刷新页面快照' + (aligned > 0 ? `并对齐 ${aligned} 个 ref。` : '。') + tail;
+      $('wzPickHint').textContent = `已加入 ${fields.length} 个点选字段；${tail}`;
     }
   };
   function wzAuditPickedFields(rows, el) {

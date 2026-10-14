@@ -43,6 +43,7 @@ from browser_skill.platform.acceptance import validate_acceptance_bundle
 from browser_skill.platform.probe import probe_adapter
 from browser_skill.runtime.auto_repair import AutoRepairService
 from browser_skill.runtime.lifecycle import TemplateLifecycleService
+from browser_skill.runtime.pick_reconcile import reconcile_picks_with_snapshot
 from browser_skill.runtime.probe_compiler import ProbeDraftCompiler
 from browser_skill.runtime.recovery import RunRecoveryService
 from browser_skill.runtime.repair import RepairService
@@ -272,11 +273,29 @@ class BrowserSkillApp:
             raw_picks: list[dict[str, Any]] = []
             if isinstance(result.data, dict) and isinstance(result.data.get("picks"), list):
                 raw_picks = [item for item in result.data["picks"] if isinstance(item, dict)]
+            realigned = 0
+            snapshot_refreshed = False
+            try:
+                snapshot = await self.adapter.snapshot(interactive=True)
+                snapshot_refreshed = True
+                raw_picks, realigned = reconcile_picks_with_snapshot(raw_picks, snapshot)
+            except Exception:
+                pass
             fields = _field_candidates_from_picks(raw_picks)
+            message = f"点选结束，识别 {len(fields)} 个字段"
+            if snapshot_refreshed and realigned:
+                message += f"（已刷新快照并对齐 {realigned} 个 ref）"
+            elif snapshot_refreshed:
+                message += "（已刷新快照）"
             return SkillResponse(
                 ok=result.ok,
-                message=f"点选结束，识别 {len(fields)} 个字段",
-                data={"picks": raw_picks, "fields": fields},
+                message=message,
+                data={
+                    "picks": raw_picks,
+                    "fields": fields,
+                    "snapshot_refreshed": snapshot_refreshed,
+                    "refs_realigned": realigned,
+                },
             )
         if request.action == "probe_url":
             if not request.url:
