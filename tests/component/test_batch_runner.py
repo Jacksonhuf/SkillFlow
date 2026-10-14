@@ -117,6 +117,7 @@ def test_batch_run_visits_every_value_and_downloads_named_attachments(
         "skipped": 0,
         "failed_values": [],
         "failure_groups": {},
+        "pick_field_empty_values": [],
         }
     assert _opened_urls(adapter) == [
         "https://example.internal/orders/ORD-0001",
@@ -378,6 +379,7 @@ def test_session_expiry_pauses_and_resume_skips_completed_items(
         "skipped": 0,
         "failed_values": [],
         "failure_groups": {},
+        "pick_field_empty_values": [],
         }
     workspace = tmp_path / str(paused.run_id)
     batch = json.loads((workspace / "batch.json").read_text("utf-8"))
@@ -478,6 +480,7 @@ def test_skip_if_exists_only_visits_values_not_completed_before(
         "skipped": 2,
         "failed_values": [],
         "failure_groups": {},
+        "pick_field_empty_values": [],
         }
     assert _opened_urls(second) == [
         "https://example.internal/orders/ORD-0002",

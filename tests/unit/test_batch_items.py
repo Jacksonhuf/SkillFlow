@@ -334,9 +334,30 @@ def test_batch_stats_failure_groups(template_data: dict[str, Any]) -> None:
             ),
         ],
     )
-    groups = batch.stats()["failure_groups"]
+    stats = batch.stats()
+    groups = stats["failure_groups"]
     assert groups["auth_required"] == ["A", "B"]
     assert groups["pick_field_empty"] == ["C"]
+    assert stats["pick_field_empty_values"] == ["C"]
+
+
+def test_batch_stats_from_payload_recomputes_groups() -> None:
+    from browser_skill.runtime.batch import batch_stats_from_payload
+
+    payload = {
+        "driver_variable": "order_no",
+        "items": [
+            {
+                "index": 0,
+                "value": "X",
+                "url": "https://example/x",
+                "status": "partial",
+                "reason": "pick_field_empty:ref_e9",
+            }
+        ],
+    }
+    stats = batch_stats_from_payload(payload)
+    assert stats["pick_field_empty_values"] == ["X"]
 
 
 def test_classify_clean_item_is_ok(template_data: dict[str, Any]) -> None:

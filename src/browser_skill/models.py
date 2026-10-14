@@ -623,6 +623,7 @@ class BatchProgress(StrictModel):
                 item.value for item in self.items if item.status == BatchItemStatus.FAILED
             ],
             "failure_groups": failure_groups,
+            "pick_field_empty_values": failure_groups.get("pick_field_empty", []),
         }
 
 
