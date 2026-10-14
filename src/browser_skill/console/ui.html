@@ -146,6 +146,7 @@
       <a href="#" id="wzAdvToggle" class="muted" style="display:inline-block;margin-top:10px">高级设置</a>
       <div id="wzAdv" class="hidden">
         <label>并行条数（1–4，仅 Playwright 引擎生效；chrome-use 仍串行）</label><input id="wzConcurrency" type="number" value="1" min="1" max="4" step="1">
+        <p id="wzConcurrencyHint" class="muted" style="margin:4px 0 0"></p>
         <label>每条之间等待（毫秒）</label><input id="wzDelay" type="number" value="300" min="0">
         <label>单条最长处理（毫秒，含打开 SPA 与附件）</label><input id="wzItemTimeout" type="number" value="180000" min="30000" step="1000">
         <label>每个附件下载等待（毫秒）</label><input id="wzAttachTimeout" type="number" value="45000" min="5000" step="1000">
@@ -353,7 +354,23 @@
     } else {
       tail = action;
     }
-    const phase = p && p.phase && phaseLabel[p.phase] ? phaseLabel[p.phase] : '执行中';
+    let phase = '执行中';
+    const shortPhase = { opening: '打开', snapshot: '读取', attachments: '附件' };
+    if (p && p.parallel_effective > 1 && p.active_phases && typeof p.active_phases === 'object') {
+      const entries = Object.entries(p.active_phases);
+      if (entries.length === 1) {
+        const [, ph] = entries[0];
+        phase = phaseLabel[ph] || '执行中';
+      } else if (entries.length > 1) {
+        phase = entries.map(([idx, ph]) => {
+          const val = p.active && p.active[idx];
+          const lab = shortPhase[ph] || ph;
+          return val ? `${String(val).slice(0, 16)}:${lab}` : `#${idx}:${lab}`;
+        }).join('；');
+      }
+    } else if (p && p.phase && phaseLabel[p.phase]) {
+      phase = phaseLabel[p.phase];
+    }
     if (p && p.phase === 'attachments' && p.attachment_count) tail += ` · ${p.attachment_count} 类附件（未触发下载时会等到超时）`;
     if (p && p.parallel_effective > 1) {
       tail += ` · 并行 ${p.parallel_effective} 路`;
@@ -527,9 +544,25 @@
   const wz = { probe: null, vars: [], fields: [], atts: [], tables: [], tableIndex: -1, created: null, testRun: null, draftFp: '' };
   const validKey = (s) => /^[a-z][a-z0-9_]{0,63}$/.test(s);
   const slug = (s) => String(s || '').toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '').replace(/^[^a-z]+/, '');
+  async function wzRefreshConcurrencyHint() {
+    const hint = $('wzConcurrencyHint');
+    if (!hint) return;
+    const n = Math.min(4, Math.max(1, Number($('wzConcurrency').value) || 1));
+    if (n <= 1) { hint.textContent = ''; return; }
+    try {
+      const r = await api('/api/setup');
+      const eng = r.setup && r.setup.engine;
+      if (eng && eng !== 'playwright') {
+        hint.textContent = `当前引擎为 ${eng}，并行条数仍会串行执行；请使用 Playwright 才能多标签并行。`;
+      } else {
+        hint.textContent = '';
+      }
+    } catch (e) { hint.textContent = ''; }
+  }
   function wzShow(step) {
     [1, 2, 3].forEach(n => $('wzStep' + n).classList.toggle('hidden', n > step));
     $('wzStep' + step).scrollIntoView({ behavior: 'smooth' });
+    if (step === 3) wzRefreshConcurrencyHint();
   }
   function wzRenderTemplate() {
     const url = wz.probe.url_analysis.url;
@@ -799,6 +832,7 @@
     wzShow(3);
   };
   $('wzAdvToggle').onclick = (e) => { e.preventDefault(); $('wzAdv').classList.toggle('hidden'); };
+  $('wzConcurrency').addEventListener('input', () => wzRefreshConcurrencyHint());
   function wzDraft() {
     const selVars = wz.vars.filter(v => v.selected);
     const driver = selVars.length ? selVars[0].name : 'detail_url';

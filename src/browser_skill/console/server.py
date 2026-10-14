@@ -198,6 +198,9 @@ def _fold_progress(progress: dict[str, Any], event: dict[str, Any]) -> dict[str,
         index = event.get("index")
         if index is not None:
             active.pop(str(index), None)
+            phases = dict(progress.get("active_phases") or {})
+            phases.pop(str(index), None)
+            progress["active_phases"] = phases
         progress["active"] = active
         if active:
             progress["current"] = next(iter(active.values()))
@@ -207,7 +210,15 @@ def _fold_progress(progress: dict[str, Any], event: dict[str, Any]) -> dict[str,
             progress.pop("current_index", None)
             progress.pop("phase", None)
     elif name == "item_progress":
-        progress["phase"] = event.get("phase")
+        index = event.get("index")
+        phase = event.get("phase")
+        parallel = int(progress.get("parallel_effective") or 1) > 1
+        if parallel and index is not None and phase:
+            phases = dict(progress.get("active_phases") or {})
+            phases[str(index)] = phase
+            progress["active_phases"] = phases
+        elif phase:
+            progress["phase"] = phase
         if event.get("attachment_count") is not None:
             progress["attachment_count"] = event.get("attachment_count")
     elif name == "concurrency_parallel":
