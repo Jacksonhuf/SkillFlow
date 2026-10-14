@@ -721,6 +721,9 @@ def _list_nav_semantics_from_steps(steps: list[dict[str, Any]]) -> dict[str, Any
         "list_nav_input_ref": input_ref,
         "list_nav_action_ref": action_ref,
         "list_nav_row_ref": row_ref,
+        "list_nav_input_label": inputs[0] if inputs else None,
+        "list_nav_action_label": actions[0] if actions else None,
+        "list_nav_row_label": rows[0] if rows else None,
     }
 
 

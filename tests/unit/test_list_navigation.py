@@ -7,6 +7,7 @@ from browser_skill.models import BrowserSnapshot, BrowserTemplate, RunMode
 from browser_skill.runtime.list_navigation import (
     detail_link_target,
     list_navigation_active,
+    ref_for_label_on_snapshot,
     snapshot_has_ref,
 )
 from browser_skill.runtime.url_batch import plan_batch_items
@@ -62,6 +63,13 @@ def test_snapshot_has_ref() -> None:
     snapshot = BrowserSnapshot(elements=[{"ref": "@e3", "text": "x"}])
     assert snapshot_has_ref(snapshot, "@e3") is True
     assert snapshot_has_ref(snapshot, "@e9") is False
+
+
+def test_ref_for_label_when_ref_number_changed() -> None:
+    snapshot = BrowserSnapshot(
+        elements=[{"ref": "@e12", "text": "订单号", "role": "textbox"}],
+    )
+    assert ref_for_label_on_snapshot(snapshot, "订单号") == "@e12"
 
 
 def test_detail_link_target_prefers_link_with_driver_text() -> None:

@@ -314,6 +314,9 @@ def _list_navigation_spec(draft: ProbeDraftInput) -> ListNavigationSpec:
         search_input_ref=draft.list_nav_input_ref,
         search_action_ref=draft.list_nav_action_ref,
         row_link_ref=draft.list_nav_row_ref,
+        search_input_label=draft.list_nav_input_label,
+        search_action_label=draft.list_nav_action_label,
+        row_link_label=draft.list_nav_row_label,
     )
 
 

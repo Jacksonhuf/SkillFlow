@@ -72,6 +72,8 @@ def test_compiler_merges_recorded_list_nav_semantics() -> None:
             list_nav_action_semantic=["Go"],
             list_nav_input_ref="@e3",
             list_nav_action_ref="@e4",
+            list_nav_input_label="我的单号",
+            list_nav_action_label="Go",
         ),
         version=1,
     )
@@ -81,3 +83,5 @@ def test_compiler_merges_recorded_list_nav_semantics() -> None:
     assert "订单号" in nav.search_input_semantic
     assert nav.search_input_ref == "@e3"
     assert nav.search_action_ref == "@e4"
+    assert nav.search_input_label == "我的单号"
+    assert nav.search_action_label == "Go"
