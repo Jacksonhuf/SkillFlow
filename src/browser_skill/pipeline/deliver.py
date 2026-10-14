@@ -158,10 +158,13 @@ def build_webhook_payload(
         "analysis": analysis,
     }
     if context.batch is not None:
+        from browser_skill.runtime.batch import batch_webhook_retry_suggestions
+
         stats = context.batch.stats()
         payload["batch"] = {
             "driver_variable": context.batch.driver_variable,
             "stats": stats,
+            "retry_suggestions": batch_webhook_retry_suggestions(context.run_id, stats),
         }
     return payload
 
