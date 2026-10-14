@@ -4,7 +4,7 @@
 
 ## 1. 解压
 
-把 `universal-browser-full-*.zip` 解压到任意目录，例如 `D:\universal-browser\`（当前推荐 [v0.3.43](https://github.com/Jacksonhuf/SkillFlow/releases/tag/v0.3.43)；见 `docs/product/UPGRADE-0.3.43.zh.md`）。
+把 `universal-browser-full-*.zip` 解压到任意目录，例如 `D:\universal-browser\`（当前推荐 [v0.3.44](https://github.com/Jacksonhuf/SkillFlow/releases/tag/v0.3.44)；见 `docs/product/UPGRADE-0.3.44.zh.md`）。
 
 需要电脑上装有 **Google Chrome** 和 **Python 3.11+**（推荐 3.12；没有 Python 时启动器会带你去下载页，安装时勾选 *Add python.exe to PATH*）。
 

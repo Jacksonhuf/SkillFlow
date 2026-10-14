@@ -405,6 +405,23 @@
     }
     return ref;
   };
+  const docFrames = [{ doc: document, frameIndex: 0 }];
+  let nextFrame = 1;
+  for (const iframe of document.querySelectorAll("iframe")) {
+    try {
+      if (iframe.contentDocument) {
+        docFrames.push({ doc: iframe.contentDocument, frameIndex: nextFrame });
+        nextFrame += 1;
+      }
+    } catch (_e) { /* cross-origin */ }
+  }
+  const frameIndexFor = (el) => {
+    const owner = el && el.ownerDocument;
+    for (const entry of docFrames) {
+      if (entry.doc === owner) return entry.frameIndex;
+    }
+    return 0;
+  };
   const labelOf = (el) => {
     const aria = el.getAttribute("aria-label");
     if (aria) return aria.trim().slice(0, 60);
@@ -433,23 +450,29 @@
     e.stopPropagation();
     const label = labelOf(el);
     if (!label) return;
-    const step = { kind: kindOf(el), label, ref: "@" + refOf(el) };
+    const frame_index = frameIndexFor(el);
+    const step = { kind: kindOf(el), label, ref: "@" + refOf(el), frame_index };
     const list = window.__ubsListNavSteps;
     const last = list[list.length - 1];
     if (last && last.label === step.label && last.kind === step.kind) return;
     list.push(step);
   };
   window.__ubsListNavHandler = handler;
-  document.addEventListener("click", handler, true);
+  window.__ubsListNavDocs = docFrames.map((entry) => entry.doc);
+  for (const entry of docFrames) entry.doc.addEventListener("click", handler, true);
   try { document.body.style.cursor = "crosshair"; } catch (_e) { /* ignore */ }
-  return { started: true };
+  return { started: true, frames: docFrames.length };
 },
   stopListNavRecording: () => {
   const handler = window.__ubsListNavHandler;
+  const docs = window.__ubsListNavDocs || [document];
   if (handler) {
-    try { document.removeEventListener("click", handler, true); } catch (_e) { /* ignore */ }
+    for (const doc of docs) {
+      try { doc.removeEventListener("click", handler, true); } catch (_e) { /* ignore */ }
+    }
   }
   window.__ubsListNavHandler = null;
+  window.__ubsListNavDocs = null;
   try { document.body.style.cursor = ""; } catch (_e) { /* ignore */ }
   const steps = Array.isArray(window.__ubsListNavSteps) ? window.__ubsListNavSteps.slice() : [];
   window.__ubsListNavSteps = [];

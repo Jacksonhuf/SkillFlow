@@ -17,10 +17,24 @@ def list_navigation_active(template: BrowserTemplate, driver_value: str) -> bool
     return bool(nav.enabled and not is_full_url(driver_value))
 
 
-def snapshot_has_ref(snapshot: BrowserSnapshot, ref: str) -> bool:
+def _frame_matches(element: dict[str, Any], frame_index: int | None) -> bool:
+    if frame_index is None:
+        return True
+    el_frame = element.get("frame_index")
+    if el_frame in (None, 0) and frame_index == 0:
+        return True
+    return el_frame == frame_index
+
+
+def snapshot_has_ref(
+    snapshot: BrowserSnapshot,
+    ref: str,
+    *,
+    frame_index: int | None = None,
+) -> bool:
     for element in snapshot.elements:
         el_ref = str(element.get("ref") or element.get("target") or "")
-        if el_ref == ref:
+        if el_ref == ref and _frame_matches(element, frame_index):
             return True
     return False
 
@@ -45,8 +59,10 @@ def reconcile_list_nav_steps_with_snapshot(
         updated = dict(step)
         label = str(updated.get("label") or "").strip()
         old_ref = str(updated.get("ref") or "").strip()
+        frame_raw = updated.get("frame_index")
+        frame = frame_raw if isinstance(frame_raw, int) and frame_raw >= 0 else None
         if label:
-            new_ref = ref_for_label_on_snapshot(snapshot, label)
+            new_ref = ref_for_label_on_snapshot(snapshot, label, frame_index=frame)
             if new_ref and new_ref != old_ref:
                 updated["ref"] = new_ref
                 realigned += 1
@@ -54,12 +70,19 @@ def reconcile_list_nav_steps_with_snapshot(
     return out, realigned
 
 
-def ref_for_label_on_snapshot(snapshot: BrowserSnapshot, label: str) -> str | None:
+def ref_for_label_on_snapshot(
+    snapshot: BrowserSnapshot,
+    label: str,
+    *,
+    frame_index: int | None = None,
+) -> str | None:
     sample = label.strip()
     if not sample:
         return None
     keys = ("text", "value", "aria_label", "title", "name", "placeholder")
     for element in snapshot.elements:
+        if not _frame_matches(element, frame_index):
+            continue
         for key in keys:
             raw = element.get(key)
             if raw in (None, ""):
@@ -80,11 +103,14 @@ async def resolve_navigation_target(
     label_sample: str | None,
     semantics: list[str],
     required: bool = True,
+    frame_index: int | None = None,
 ) -> str:
-    if dom_ref and dom_ref.startswith("@e") and snapshot_has_ref(snapshot, dom_ref):
+    if dom_ref and dom_ref.startswith("@e") and snapshot_has_ref(
+        snapshot, dom_ref, frame_index=frame_index
+    ):
         return dom_ref
     if label_sample:
-        by_label = ref_for_label_on_snapshot(snapshot, label_sample)
+        by_label = ref_for_label_on_snapshot(snapshot, label_sample, frame_index=frame_index)
         if by_label:
             return by_label
     located = await locator.locate(adapter, snapshot, semantics, required=required)
@@ -157,6 +183,7 @@ async def navigate_list_to_detail(
         dom_ref=nav.search_input_ref,
         label_sample=nav.search_input_label,
         semantics=nav.search_input_semantic,
+        frame_index=nav.search_input_frame_index,
     )
     filled = await adapter.fill(input_target, driver_value)
     if not filled.ok:
@@ -174,6 +201,7 @@ async def navigate_list_to_detail(
         dom_ref=nav.search_action_ref,
         label_sample=nav.search_action_label,
         semantics=nav.search_action_semantic,
+        frame_index=nav.search_action_frame_index,
     )
     clicked = await adapter.click(action_target, observe=True)
     if not clicked.ok:
@@ -189,10 +217,14 @@ async def navigate_list_to_detail(
         policy.require_url_allowed(current.url, template)
 
     detail_target: str | None = None
-    if nav.row_link_ref and snapshot_has_ref(current, nav.row_link_ref):
+    if nav.row_link_ref and snapshot_has_ref(
+        current, nav.row_link_ref, frame_index=nav.row_link_frame_index
+    ):
         detail_target = nav.row_link_ref
     if detail_target is None and nav.row_link_label:
-        detail_target = ref_for_label_on_snapshot(current, nav.row_link_label)
+        detail_target = ref_for_label_on_snapshot(
+            current, nav.row_link_label, frame_index=nav.row_link_frame_index
+        )
     if detail_target is None:
         detail_target = detail_link_target(current, driver_value, nav.row_link_semantic)
     if detail_target is None:
@@ -203,6 +235,7 @@ async def navigate_list_to_detail(
             dom_ref=None,
             label_sample=nav.row_link_label,
             semantics=[f"{driver_value} {nav.row_link_semantic[0]}"],
+            frame_index=nav.row_link_frame_index,
         )
 
     opened = await adapter.click(detail_target, observe=True)

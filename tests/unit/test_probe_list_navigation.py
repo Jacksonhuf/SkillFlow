@@ -37,14 +37,16 @@ def _draft(**overrides: object) -> object:
 
 def test_list_nav_semantics_from_steps_splits_kinds() -> None:
     steps = [
-        {"kind": "input", "label": "订单号"},
-        {"kind": "action", "label": "查询"},
+        {"kind": "input", "label": "订单号", "ref": "@e1", "frame_index": 1},
+        {"kind": "action", "label": "查询", "ref": "@e2", "frame_index": 1},
         {"kind": "row", "label": "查看详情"},
     ]
     data = _list_nav_semantics_from_steps(steps)
     assert data["list_nav_input_semantic"] == ["订单号"]
     assert data["list_nav_action_semantic"] == ["查询"]
     assert data["list_nav_row_semantic"] == ["查看详情"]
+    assert data["list_nav_input_frame_index"] == 1
+    assert data["list_nav_action_frame_index"] == 1
 
 
 def test_probe_list_navigation_stop_returns_semantics(tmp_path: Path) -> None:
@@ -114,6 +116,8 @@ def test_compiler_merges_recorded_list_nav_semantics() -> None:
             list_nav_action_ref="@e4",
             list_nav_input_label="我的单号",
             list_nav_action_label="Go",
+            list_nav_input_frame_index=1,
+            list_nav_action_frame_index=1,
         ),
         version=1,
     )
@@ -125,3 +129,26 @@ def test_compiler_merges_recorded_list_nav_semantics() -> None:
     assert nav.search_action_ref == "@e4"
     assert nav.search_input_label == "我的单号"
     assert nav.search_action_label == "Go"
+    assert nav.search_input_frame_index == 1
+    assert nav.search_action_frame_index == 1
+
+
+def test_probe_list_navigation_start_reports_cross_origin_iframes(tmp_path: Path) -> None:
+    adapter = FakeBrowserAdapter(
+        {
+            "snapshot": [
+                BrowserSnapshot(meta={"cross_origin_iframes": 1}),
+            ],
+        }
+    )
+    app = BrowserSkillApp(tmp_path / "templates", tmp_path / "runs", adapter)
+    response = asyncio.run(
+        app.handle(
+            SkillRequest(
+                action="probe_list_navigation",
+                list_nav_recording="start",
+            )
+        )
+    )
+    assert response.ok is True
+    assert response.data.get("cross_origin_iframes") == 1
