@@ -43,6 +43,7 @@ from browser_skill.runtime.auth import AuthClassifier
 from browser_skill.runtime.batch import (
     ItemOutcome,
     apply_incremental_skip,
+    batch_failure_reason,
     build_progress,
     classify_item,
     extract_item_records,
@@ -719,7 +720,9 @@ class Runner:
             if exc.code == ErrorCode.RUN_CANCELLED:
                 raise
             outcome = ItemOutcome(
-                status=BatchItemStatus.FAILED, reason=exc.code.value, error=exc.as_dict()
+                status=BatchItemStatus.FAILED,
+                reason=batch_failure_reason(exc),
+                error=exc.as_dict(),
             )
 
         item.status = outcome.status

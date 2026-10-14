@@ -315,6 +315,43 @@ def test_classify_empty_optional_pick_field_is_partial(template_data: dict[str, 
     assert outcome.records == [record]
 
 
+def test_batch_failure_reason_tags_list_navigation_stage() -> None:
+    from browser_skill.errors import ErrorCode, SkillError
+    from browser_skill.runtime.batch import batch_failure_reason
+
+    exc = SkillError(
+        ErrorCode.ELEMENT_NOT_FOUND,
+        "无法在列表页填写搜索条件",
+        stage="list_navigation",
+        repairable=True,
+    )
+    assert batch_failure_reason(exc) == "list_navigation:element_not_found"
+
+
+def test_batch_stats_groups_list_navigation_failures() -> None:
+    batch = BatchProgress(
+        driver_variable="order_no",
+        items=[
+            BatchItemState(
+                index=0,
+                value="ORD-1",
+                url="u1",
+                status=BatchItemStatus.FAILED,
+                reason="list_navigation:element_not_found",
+            ),
+            BatchItemState(
+                index=1,
+                value="ORD-2",
+                url="u2",
+                status=BatchItemStatus.FAILED,
+                reason="list_navigation:navigation_failed",
+            ),
+        ],
+    )
+    groups = batch.stats()["failure_groups"]
+    assert groups["list_navigation"] == ["ORD-1", "ORD-2"]
+
+
 def test_batch_stats_failure_groups(template_data: dict[str, Any]) -> None:
     batch = BatchProgress(
         driver_variable="order_no",

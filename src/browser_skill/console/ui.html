@@ -272,6 +272,7 @@
 
   const BATCH_REASON_LABELS = {
     pick_field_empty: '点选字段为空',
+    list_navigation: '列表搜索/进详情',
     auth_required: '需要登录',
     required_field_missing: '缺必填字段',
     required_attachment_missing: '缺必填附件',
@@ -947,7 +948,10 @@
     if (!r || !r.ok) { alert((r && r.message) || '无法开始录制'); return; }
     $('wzExpandRecStart').classList.add('hidden');
     $('wzExpandRecStop').classList.remove('hidden');
-    $('wzExpandRecHint').textContent = '请在 Chrome 里依次点击要展开的按钮/Tab，然后点「结束录制」。';
+    let expandHint = '请在 Chrome 里依次点击要展开的按钮/Tab，然后点「结束录制」。';
+    const crossExpand = r.data && Number(r.data.cross_origin_iframes);
+    if (crossExpand > 0) expandHint += ` 注意：有 ${crossExpand} 个跨域 iframe，其内部无法录制。`;
+    $('wzExpandRecHint').textContent = expandHint;
   };
   $('wzExpandRecStop').onclick = async () => {
     const r = await post('/api/action', { action: 'probe_expand_clicks', expand_click_recording: 'stop' });
