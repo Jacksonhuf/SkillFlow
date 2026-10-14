@@ -49,8 +49,35 @@ from browser_skill.console.instance import (
 from browser_skill.errors import ErrorCode, SkillError
 from browser_skill.models import SkillRequest, SkillResponse
 from browser_skill.outputs.paths import contained_path, safe_filename
-from browser_skill.platform.probe import probe_adapter
+from browser_skill.platform.probe import PlatformProbeReport, probe_adapter
 from browser_skill.runtime.batch import batch_stats_from_payload
+
+
+def _teach_setup_step(report: PlatformProbeReport, *, engine: str) -> SetupStep:
+    missing = report.missing_recommended_operations
+    if not missing:
+        return SetupStep(
+            key="teach",
+            title="向导录制能力",
+            ok=True,
+            detail="点选、列表导航、展开步骤与网络监听可用",
+        )
+    shown = ", ".join(missing[:5])
+    if len(missing) > 5:
+        shown += f" 等 {len(missing)} 项"
+    action = "switch_to_playwright" if engine == "chrome-use" else None
+    return SetupStep(
+        key="teach",
+        title="向导录制能力",
+        ok=False,
+        detail=(
+            f"缺少 Teach 操作：{shown}。"
+            "完整支持请使用 Playwright；Host 插件需实现 "
+            "fixtures/platform/minimum-contract.json 中的 recommended_operations。"
+        ),
+        action=action,
+    )
+
 
 T = TypeVar("T")
 
@@ -501,6 +528,7 @@ class ConsoleServer:
     def setup_status(self) -> dict[str, Any]:
         """Plain-language readiness checklist shown on the console home screen."""
         adapter = self.app.adapter
+        report: PlatformProbeReport | None = None
         if isinstance(adapter, PlaywrightAdapter):
             status = playwright_setup_status(skill_root=self.skill_root)
         elif isinstance(adapter, ChromeUseAdapter):
@@ -525,6 +553,9 @@ class ConsoleServer:
                     )
                 ],
             )
+        if report is None:
+            report = self.jobs.run_sync(lambda: probe_adapter(adapter, mode="local_cli"))
+        status.steps.append(_teach_setup_step(report, engine=status.engine))
         return asdict(status)
 
     def repair(self, action: str) -> dict[str, Any]:

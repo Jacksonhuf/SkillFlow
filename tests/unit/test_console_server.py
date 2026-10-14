@@ -201,6 +201,8 @@ def test_setup_status_and_repair_validation(console: ConsoleServer) -> None:
     assert setup["ready"] is True
     assert setup["headline"]
     assert setup["steps"] and all("title" in step for step in setup["steps"])
+    teach = next(step for step in setup["steps"] if step.get("key") == "teach")
+    assert teach["ok"] is True
 
     status, payload, _ = _call(
         console, "/api/setup/repair", method="POST", body={"action": "reboot"}
