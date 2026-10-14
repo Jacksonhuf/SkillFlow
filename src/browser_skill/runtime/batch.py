@@ -99,6 +99,39 @@ def _network_value(exchanges: Sequence[NetworkExchange], mapping: LearnedMapping
     return None
 
 
+def _element_display_text(element: dict[str, Any]) -> str | None:
+    raw = element.get("value")
+    if raw in (None, ""):
+        raw = element.get("text")
+    if raw in (None, ""):
+        return None
+    return str(raw).strip()
+
+
+def _frame_matches(element: dict[str, Any], want_frame: int | None) -> bool:
+    if want_frame is None:
+        return True
+    return element.get("frame_index") == want_frame
+
+
+def _element_field_value(element: dict[str, Any]) -> Any:
+    raw = element.get("value")
+    if raw not in (None, ""):
+        return raw
+    display = _element_display_text(element)
+    return display
+
+
+def _pick_sample_matches(display: str, sample: str) -> bool:
+    if not display or not sample:
+        return False
+    left, right = display.strip(), sample.strip()
+    if left == right:
+        return True
+    # Teach-time sample may be truncated (LearnedMapping.pick_sample max length).
+    return len(right) >= 8 and (left.startswith(right) or right.startswith(left))
+
+
 def _dom_ref_field_values(
     template: BrowserTemplate,
     fields: list[FieldSpec],
@@ -114,18 +147,27 @@ def _dom_ref_field_values(
         if not ref.startswith("@e"):
             continue
         want_frame = mapping.frame_index
+        matched: Any = None
         for element in snapshot.elements:
             el_ref = str(element.get("ref") or element.get("target") or "")
             if el_ref != ref:
                 continue
-            if want_frame is not None and element.get("frame_index") != want_frame:
+            if not _frame_matches(element, want_frame):
                 continue
-            raw = element.get("value")
-            if raw in (None, ""):
-                raw = element.get("text")
-            if raw not in (None, ""):
-                values[item.key] = raw
+            if _element_display_text(element) is not None:
+                matched = _element_field_value(element)
                 break
+        if matched is None and mapping.pick_sample:
+            sample = mapping.pick_sample
+            for element in snapshot.elements:
+                if not _frame_matches(element, want_frame):
+                    continue
+                display = _element_display_text(element)
+                if display is not None and _pick_sample_matches(display, sample):
+                    matched = _element_field_value(element)
+                    break
+        if matched is not None:
+            values[item.key] = matched
     return values
 
 

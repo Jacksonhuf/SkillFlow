@@ -309,6 +309,8 @@ class LearnedMapping(StrictModel):
     strategy: Literal["semantic", "table_header", "label_value", "dom_hint"]
     hints: list[str] = Field(min_length=1)
     frame_index: int | None = Field(default=None, ge=0)
+    # Pick Mode: sample text at teach time; used when @eN refs change after SPA re-render.
+    pick_sample: str | None = Field(default=None, max_length=200)
     confidence: float = Field(default=0.5, ge=0.0, le=1.0)
     preferred_source: AcquisitionSource | None = None
     endpoint_hint: str | None = Field(default=None, max_length=500)
