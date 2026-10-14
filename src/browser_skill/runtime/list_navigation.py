@@ -23,17 +23,48 @@ def snapshot_has_ref(snapshot: BrowserSnapshot, ref: str) -> bool:
     return False
 
 
+def _label_matches(display: str, sample: str) -> bool:
+    if not display or not sample:
+        return False
+    left, right = display.strip(), sample.strip()
+    if left == right:
+        return True
+    return len(right) >= 4 and (left.startswith(right) or right.startswith(left))
+
+
+def ref_for_label_on_snapshot(snapshot: BrowserSnapshot, label: str) -> str | None:
+    sample = label.strip()
+    if not sample:
+        return None
+    keys = ("text", "value", "aria_label", "title", "name", "placeholder")
+    for element in snapshot.elements:
+        for key in keys:
+            raw = element.get(key)
+            if raw in (None, ""):
+                continue
+            if _label_matches(str(raw), sample):
+                ref = element.get("ref") or element.get("target")
+                if ref:
+                    return str(ref)
+    return None
+
+
 async def resolve_navigation_target(
     adapter: BrowserAdapter,
     locator: LocatorService,
     snapshot: BrowserSnapshot,
     *,
     dom_ref: str | None,
+    label_sample: str | None,
     semantics: list[str],
     required: bool = True,
 ) -> str:
     if dom_ref and dom_ref.startswith("@e") and snapshot_has_ref(snapshot, dom_ref):
         return dom_ref
+    if label_sample:
+        by_label = ref_for_label_on_snapshot(snapshot, label_sample)
+        if by_label:
+            return by_label
     located = await locator.locate(adapter, snapshot, semantics, required=required)
     assert located is not None
     return located.target
@@ -102,6 +133,7 @@ async def navigate_list_to_detail(
         locator,
         snapshot,
         dom_ref=nav.search_input_ref,
+        label_sample=nav.search_input_label,
         semantics=nav.search_input_semantic,
     )
     filled = await adapter.fill(input_target, driver_value)
@@ -118,6 +150,7 @@ async def navigate_list_to_detail(
         locator,
         snapshot,
         dom_ref=nav.search_action_ref,
+        label_sample=nav.search_action_label,
         semantics=nav.search_action_semantic,
     )
     clicked = await adapter.click(action_target, observe=True)
@@ -136,6 +169,8 @@ async def navigate_list_to_detail(
     detail_target: str | None = None
     if nav.row_link_ref and snapshot_has_ref(current, nav.row_link_ref):
         detail_target = nav.row_link_ref
+    if detail_target is None and nav.row_link_label:
+        detail_target = ref_for_label_on_snapshot(current, nav.row_link_label)
     if detail_target is None:
         detail_target = detail_link_target(current, driver_value, nav.row_link_semantic)
     if detail_target is None:
@@ -144,6 +179,7 @@ async def navigate_list_to_detail(
             locator,
             current,
             dom_ref=None,
+            label_sample=nav.row_link_label,
             semantics=[f"{driver_value} {nav.row_link_semantic[0]}"],
         )
 

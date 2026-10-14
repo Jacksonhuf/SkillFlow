@@ -1047,6 +1047,9 @@
       list_nav_input_ref: (wz.listNav && wz.listNav.inputRef) || null,
       list_nav_action_ref: (wz.listNav && wz.listNav.actionRef) || null,
       list_nav_row_ref: (wz.listNav && wz.listNav.rowRef) || null,
+      list_nav_input_label: (wz.listNav && wz.listNav.input && wz.listNav.input[0]) || null,
+      list_nav_action_label: (wz.listNav && wz.listNav.action && wz.listNav.action[0]) || null,
+      list_nav_row_label: (wz.listNav && wz.listNav.row && wz.listNav.row[0]) || null,
       driver_prompt: selVars.length ? (wz.fields.find(f => f.source === 'url' && f.key === driver) || {}).name || null : '详情页地址',
       fields, attachments, attachment_expands, table: wzSelectedTable(), record_key: keyField ? [keyField.key] : [],
       run: {
