@@ -41,6 +41,21 @@ class ItemOutcome:
     error: dict[str, Any] | None = None
 
 
+def batch_stats_from_payload(payload: dict[str, Any]) -> dict[str, Any]:
+    """Recompute durable batch counters and failure_groups from ``batch.json`` body."""
+    driver = str(payload.get("driver_variable") or "value")
+    try:
+        progress = BatchProgress(
+            driver_variable=driver,
+            template_id=payload.get("template_id"),
+            items=[BatchItemState.model_validate(item) for item in payload.get("items") or []],
+        )
+    except Exception:
+        stats = payload.get("stats")
+        return stats if isinstance(stats, dict) else {}
+    return progress.stats()
+
+
 def build_progress(template: BrowserTemplate, items: list[BatchItem]) -> BatchProgress:
     driver = template.run.driver_variable
     assert driver is not None

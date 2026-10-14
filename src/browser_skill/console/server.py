@@ -50,6 +50,7 @@ from browser_skill.errors import ErrorCode, SkillError
 from browser_skill.models import SkillRequest, SkillResponse
 from browser_skill.outputs.paths import contained_path, safe_filename
 from browser_skill.platform.probe import probe_adapter
+from browser_skill.runtime.batch import batch_stats_from_payload
 
 T = TypeVar("T")
 
@@ -443,6 +444,9 @@ class ConsoleServer:
                     detail[name] = json.loads(path.read_text(encoding="utf-8"))
                 except (OSError, json.JSONDecodeError):
                     detail[name] = None
+        batch_payload = detail.get("batch")
+        if isinstance(batch_payload, dict):
+            batch_payload["stats"] = batch_stats_from_payload(batch_payload)
         run_path = workspace / "run.json"
         if run_path.is_file():
             try:

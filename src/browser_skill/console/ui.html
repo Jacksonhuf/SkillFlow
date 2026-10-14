@@ -264,6 +264,48 @@
   };
   const artifactLabel = (k) => ARTIFACT_LABELS[k] || k;
 
+  const BATCH_REASON_LABELS = {
+    pick_field_empty: '点选字段为空',
+    auth_required: '需要登录',
+    required_field_missing: '缺必填字段',
+    required_attachment_missing: '缺必填附件',
+    attachment_missing: '附件未齐',
+    rows_dropped: '表格行丢弃',
+  };
+  function batchReasonBuckets(reason) {
+    if (!reason) return ['unknown'];
+    return reason.split(';').map(part => part.split(':')[0].trim()).filter(Boolean);
+  }
+  function batchValuesForBucket(items, bucket) {
+    if (!items || !items.length) return [];
+    if (bucket === 'failed') return items.filter(i => i.status === 'failed').map(i => i.value);
+    return items.filter(i => {
+      if (i.status !== 'failed' && i.status !== 'partial') return false;
+      return batchReasonBuckets(i.reason).includes(bucket);
+    }).map(i => i.value);
+  }
+  function batchFailureGroups(items, stats) {
+    const fromStats = stats && stats.failure_groups;
+    if (fromStats && Object.keys(fromStats).length) return fromStats;
+    const groups = {};
+    for (const item of items || []) {
+      if (item.status !== 'failed' && item.status !== 'partial') continue;
+      for (const bucket of batchReasonBuckets(item.reason)) {
+        (groups[bucket] ||= []).push(item.value);
+      }
+    }
+    return groups;
+  }
+  function batchReasonLabel(code) {
+    return BATCH_REASON_LABELS[code] || code;
+  }
+  function launchBatchRetry(ctx, values, el) {
+    if (!ctx || !ctx.driver || !ctx.template_id || !values.length) return;
+    const variables = { ...(ctx.variables || {}), [ctx.driver]: values };
+    Object.keys(variables).forEach(k => { if (variables[k] === '***') delete variables[k]; });
+    submitJob({ action: ctx.action || 'run', template_id: ctx.template_id, variables }, el, { ...ctx, variables });
+  }
+
   async function api(path, opts = {}) {
     const res = await fetch(path, { ...opts, headers: { 'Content-Type': 'application/json', ...(opts.headers || {}) } });
     if (res.status === 401) {
@@ -322,10 +364,17 @@
     const items = (resp.data && resp.data.items) || (resp.data && resp.data.error && resp.data.error.details && resp.data.error.details.items);
     if (items) {
       html += `<div class="muted" style="margin-top:6px">批量：共 ${items.total} 条 · 成功 ${items.ok} · 部分 ${items.partial} · 失败 ${items.failed}${items.skipped ? ' · 已跳过 ' + items.skipped : ''}${items.pending ? ' · 未跑 ' + items.pending : ''}</div>`;
-      if (items.failure_groups && Object.keys(items.failure_groups).length) {
-        html += '<div class="muted" style="margin-top:4px">失败分类：' + Object.entries(items.failure_groups).map(([k, vals]) =>
-          `<span class="badge">${esc(k)}</span> ${vals.length} 条`
+      const failGroups = items.failure_groups && Object.keys(items.failure_groups).length
+        ? items.failure_groups : {};
+      if (Object.keys(failGroups).length) {
+        html += '<div class="muted" style="margin-top:4px">失败分类：' + Object.entries(failGroups).map(([k, vals]) =>
+          `<span class="badge" title="${esc(k)}">${esc(batchReasonLabel(k))}</span> ${vals.length} 条`
         ).join(' · ') + '</div>';
+      }
+      const pickEmpty = items.pick_field_empty_values || failGroups.pick_field_empty || [];
+      if (ctx && ctx.driver && ctx.template_id && pickEmpty.length) {
+        html += `<div class="row" style="margin-top:4px"><button class="btn secondary" id="retryPickEmptyBtn">重跑点选空列 ${pickEmpty.length} 条</button>`
+          + `<span class="muted">（含 partial，建议先 0.3.37+ 重新点选或试跑）</span></div>`;
       }
       if (items.failed_values && items.failed_values.length) {
         html += `<div class="row"><span class="muted">失败的编号：${esc(items.failed_values.slice(0, 20).join('、'))}${items.failed_values.length > 20 ? ' …' : ''}</span>`
@@ -347,10 +396,9 @@
     const rb = $('resumeBtn');
     if (rb) rb.onclick = () => submitJob({ action: 'resume', run_id: resp.run_id, variables: ctx && ctx.variables || {} }, el, ctx);
     const rf = $('retryFailedBtn');
-    if (rf) rf.onclick = () => {
-      const variables = { ...(ctx.variables || {}), [ctx.driver]: items.failed_values };
-      submitJob({ action: ctx.action || 'run', template_id: ctx.template_id, variables }, el, { ...ctx, variables });
-    };
+    if (rf) rf.onclick = () => launchBatchRetry(ctx, items.failed_values, el);
+    const rp = $('retryPickEmptyBtn');
+    if (rp) rp.onclick = () => launchBatchRetry(ctx, pickEmpty, el);
   }
   function progressText(action, p) {
     const phaseLabel = {
@@ -524,17 +572,35 @@
     }
     if (d.batch && d.batch.items) {
       const st = d.batch.stats || {};
+      const groups = batchFailureGroups(d.batch.items, st);
       const failed = d.batch.items.filter(i => i.status === 'failed').map(i => i.value);
+      const pickEmpty = st.pick_field_empty_values || groups.pick_field_empty || [];
       html += `<h4>批量明细 <span class="muted">共 ${d.batch.items.length} · 成功 ${st.ok ?? '-'} · 部分 ${st.partial ?? '-'} · 失败 ${st.failed ?? '-'}${st.skipped ? ' · 已跳过 ' + st.skipped : ''}</span></h4>`;
-      if (st.failure_groups && Object.keys(st.failure_groups).length) {
-        html += '<div class="notice warn" style="margin-top:6px"><div>按原因汇总（便于重跑）：</div><ul style="margin:4px 0 0 18px">'
-          + Object.entries(st.failure_groups).map(([k, vals]) =>
-            `<li><code>${esc(k)}</code> · ${vals.length} 条${vals.length <= 8 ? '：' + esc(vals.join('、')) : '（' + esc(vals.slice(0, 6).join('、')) + ' …）'}</li>`
+      if (Object.keys(groups).length) {
+        html += '<div class="notice warn" style="margin-top:6px"><div>按原因汇总（可分类重跑）：</div><ul style="margin:4px 0 0 18px">'
+          + Object.entries(groups).map(([k, vals]) =>
+            `<li><strong>${esc(batchReasonLabel(k))}</strong> <code class="muted">${esc(k)}</code> · ${vals.length} 条`
+            + (d.template_id ? ` <button type="button" class="btn secondary batch-retry-group" data-bucket="${esc(k)}">重跑</button>` : '')
+            + (vals.length <= 8 ? '：' + esc(vals.join('、')) : '（' + esc(vals.slice(0, 6).join('、')) + ' …）')
+            + '</li>'
           ).join('') + '</ul></div>';
       }
-      if (failed.length && d.template_id) html += `<div class="row" style="margin-top:0"><button class="btn secondary" id="runRetryBtn">只重跑失败的 ${failed.length} 条</button></div>`;
-      html += `<table><thead><tr><th>#</th><th>编号 / 地址</th><th>状态</th><th>记录</th><th>附件</th><th>原因</th></tr></thead><tbody>`
-        + d.batch.items.slice(0, 200).map(i => `<tr><td>${i.index + 1}</td><td><code>${esc(i.value)}</code></td><td><span class="badge ${i.status === 'ok' ? 'ok' : i.status === 'failed' ? 'bad' : i.status === 'partial' ? 'warn' : ''}">${esc(i.status)}</span></td><td>${i.record_count}</td><td>${i.file_count}</td><td class="muted">${esc(i.reason || (i.error && i.error.message) || '')}</td></tr>`).join('')
+      if (failed.length && d.template_id) {
+        html += `<div class="row" style="margin-top:0"><button class="btn secondary" id="runRetryBtn">只重跑失败的 ${failed.length} 条</button>`;
+        if (pickEmpty.length) html += `<button class="btn secondary" id="runRetryPickBtn">重跑点选空列 ${pickEmpty.length} 条</button>`;
+        html += '</div>';
+      } else if (pickEmpty.length && d.template_id) {
+        html += `<div class="row" style="margin-top:0"><button class="btn secondary" id="runRetryPickBtn">重跑点选空列 ${pickEmpty.length} 条</button></div>`;
+      }
+      const bucketKeys = Object.keys(groups);
+      if (bucketKeys.length) {
+        html += `<div class="row" style="margin:6px 0"><label class="muted">筛选原因 `
+          + `<select id="batchReasonFilter"><option value="">全部</option>`
+          + bucketKeys.map(k => `<option value="${esc(k)}">${esc(batchReasonLabel(k))}</option>`).join('')
+          + `</select></label></div>`;
+      }
+      html += `<table id="batchItemsTable"><thead><tr><th>#</th><th>编号 / 地址</th><th>状态</th><th>记录</th><th>附件</th><th>原因</th></tr></thead><tbody>`
+        + d.batch.items.slice(0, 200).map(i => `<tr data-reason-buckets="${esc(batchReasonBuckets(i.reason || (i.error && i.error.message) || '').join(','))}"><td>${i.index + 1}</td><td><code>${esc(i.value)}</code></td><td><span class="badge ${i.status === 'ok' ? 'ok' : i.status === 'failed' ? 'bad' : i.status === 'partial' ? 'warn' : ''}">${esc(i.status)}</span></td><td>${i.record_count}</td><td>${i.file_count}</td><td class="muted">${esc(i.reason || (i.error && i.error.message) || '')}</td></tr>`).join('')
         + '</tbody></table>';
       if (d.batch.items.length > 200) html += `<p class="muted">仅显示前 200 条。</p>`;
     }
@@ -546,14 +612,38 @@
       html += `<h4>数据预览</h4><table><thead><tr>${cols.map(c => `<th>${esc(c)}</th>`).join('')}</tr></thead><tbody>${d.records_preview.map(rw => `<tr>${cols.map(c => `<td>${esc(rw[c])}</td>`).join('')}</tr>`).join('')}</tbody></table>`;
     }
     $('runDetail').innerHTML = html; $('runDetail').classList.remove('hidden'); $('runDetail').scrollIntoView({ behavior: 'smooth' });
+    const runCtx = {
+      action: 'run',
+      template_id: d.template_id,
+      driver: d.batch && d.batch.driver_variable,
+      variables: d.variables || {},
+    };
     const retry = $('runRetryBtn');
     if (retry) retry.onclick = () => {
-      const failed = d.batch.items.filter(i => i.status === 'failed').map(i => i.value);
-      const driver = d.batch.driver_variable;
-      const variables = { ...(d.variables || {}), [driver]: failed };
-      Object.keys(variables).forEach(k => { if (variables[k] === '***') delete variables[k]; });
       const holder = document.createElement('div'); $('runDetail').prepend(holder);
-      submitJob({ action: 'run', template_id: d.template_id, variables }, holder, { action: 'run', variables, template_id: d.template_id, driver });
+      launchBatchRetry(runCtx, batchValuesForBucket(d.batch.items, 'failed'), holder);
+    };
+    const retryPick = $('runRetryPickBtn');
+    if (retryPick) retryPick.onclick = () => {
+      const holder = document.createElement('div'); $('runDetail').prepend(holder);
+      const pickVals = (d.batch.stats && d.batch.stats.pick_field_empty_values)
+        || batchValuesForBucket(d.batch.items, 'pick_field_empty');
+      launchBatchRetry(runCtx, pickVals, holder);
+    };
+    document.querySelectorAll('.batch-retry-group').forEach(btn => {
+      btn.onclick = () => {
+        const holder = document.createElement('div'); $('runDetail').prepend(holder);
+        launchBatchRetry(runCtx, batchValuesForBucket(d.batch.items, btn.dataset.bucket), holder);
+      };
+    });
+    const filter = $('batchReasonFilter');
+    if (filter) filter.onchange = () => {
+      const v = filter.value;
+      document.querySelectorAll('#batchItemsTable tbody tr').forEach(tr => {
+        if (!v) { tr.classList.remove('hidden'); return; }
+        const buckets = (tr.dataset.reasonBuckets || '').split(',').filter(Boolean);
+        tr.classList.toggle('hidden', !buckets.includes(v));
+      });
     };
   }
   $('refreshRuns').onclick = loadRuns;
