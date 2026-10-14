@@ -139,6 +139,33 @@ def _deliver_local(
     return {"type": "local", "ok": True, "target": str(destination), "copied": copied}
 
 
+def build_webhook_payload(
+    context: RunContext,
+    artifacts: dict[str, str],
+    analysis: dict[str, Any] | None,
+) -> dict[str, Any]:
+    payload: dict[str, Any] = {
+        "event": "run_finished",
+        "run_id": context.run_id,
+        "template": f"{context.template_id}@{context.template_version}",
+        "state": context.state.value,
+        "record_count": len(context.records),
+        "download_count": sum(
+            item.status == DownloadStatus.OK for item in context.downloaded_files
+        ),
+        "artifacts": artifacts,
+        "workspace": context.workspace.as_posix(),
+        "analysis": analysis,
+    }
+    if context.batch is not None:
+        stats = context.batch.stats()
+        payload["batch"] = {
+            "driver_variable": context.batch.driver_variable,
+            "stats": stats,
+        }
+    return payload
+
+
 def _deliver_webhook(
     channel: DeliveryChannelSpec,
     context: RunContext,
@@ -147,17 +174,7 @@ def _deliver_webhook(
 ) -> dict[str, Any]:
     if not channel.target.startswith(("http://", "https://")):
         return {"type": "webhook", "ok": False, "error": "target must be an http(s) URL"}
-    payload = {
-        "event": "run_finished",
-        "run_id": context.run_id,
-        "template": f"{context.template_id}@{context.template_version}",
-        "state": context.state.value,
-        "record_count": len(context.records),
-        "download_count": sum(item.status == "ok" for item in context.downloaded_files),
-        "artifacts": artifacts,
-        "workspace": context.workspace.as_posix(),
-        "analysis": analysis,
-    }
+    payload = build_webhook_payload(context, artifacts, analysis)
     try:
         status, _body = _post_json(channel.target, payload, timeout=_WEBHOOK_TIMEOUT_SECONDS)
     except (urllib.error.URLError, OSError, ValueError) as exc:
