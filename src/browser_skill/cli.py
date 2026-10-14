@@ -23,6 +23,7 @@ from browser_skill.interaction.variables import VariableResolver
 from browser_skill.models import BrowserTemplate, RunState
 from browser_skill.platform.acceptance import validate_acceptance_bundle
 from browser_skill.platform.probe import probe_adapter
+from browser_skill.runtime.batch import batch_summary_extra_lines
 from browser_skill.runtime.repair import RepairService
 from browser_skill.runtime.runner import Runner
 from browser_skill.runtime.teach import TeachCompiler
@@ -277,12 +278,13 @@ def _print_batch_summary(data: dict[str, Any]) -> None:
         f"  [cyan]↳[/cyan] 批量：共 {items.get('total', 0)} 条 · 成功 {items.get('ok', 0)}"
         f" · 部分 {items.get('partial', 0)} · 失败 {items.get('failed', 0)}"
     )
-    failed = items.get("failed_values") or []
-    if failed:
-        shown = ", ".join(str(value) for value in failed[:20])
-        more = f" …(+{len(failed) - 20})" if len(failed) > 20 else ""
-        console.print(f"  [yellow]失败的编号：[/yellow]{shown}{more}")
-        console.print("  [dim]只重跑失败项：再次运行并用 --var 传入以上编号[/dim]")
+    for line in batch_summary_extra_lines(items):
+        if line.startswith("  失败的编号") or line.startswith("  其余失败"):
+            console.print(f"  [yellow]{line.strip()}[/yellow]")
+        elif line.startswith("  重跑"):
+            console.print(f"  [dim]{line.strip()}[/dim]")
+        else:
+            console.print(f"  [cyan]↳[/cyan]{line[2:]}")
 
 
 @app.command()
