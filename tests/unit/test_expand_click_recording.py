@@ -4,7 +4,7 @@ import asyncio
 
 from browser_skill.app import BrowserSkillApp
 from browser_skill.browser.fake import FakeBrowserAdapter
-from browser_skill.models import CommandResult, SkillRequest
+from browser_skill.models import BrowserSnapshot, CommandResult, SkillRequest
 
 
 def test_probe_expand_clicks_start_and_stop(tmp_path) -> None:
@@ -39,3 +39,24 @@ def test_probe_expand_clicks_start_and_stop(tmp_path) -> None:
     )
     assert stopped.ok
     assert stopped.data["clicks"] == ["展开附件", "更多"]
+
+
+def test_probe_expand_clicks_start_reports_cross_origin_iframes(tmp_path) -> None:
+    adapter = FakeBrowserAdapter(
+        {
+            "snapshot": [
+                BrowserSnapshot(meta={"cross_origin_iframes": 2}),
+            ],
+        }
+    )
+    app = BrowserSkillApp(tmp_path / "templates", tmp_path / "runs", adapter)
+    started = asyncio.run(
+        app.handle(
+            SkillRequest(
+                action="probe_expand_clicks",
+                expand_click_recording="start",
+            )
+        )
+    )
+    assert started.ok
+    assert started.data.get("cross_origin_iframes") == 2

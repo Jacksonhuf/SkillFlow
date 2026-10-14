@@ -215,10 +215,20 @@ class BrowserSkillApp:
                         message="当前浏览器引擎不支持录制点击，请使用 Playwright 引擎",
                     )
                 result = await start()
+                expand_data: dict[str, Any] = (
+                    dict(result.data) if isinstance(result.data, dict) else {}
+                )
+                try:
+                    snapshot = await self.adapter.snapshot(interactive=True)
+                    expand_data["cross_origin_iframes"] = int(
+                        (snapshot.meta or {}).get("cross_origin_iframes") or 0
+                    )
+                except Exception:
+                    expand_data.setdefault("cross_origin_iframes", 0)
                 return SkillResponse(
                     ok=result.ok,
                     message="已开始录制：请在 Chrome 点击要展开的按钮，再点「结束录制」",
-                    data=result.data or {},
+                    data=expand_data,
                 )
             stop = getattr(self.adapter, "stop_expand_click_recording", None)
             if not callable(stop):

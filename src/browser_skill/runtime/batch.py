@@ -12,6 +12,7 @@ from urllib.parse import urlsplit
 from browser_skill.acquire.label_value import find_label_value, parse_label_values
 from browser_skill.acquire.network import endpoint_matches, resolve_scalar
 from browser_skill.acquire.tables import column_index, select_table, tables_from_snapshot
+from browser_skill.errors import SkillError
 from browser_skill.models import (
     AcquisitionSource,
     BatchItemState,
@@ -28,6 +29,25 @@ from browser_skill.models import (
 from browser_skill.runtime.detail import DetailCollector
 from browser_skill.runtime.probe_compiler import ROW_NO_KEY
 from browser_skill.runtime.url_batch import BatchItem
+
+_BATCH_FAILURE_STAGES = frozenset(
+    {
+        "list_navigation",
+        "locator",
+        "attachments",
+        "pick",
+        "dialog",
+    }
+)
+
+
+def batch_failure_reason(exc: SkillError) -> str:
+    """Stable batch.json ``reason`` token for console retry buckets."""
+    code = exc.code.value.removeprefix("E_").lower()
+    stage = (exc.stage or "").strip()
+    if stage and stage in _BATCH_FAILURE_STAGES:
+        return f"{stage}:{code}"
+    return exc.code.value
 
 
 @dataclass(slots=True)
