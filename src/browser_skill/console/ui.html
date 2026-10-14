@@ -599,7 +599,7 @@
       <td><input type="checkbox" data-f-sel="${i}" ${f.selected ? 'checked' : ''} style="width:auto"></td>
       <td><input data-f-name="${i}" value="${esc(f.name)}" style="max-width:220px"></td>
       <td><code>${esc(f.sample)}</code></td>
-      <td><span class="badge">${esc({ url: '地址变量', dom: '页面文字', network: '接口数据', table: '表格' }[f.source] || f.source)}</span> <span class="muted">${Math.round(f.confidence * 100)}%</span></td>
+      <td><span class="badge">${esc({ url: '地址变量', dom: '页面文字', network: '接口数据', table: '表格' }[f.source] || f.source)}</span>${f.dom_ref ? ' <span class="badge" title="' + esc(f.dom_ref) + '">点选</span>' : ''} <span class="muted">${Math.round(f.confidence * 100)}%</span></td>
       <td class="muted">${esc(f.type)}</td>
       <td><input type="radio" name="wzKey" data-f-key="${i}" ${f.isKey ? 'checked' : ''} style="width:auto"></td></tr>`;
     // Recommended candidates (visible on the page) are the main list; the rest is folded away
@@ -871,7 +871,7 @@
     const selVars = wz.vars.filter(v => v.selected);
     const driver = selVars.length ? selVars[0].name : 'detail_url';
     const keyField = wz.fields.find(f => f.isKey && f.selected);
-    const fields = wz.fields.filter(f => f.selected).map(f => ({ key: f.key, name: f.name, sample: f.sample, source: f.source, strategy: f.strategy, type: f.type, confidence: f.confidence, endpoint_hint: f.endpoint_hint, json_path: f.json_path, aliases: f.aliases || [], dom_ref: f.dom_ref || null }));
+    const fields = wz.fields.filter(f => f.selected).map(f => ({ key: f.key, name: f.name, sample: f.sample, source: f.source, strategy: f.strategy, type: f.type, confidence: f.confidence, endpoint_hint: f.endpoint_hint, json_path: f.json_path, aliases: f.aliases || [], dom_ref: f.dom_ref || null, frame_index: f.frame_index ?? null }));
     const attachments = wz.atts.filter(a => a.selected).map(a => ({
       key: a.key, name: a.name, count: a.count, types: a.types, sample_href: a.sample_href,
       confidence: a.confidence, source: a.source, endpoint_hint: a.endpoint_hint,

@@ -308,6 +308,7 @@ class LearnedMapping(StrictModel):
     page: SourcePage
     strategy: Literal["semantic", "table_header", "label_value", "dom_hint"]
     hints: list[str] = Field(min_length=1)
+    frame_index: int | None = Field(default=None, ge=0)
     confidence: float = Field(default=0.5, ge=0.0, le=1.0)
     preferred_source: AcquisitionSource | None = None
     endpoint_hint: str | None = Field(default=None, max_length=500)
@@ -685,6 +686,7 @@ class ProbeFieldCandidate(StrictModel):
     column: int | None = Field(default=None, ge=0)
     # Playwright pick mode: snapshot ref (e.g. @e12) for dom_hint extraction
     dom_ref: str | None = Field(default=None, max_length=32)
+    frame_index: int | None = Field(default=None, ge=0)
 
 
 class ProbeAttachmentCandidate(StrictModel):

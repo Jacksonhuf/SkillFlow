@@ -99,6 +99,36 @@ def _network_value(exchanges: Sequence[NetworkExchange], mapping: LearnedMapping
     return None
 
 
+def _dom_ref_field_values(
+    template: BrowserTemplate,
+    fields: list[FieldSpec],
+    snapshot: BrowserSnapshot,
+) -> dict[str, Any]:
+    """Values for fields taught via Pick Mode (@eN refs on snapshot elements)."""
+    values: dict[str, Any] = {}
+    for item in fields:
+        mapping = template.learned.field_mappings.get(item.key)
+        if mapping is None or mapping.strategy != "dom_hint" or not mapping.hints:
+            continue
+        ref = mapping.hints[0].strip()
+        if not ref.startswith("@e"):
+            continue
+        want_frame = mapping.frame_index
+        for element in snapshot.elements:
+            el_ref = str(element.get("ref") or element.get("target") or "")
+            if el_ref != ref:
+                continue
+            if want_frame is not None and element.get("frame_index") != want_frame:
+                continue
+            raw = element.get("value")
+            if raw in (None, ""):
+                raw = element.get("text")
+            if raw not in (None, ""):
+                values[item.key] = raw
+                break
+    return values
+
+
 def page_field_values(
     template: BrowserTemplate,
     fields: list[FieldSpec],
@@ -107,6 +137,7 @@ def page_field_values(
 ) -> dict[str, Any]:
     """Acquisition ladder for one detail page: structured elements → network JSON → text pairs."""
     values = DetailCollector._extract_fields(fields, snapshot)
+    values.update(_dom_ref_field_values(template, fields, snapshot))
     missing = [item for item in fields if values.get(item.key) in (None, "")]
     if not missing:
         return values
