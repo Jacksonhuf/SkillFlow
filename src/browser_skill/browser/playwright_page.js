@@ -312,12 +312,23 @@
     return el;
   };
   window.__ubsFieldPicks = [];
-  const docs = [document];
+  const docFrames = [{ doc: document, frameIndex: 0 }];
+  let nextFrame = 1;
   for (const iframe of document.querySelectorAll("iframe")) {
     try {
-      if (iframe.contentDocument) docs.push(iframe.contentDocument);
+      if (iframe.contentDocument) {
+        docFrames.push({ doc: iframe.contentDocument, frameIndex: nextFrame });
+        nextFrame += 1;
+      }
     } catch (_e) { /* cross-origin */ }
   }
+  const frameIndexFor = (el) => {
+    const owner = el && el.ownerDocument;
+    for (const entry of docFrames) {
+      if (entry.doc === owner) return entry.frameIndex;
+    }
+    return 0;
+  };
   const handler = (e) => {
     const el = pickTarget(e.target);
     if (!el) return;
@@ -326,22 +337,23 @@
     const ref = "@" + refOf(el);
     const text = valueText(el);
     const label = guessLabel(el);
+    const frame_index = frameIndexFor(el);
     const list = window.__ubsFieldPicks;
     const last = list[list.length - 1];
     if (last && last.ref === ref && last.text === text) return;
-    list.push({ ref, text, label });
+    list.push({ ref, text, label, frame_index });
     try {
       el.style.outline = "2px solid #6366f1";
       setTimeout(() => { el.style.outline = ""; }, 600);
     } catch (_e) { /* ignore */ }
   };
   window.__ubsFieldPickHandler = handler;
-  window.__ubsFieldPickDocs = docs;
-  for (const doc of docs) doc.addEventListener("click", handler, true);
+  window.__ubsFieldPickDocs = docFrames.map((entry) => entry.doc);
+  for (const entry of docFrames) entry.doc.addEventListener("click", handler, true);
   try {
     document.body.style.cursor = "crosshair";
   } catch (_e) { /* ignore */ }
-  return { started: true, frames: docs.length };
+  return { started: true, frames: docFrames.length };
 },
   stopFieldPickRecording: () => {
   const handler = window.__ubsFieldPickHandler;

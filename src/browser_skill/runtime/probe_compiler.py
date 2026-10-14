@@ -104,6 +104,7 @@ class ProbeDraftCompiler:
                         page=SourcePage.DETAIL,
                         strategy="dom_hint",
                         hints=[candidate.dom_ref],
+                        frame_index=candidate.frame_index,
                         confidence=max(candidate.confidence, 0.85),
                     )
                 else:

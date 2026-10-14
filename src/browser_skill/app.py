@@ -629,7 +629,7 @@ def _field_candidates_from_picks(picks: list[dict[str, Any]]) -> list[dict[str, 
         name = label or text[:40] or "字段"
         base = re.sub(r"[^a-z0-9]+", "_", name.casefold()).strip("_")
         if not base or not base[0].isalpha():
-            base = "field"
+            base = f"ref_{ref.lstrip('@')}" if ref.startswith("@e") else "field"
         base = base[:50]
         key = base
         suffix = 2
@@ -637,6 +637,8 @@ def _field_candidates_from_picks(picks: list[dict[str, Any]]) -> list[dict[str, 
             key = f"{base}_{suffix}"
             suffix += 1
         seen_keys.add(key)
+        frame_index = pick.get("frame_index")
+        frame = frame_index if isinstance(frame_index, int) and frame_index >= 0 else None
         fields.append(
             {
                 "key": key,
@@ -648,6 +650,7 @@ def _field_candidates_from_picks(picks: list[dict[str, Any]]) -> list[dict[str, 
                 "confidence": 0.92,
                 "recommended": True,
                 "dom_ref": ref,
+                "frame_index": frame,
             }
         )
     return fields

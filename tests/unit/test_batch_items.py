@@ -53,6 +53,36 @@ def _template(template_data: dict[str, Any], **run_overrides: Any) -> BrowserTem
     return BrowserTemplate.model_validate(data)
 
 
+def test_dom_hint_pick_ref_reads_snapshot_element(template_data: dict[str, Any]) -> None:
+    template = _template(template_data)
+    data = template.model_dump(mode="json")
+    data["target"]["fields"].append(
+        {
+            "key": "ref_e9",
+            "name": "客户",
+            "type": "string",
+            "required": True,
+            "semantic": ["客户"],
+        }
+    )
+    data["learned"]["field_mappings"]["ref_e9"] = {
+        "page": "detail",
+        "strategy": "dom_hint",
+        "hints": ["@e9"],
+        "frame_index": 0,
+        "confidence": 0.9,
+    }
+    template = BrowserTemplate.model_validate(data)
+    snapshot = BrowserSnapshot(
+        elements=[{"ref": "@e9", "text": "ACME Corp", "frame_index": 0}],
+    )
+
+    records = extract_item_records(template, "order_no", "ORD-0001", snapshot)
+
+    assert records[0]["ref_e9"] == "ACME Corp"
+    assert records[0]["order_no"] == "ORD-0001"
+
+
 def test_single_page_record_is_stamped_with_driver_value(template_data: dict[str, Any]) -> None:
     template = _template(template_data)
     snapshot = BrowserSnapshot(elements=[{"label": "客户", "value": "ACME"}])

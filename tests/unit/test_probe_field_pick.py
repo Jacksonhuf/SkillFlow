@@ -15,7 +15,7 @@ def test_field_candidates_from_picks_assigns_dom_ref() -> None:
     )
     assert len(fields) == 1
     assert fields[0]["name"] == "金额"
-    assert fields[0]["key"] == "field"
+    assert fields[0]["key"] == "ref_e3"
     assert fields[0]["dom_ref"] == "@e3"
     assert fields[0]["recommended"] is True
 
