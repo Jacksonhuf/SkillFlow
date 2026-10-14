@@ -77,13 +77,12 @@ async def probe_adapter(
     else:
         missing_operations = []
 
-    if mode == "platform_tool":
-        if operations is None:
-            missing_recommended_operations = list(recommended_operations)
-        else:
-            missing_recommended_operations = [
-                name for name in recommended_operations if not bool(operations.get(name))
-            ]
+    if operations is not None:
+        missing_recommended_operations = [
+            name for name in recommended_operations if not bool(operations.get(name))
+        ]
+    elif mode == "platform_tool":
+        missing_recommended_operations = list(recommended_operations)
     else:
         missing_recommended_operations = []
 

@@ -33,6 +33,35 @@ from browser_skill.models import BrowserCapabilities, BrowserSnapshot, CommandRe
 
 _REF_ATTR = "data-ubs-ref"
 _REF_PREFIX = "@"
+
+_PLAYWRIGHT_OPERATIONS: dict[str, bool] = {
+    "status": True,
+    "capabilities": True,
+    "open": True,
+    "snapshot": True,
+    "find": True,
+    "click": True,
+    "fill": True,
+    "type": True,
+    "actions": True,
+    "do": True,
+    "download": True,
+    "downloads": True,
+    "tab.list": True,
+    "tab.adopt": True,
+    "dialog.status": True,
+    "dialog.accept": True,
+    "dialog.dismiss": True,
+    "session.list": True,
+    "network.list": True,
+    "screenshot": True,
+    "probe.record_start": True,
+    "probe.record_stop": True,
+    "probe.pick_start": True,
+    "probe.pick_stop": True,
+    "probe.list_nav_start": True,
+    "probe.list_nav_stop": True,
+}
 _MAX_TEXT_CHARS = 20_000
 _MAX_ELEMENTS = 800
 _MAX_TABLES = 6
@@ -463,6 +492,7 @@ class PlaywrightAdapter:
         payload = (await self.capabilities()).model_dump(mode="json")
         payload["engine"] = "playwright"
         payload["mode"] = self.mode
+        payload["operations"] = dict(_PLAYWRIGHT_OPERATIONS)
         return payload
 
     async def open(self, url: str) -> CommandResult:
