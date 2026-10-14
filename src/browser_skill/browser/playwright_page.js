@@ -97,13 +97,33 @@
       pushElement(item);
     }
   };
+  const collectStamped = (root, frameIndex) => {
+    const stamped = root.querySelectorAll("[" + REF + "]");
+    for (const el of stamped) {
+      if (out.elements.length >= MAX) break;
+      if (!visible(el)) continue;
+      const attr = el.getAttribute(REF);
+      if (!attr) continue;
+      const item = { ref: "@" + attr, role: roleOf(el), text: label(el) };
+      if (frameIndex) item.frame_index = frameIndex;
+      if ("value" in el && typeof el.value === "string" && el.type !== "password") {
+        item.value = el.value.slice(0, 200);
+      }
+      pushElement(item);
+    }
+  };
   collectInteractive(document, 0);
+  collectStamped(document, 0);
   let frameIndex = 1;
   for (const iframe of document.querySelectorAll("iframe")) {
     if (!visible(iframe)) continue;
     let doc = null;
     try { doc = iframe.contentDocument; } catch (_e) { doc = null; }
-    if (doc && doc.body) collectInteractive(doc, frameIndex++);
+    if (doc && doc.body) {
+      collectInteractive(doc, frameIndex);
+      collectStamped(doc, frameIndex);
+      frameIndex += 1;
+    }
     const rawSrc = (iframe.getAttribute("src") || iframe.src || "").trim();
     if (!rawSrc || rawSrc === "about:blank") continue;
     let abs = rawSrc;
