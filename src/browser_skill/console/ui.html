@@ -1219,8 +1219,14 @@
     $('doctorSummary').innerHTML = '<span class="muted">检测中…</span>';
     try {
       const r = await api('/api/doctor'); const d = r.doctor;
+      let teachGap = '';
+      const missOps = (d.missing_recommended_operations || []).length;
+      const missFlags = (d.missing_recommended_flags || []).length;
+      if (missOps || missFlags) {
+        teachGap = ` · <span class="muted">向导推荐能力缺 ${missFlags ? missFlags + ' 项 flag' : ''}${missFlags && missOps ? '、' : ''}${missOps ? missOps + ' 项 teach 操作' : ''}</span>`;
+      }
       $('doctorSummary').innerHTML = `<div class="notice ${d.ready ? 'ok' : 'bad'}">${d.ready ? '环境就绪' : '环境未就绪'} · 连接 ${d.status_ok ? '在线' : '离线'}` +
-        (d.chrome_use_executable ? ` · <code>${esc(d.chrome_use_executable)}</code>` : '') + '</div>';
+        (d.chrome_use_executable ? ` · <code>${esc(d.chrome_use_executable)}</code>` : '') + teachGap + '</div>';
       $('doctorOut').classList.remove('hidden'); $('doctorOut').textContent = d.text || JSON.stringify(d, null, 2);
     } catch (e) { $('doctorSummary').innerHTML = `<div class="notice bad">${esc(e.message)}</div>`; }
     const m = await api('/api/meta'); $('metaOut').classList.remove('hidden'); $('metaOut').textContent = JSON.stringify(m.meta, null, 2);
