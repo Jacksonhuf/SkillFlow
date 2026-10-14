@@ -61,6 +61,50 @@ class ItemOutcome:
     error: dict[str, Any] | None = None
 
 
+_BATCH_FAILURE_LABELS: dict[str, str] = {
+    "pick_field_empty": "点选字段为空",
+    "list_navigation": "列表搜索/进详情",
+    "auth_required": "需要登录",
+    "required_field_missing": "缺必填字段",
+    "required_attachment_missing": "缺必填附件",
+    "attachment_missing": "附件未齐",
+}
+
+
+def batch_summary_extra_lines(items: dict[str, Any]) -> list[str]:
+    """Human-readable batch retry hints for CLI and agents."""
+    lines: list[str] = []
+    groups = items.get("failure_groups") or {}
+    if groups:
+        parts: list[str] = []
+        for key, vals in sorted(groups.items()):
+            if not vals:
+                continue
+            label = _BATCH_FAILURE_LABELS.get(key, key)
+            parts.append(f"{label} {len(vals)}")
+        if parts:
+            lines.append("  失败分类：" + " · ".join(parts))
+    pick_empty = items.get("pick_field_empty_values") or groups.get("pick_field_empty") or []
+    list_nav = items.get("list_navigation_failure_values") or groups.get("list_navigation") or []
+    failed = items.get("failed_values") or []
+
+    def _value_tail(values: list[Any], limit: int = 15) -> str:
+        shown = ", ".join(str(value) for value in values[:limit])
+        more = f" …(+{len(values) - limit})" if len(values) > limit else ""
+        return f"{shown}{more}"
+
+    if pick_empty:
+        lines.append(f"  重跑点选空列：run <模板> --var 传入 {_value_tail(pick_empty)}")
+    if list_nav:
+        lines.append(f"  重跑列表进详情失败：run <模板> --var 传入 {_value_tail(list_nav)}")
+    if failed and not (pick_empty or list_nav):
+        lines.append(f"  失败的编号：{_value_tail(failed, 20)}")
+        lines.append("  只重跑失败项：再次 run 并用 --var 传入以上编号")
+    elif failed and (pick_empty or list_nav):
+        lines.append("  其余失败编号：" + _value_tail(failed, 20))
+    return lines
+
+
 def batch_stats_from_payload(payload: dict[str, Any]) -> dict[str, Any]:
     """Recompute durable batch counters and failure_groups from ``batch.json`` body."""
     driver = str(payload.get("driver_variable") or "value")
