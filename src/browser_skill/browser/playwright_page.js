@@ -253,5 +253,111 @@
   const clicks = Array.isArray(window.__ubsRecordedClicks) ? window.__ubsRecordedClicks.slice() : [];
   window.__ubsRecordedClicks = [];
   return { clicks };
+},
+  startFieldPickRecording: (args) => {
+  const REF = args.refAttr;
+  let counter = Number(document.documentElement.getAttribute(REF + "-counter") || 0);
+  const refOf = (el) => {
+    let ref = el.getAttribute(REF);
+    if (!ref) {
+      counter += 1;
+      ref = "e" + counter;
+      el.setAttribute(REF, ref);
+      document.documentElement.setAttribute(REF + "-counter", String(counter));
+    }
+    return ref;
+  };
+  const guessLabel = (el) => {
+    const td = el.closest("td,[role='cell']");
+    if (td) {
+      const row = td.closest("tr,[role='row']");
+      if (row) {
+        const cells = Array.from(row.children);
+        const idx = cells.indexOf(td);
+        if (idx > 0) {
+          const prev = cells[idx - 1];
+          const t = (prev.innerText || "").trim().replace(/\s+/g, " ");
+          if (t && t.length <= 40 && !/^\d+$/.test(t)) return t.replace(/[:：]\s*$/, "");
+        }
+      }
+    }
+    const dd = el.closest("dd");
+    if (dd && dd.previousElementSibling) {
+      const dt = dd.previousElementSibling;
+      if (dt.tagName && dt.tagName.toLowerCase() === "dt") {
+        return (dt.innerText || "").trim().replace(/[:：]\s*$/, "");
+      }
+    }
+    const labelled = el.getAttribute("aria-labelledby");
+    if (labelled) {
+      const lab = document.getElementById(labelled);
+      if (lab) return (lab.innerText || "").trim().replace(/[:：]\s*$/, "");
+    }
+    return "";
+  };
+  const valueText = (el) => {
+    const raw = (el.innerText || el.value || el.getAttribute("value") || "").trim().replace(/\s+/g, " ");
+    return raw.slice(0, 200);
+  };
+  const pickTarget = (target) => {
+    if (!target || target.nodeType !== 1) return null;
+    const skip = target.closest("button,a,[role='button'],[role='tab'],script,style");
+    if (skip && skip !== target) {
+      const t = valueText(skip);
+      if (t.length <= 24) return pickTarget(skip.parentElement);
+    }
+    const el = target.closest("td,dd,span,div,p,li,label,[role='cell'],[data-testid]") || target;
+    const text = valueText(el);
+    if (!text || text.length < 1) return null;
+    return el;
+  };
+  window.__ubsFieldPicks = [];
+  const docs = [document];
+  for (const iframe of document.querySelectorAll("iframe")) {
+    try {
+      if (iframe.contentDocument) docs.push(iframe.contentDocument);
+    } catch (_e) { /* cross-origin */ }
+  }
+  const handler = (e) => {
+    const el = pickTarget(e.target);
+    if (!el) return;
+    e.preventDefault();
+    e.stopPropagation();
+    const ref = "@" + refOf(el);
+    const text = valueText(el);
+    const label = guessLabel(el);
+    const list = window.__ubsFieldPicks;
+    const last = list[list.length - 1];
+    if (last && last.ref === ref && last.text === text) return;
+    list.push({ ref, text, label });
+    try {
+      el.style.outline = "2px solid #6366f1";
+      setTimeout(() => { el.style.outline = ""; }, 600);
+    } catch (_e) { /* ignore */ }
+  };
+  window.__ubsFieldPickHandler = handler;
+  window.__ubsFieldPickDocs = docs;
+  for (const doc of docs) doc.addEventListener("click", handler, true);
+  try {
+    document.body.style.cursor = "crosshair";
+  } catch (_e) { /* ignore */ }
+  return { started: true, frames: docs.length };
+},
+  stopFieldPickRecording: () => {
+  const handler = window.__ubsFieldPickHandler;
+  const docs = window.__ubsFieldPickDocs || [document];
+  if (handler) {
+    for (const doc of docs) {
+      try { doc.removeEventListener("click", handler, true); } catch (_e) {}
+    }
+  }
+  window.__ubsFieldPickHandler = null;
+  window.__ubsFieldPickDocs = null;
+  try {
+    document.body.style.cursor = "";
+  } catch (_e) { /* ignore */ }
+  const picks = Array.isArray(window.__ubsFieldPicks) ? window.__ubsFieldPicks.slice() : [];
+  window.__ubsFieldPicks = [];
+  return { picks };
 }
 })

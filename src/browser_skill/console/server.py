@@ -64,6 +64,7 @@ _SYNC_ACTIONS = {
     "create",
     "create_from_probe",
     "probe_expand_clicks",
+    "probe_field_pick",
     "publish",
     "validate_acceptance",
 }

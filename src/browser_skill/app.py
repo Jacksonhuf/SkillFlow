@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import asdict
 from pathlib import Path
 from typing import Any
@@ -230,6 +231,44 @@ class BrowserSkillApp:
                 ok=result.ok,
                 message=f"录制结束，共 {len(clicks)} 个步骤",
                 data={"clicks": clicks},
+            )
+        if request.action == "probe_field_pick":
+            mode = request.field_pick_recording
+            if mode not in {"start", "stop"}:
+                return SkillResponse(ok=False, message="需要 field_pick_recording: start 或 stop")
+            await self.runner.ensure_browser_ready()
+            if mode == "start":
+                if request.url:
+                    opened = await self.adapter.open(request.url.strip())
+                    if not opened.ok:
+                        return SkillResponse(
+                            ok=False,
+                            message="无法打开示例页面，请检查地址或先在 Chrome 登录",
+                        )
+                start = getattr(self.adapter, "start_field_pick_recording", None)
+                if not callable(start):
+                    return SkillResponse(
+                        ok=False,
+                        message="当前浏览器引擎不支持点选字段，请使用 Playwright 引擎",
+                    )
+                result = await start()
+                return SkillResponse(
+                    ok=result.ok,
+                    message="点选模式已开启：在 Chrome 里点击要采集的字段值，再点「结束点选」",
+                    data=result.data or {},
+                )
+            stop = getattr(self.adapter, "stop_field_pick_recording", None)
+            if not callable(stop):
+                return SkillResponse(ok=False, message="当前浏览器引擎不支持点选字段")
+            result = await stop()
+            raw_picks: list[dict[str, Any]] = []
+            if isinstance(result.data, dict) and isinstance(result.data.get("picks"), list):
+                raw_picks = [item for item in result.data["picks"] if isinstance(item, dict)]
+            fields = _field_candidates_from_picks(raw_picks)
+            return SkillResponse(
+                ok=result.ok,
+                message=f"点选结束，识别 {len(fields)} 个字段",
+                data={"picks": raw_picks, "fields": fields},
             )
         if request.action == "probe_url":
             if not request.url:
@@ -576,6 +615,42 @@ class BrowserSkillApp:
         response.data["sample_alignment"] = data
         if not report.aligned and response.ok:
             response.message = f"{response.message}；样例比对发现 {len(report.issues)} 个差异"
+
+
+def _field_candidates_from_picks(picks: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    seen_keys: set[str] = set()
+    fields: list[dict[str, Any]] = []
+    for pick in picks:
+        ref = str(pick.get("ref") or "").strip()
+        if not ref.startswith("@e"):
+            continue
+        text = str(pick.get("text") or "").strip()
+        label = str(pick.get("label") or "").strip()
+        name = label or text[:40] or "字段"
+        base = re.sub(r"[^a-z0-9]+", "_", name.casefold()).strip("_")
+        if not base or not base[0].isalpha():
+            base = "field"
+        base = base[:50]
+        key = base
+        suffix = 2
+        while key in seen_keys:
+            key = f"{base}_{suffix}"
+            suffix += 1
+        seen_keys.add(key)
+        fields.append(
+            {
+                "key": key,
+                "name": name[:100],
+                "sample": text,
+                "source": "dom",
+                "strategy": "label_value",
+                "type": "string",
+                "confidence": 0.92,
+                "recommended": True,
+                "dom_ref": ref,
+            }
+        )
+    return fields
 
 
 def parse_variables(items: list[str]) -> dict[str, Any]:

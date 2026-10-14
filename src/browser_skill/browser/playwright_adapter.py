@@ -801,6 +801,23 @@ class PlaywrightAdapter:
 
         return await self._guarded("probe.record_stop", action)
 
+    async def start_field_pick_recording(self) -> CommandResult:
+        async def action() -> Any:
+            page = await self._ensure()
+            return await page.evaluate(
+                _page_script("startFieldPickRecording"),
+                {"refAttr": _REF_ATTR},
+            )
+
+        return await self._guarded("probe.pick_start", action)
+
+    async def stop_field_pick_recording(self) -> CommandResult:
+        async def action() -> Any:
+            page = await self._ensure()
+            return await page.evaluate(_page_script("stopFieldPickRecording"))
+
+        return await self._guarded("probe.pick_stop", action)
+
     def _page_network_entries(self, page: Any) -> list[dict[str, Any]]:
         page_id = id(page)
         return [dict(entry) for entry in self._network if entry.get("page_id", 0) == page_id]

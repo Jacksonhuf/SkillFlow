@@ -99,12 +99,20 @@ class ProbeDraftCompiler:
                     json_path=candidate.json_path,
                 )
             elif candidate.source in {"dom", "table"}:
-                learned.field_mappings[candidate.key] = LearnedMapping(
-                    page=SourcePage.DETAIL,
-                    strategy="label_value" if candidate.source == "dom" else "table_header",
-                    hints=semantic,
-                    confidence=candidate.confidence,
-                )
+                if candidate.source == "dom" and candidate.dom_ref:
+                    learned.field_mappings[candidate.key] = LearnedMapping(
+                        page=SourcePage.DETAIL,
+                        strategy="dom_hint",
+                        hints=[candidate.dom_ref],
+                        confidence=max(candidate.confidence, 0.85),
+                    )
+                else:
+                    learned.field_mappings[candidate.key] = LearnedMapping(
+                        page=SourcePage.DETAIL,
+                        strategy="label_value" if candidate.source == "dom" else "table_header",
+                        hints=semantic,
+                        confidence=candidate.confidence,
+                    )
         if driver not in seen:
             # The driver value is stamped on every record by the runner; declare it so it can
             # be the record key and appear in the output.
