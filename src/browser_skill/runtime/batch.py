@@ -269,6 +269,33 @@ def table_rows(template: BrowserTemplate, snapshot: BrowserSnapshot) -> list[dic
     return rows
 
 
+def empty_dom_hint_field_keys(
+    template: BrowserTemplate,
+    fields: list[FieldSpec],
+    record: dict[str, Any],
+) -> list[str]:
+    """Field keys taught via Pick Mode (@eN dom_hint) that are empty on this record."""
+    missing: list[str] = []
+    for item in fields:
+        mapping = template.learned.field_mappings.get(item.key)
+        if mapping is None or mapping.strategy != "dom_hint" or not mapping.hints:
+            continue
+        ref = str(mapping.hints[0]).strip()
+        if not ref.startswith("@e"):
+            continue
+        if record.get(item.key) in (None, ""):
+            missing.append(item.key)
+    return missing
+
+
+def _merge_reason(base: str | None, extra: str) -> str:
+    if not base:
+        return extra
+    if extra in base:
+        return base
+    return f"{base};{extra}"
+
+
 def classify_item(
     template: BrowserTemplate,
     records: list[dict[str, Any]],
@@ -308,7 +335,21 @@ def classify_item(
         )
     optional_failed = any(item.status != DownloadStatus.OK for item in files)
     dropped = len(records) - len(kept)
+    fields = list(template.target.fields)
+    pick_empty: set[str] = set()
+    for record in kept:
+        pick_empty.update(empty_dom_hint_field_keys(template, fields, record))
+    pick_reason = (
+        "pick_field_empty:" + ",".join(sorted(pick_empty)) if pick_empty else None
+    )
+
     if optional_failed or dropped:
         reason = "attachment_missing" if optional_failed else f"rows_dropped:{dropped}"
+        if pick_reason:
+            reason = _merge_reason(reason, pick_reason)
         return ItemOutcome(status=BatchItemStatus.PARTIAL, records=kept, files=files, reason=reason)
+    if pick_reason:
+        return ItemOutcome(
+            status=BatchItemStatus.PARTIAL, records=kept, files=files, reason=pick_reason
+        )
     return ItemOutcome(status=BatchItemStatus.OK, records=kept, files=files)

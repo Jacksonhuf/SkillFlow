@@ -322,6 +322,11 @@
     const items = (resp.data && resp.data.items) || (resp.data && resp.data.error && resp.data.error.details && resp.data.error.details.items);
     if (items) {
       html += `<div class="muted" style="margin-top:6px">批量：共 ${items.total} 条 · 成功 ${items.ok} · 部分 ${items.partial} · 失败 ${items.failed}${items.skipped ? ' · 已跳过 ' + items.skipped : ''}${items.pending ? ' · 未跑 ' + items.pending : ''}</div>`;
+      if (items.failure_groups && Object.keys(items.failure_groups).length) {
+        html += '<div class="muted" style="margin-top:4px">失败分类：' + Object.entries(items.failure_groups).map(([k, vals]) =>
+          `<span class="badge">${esc(k)}</span> ${vals.length} 条`
+        ).join(' · ') + '</div>';
+      }
       if (items.failed_values && items.failed_values.length) {
         html += `<div class="row"><span class="muted">失败的编号：${esc(items.failed_values.slice(0, 20).join('、'))}${items.failed_values.length > 20 ? ' …' : ''}</span>`
           + (ctx && ctx.driver && ctx.template_id ? `<button class="btn secondary" id="retryFailedBtn">只重跑失败的 ${items.failed_values.length} 条</button>` : '') + '</div>';
@@ -521,6 +526,12 @@
       const st = d.batch.stats || {};
       const failed = d.batch.items.filter(i => i.status === 'failed').map(i => i.value);
       html += `<h4>批量明细 <span class="muted">共 ${d.batch.items.length} · 成功 ${st.ok ?? '-'} · 部分 ${st.partial ?? '-'} · 失败 ${st.failed ?? '-'}${st.skipped ? ' · 已跳过 ' + st.skipped : ''}</span></h4>`;
+      if (st.failure_groups && Object.keys(st.failure_groups).length) {
+        html += '<div class="notice warn" style="margin-top:6px"><div>按原因汇总（便于重跑）：</div><ul style="margin:4px 0 0 18px">'
+          + Object.entries(st.failure_groups).map(([k, vals]) =>
+            `<li><code>${esc(k)}</code> · ${vals.length} 条${vals.length <= 8 ? '：' + esc(vals.join('、')) : '（' + esc(vals.slice(0, 6).join('、')) + ' …）'}</li>`
+          ).join('') + '</ul></div>';
+      }
       if (failed.length && d.template_id) html += `<div class="row" style="margin-top:0"><button class="btn secondary" id="runRetryBtn">只重跑失败的 ${failed.length} 条</button></div>`;
       html += `<table><thead><tr><th>#</th><th>编号 / 地址</th><th>状态</th><th>记录</th><th>附件</th><th>原因</th></tr></thead><tbody>`
         + d.batch.items.slice(0, 200).map(i => `<tr><td>${i.index + 1}</td><td><code>${esc(i.value)}</code></td><td><span class="badge ${i.status === 'ok' ? 'ok' : i.status === 'failed' ? 'bad' : i.status === 'partial' ? 'warn' : ''}">${esc(i.status)}</span></td><td>${i.record_count}</td><td>${i.file_count}</td><td class="muted">${esc(i.reason || (i.error && i.error.message) || '')}</td></tr>`).join('')
@@ -828,7 +839,7 @@
     const missing = picked.filter(f => rows.every(rw => rw[f.key] == null || String(rw[f.key]).trim() === ''));
     if (!missing.length) return;
     const names = missing.map(f => f.name || f.key).join('、');
-    el.insertAdjacentHTML('beforeend', `<div class="notice bad" style="margin-top:8px">点选字段未出现在试跑结果中：${esc(names)}。请确认仍在同一详情页、元素未被 SPA 重绘，或改用页面文字/接口字段。</div>`);
+    el.insertAdjacentHTML('beforeend', `<div class="notice bad" style="margin-top:8px">点选字段未出现在试跑结果中：${esc(names)}。请确认仍在同一详情页；已发布模板在 0.3.35+ 会按点选样本文本回退匹配。仍为空时可重新点选并保存草稿，或改用页面文字/接口字段。</div>`);
   }
   $('wzExpandRecStart').onclick = async () => {
     const url = $('wzUrl').value.trim();

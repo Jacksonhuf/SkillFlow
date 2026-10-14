@@ -286,6 +286,59 @@ def test_classify_dropped_rows_is_partial(template_data: dict[str, Any]) -> None
     assert outcome.records == [good]
 
 
+def test_classify_empty_optional_pick_field_is_partial(template_data: dict[str, Any]) -> None:
+    template = _template(template_data)
+    data = template.model_dump(mode="json")
+    data["target"]["fields"].append(
+        {
+            "key": "ref_e9",
+            "name": "备注",
+            "type": "string",
+            "required": False,
+            "semantic": ["备注"],
+        }
+    )
+    data["learned"]["field_mappings"]["ref_e9"] = {
+        "page": "detail",
+        "strategy": "dom_hint",
+        "hints": ["@e9"],
+        "pick_sample": "note",
+        "confidence": 0.9,
+    }
+    template = BrowserTemplate.model_validate(data)
+    record = {"order_no": "ORD-0001", "customer": "ACME"}
+
+    outcome = classify_item(template, [record], [])
+
+    assert outcome.status == BatchItemStatus.PARTIAL
+    assert outcome.reason == "pick_field_empty:ref_e9"
+    assert outcome.records == [record]
+
+
+def test_batch_stats_failure_groups(template_data: dict[str, Any]) -> None:
+    batch = BatchProgress(
+        driver_variable="order_no",
+        items=[
+            BatchItemState(
+                index=0, value="A", url="u1", status=BatchItemStatus.FAILED, reason="auth_required"
+            ),
+            BatchItemState(
+                index=1, value="B", url="u2", status=BatchItemStatus.FAILED, reason="auth_required"
+            ),
+            BatchItemState(
+                index=2,
+                value="C",
+                url="u3",
+                status=BatchItemStatus.PARTIAL,
+                reason="pick_field_empty:ref_e9",
+            ),
+        ],
+    )
+    groups = batch.stats()["failure_groups"]
+    assert groups["auth_required"] == ["A", "B"]
+    assert groups["pick_field_empty"] == ["C"]
+
+
 def test_classify_clean_item_is_ok(template_data: dict[str, Any]) -> None:
     template = _template(template_data)
     record = {"order_no": "ORD-0001", "customer": "ACME"}

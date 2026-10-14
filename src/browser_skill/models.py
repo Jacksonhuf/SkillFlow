@@ -605,14 +605,24 @@ class BatchProgress(StrictModel):
 
     def stats(self) -> dict[str, Any]:
         counts = {status.value: 0 for status in BatchItemStatus}
+        failure_groups: dict[str, list[str]] = {}
         for item in self.items:
             counts[item.status.value] += 1
+            if item.status not in {BatchItemStatus.FAILED, BatchItemStatus.PARTIAL}:
+                continue
+            if not item.reason:
+                continue
+            segments = [part.strip() for part in item.reason.split(";") if part.strip()]
+            buckets = [segment.split(":", 1)[0] for segment in segments] or ["unknown"]
+            for bucket in buckets:
+                failure_groups.setdefault(bucket, []).append(item.value)
         return {
             "total": len(self.items),
             **counts,
             "failed_values": [
                 item.value for item in self.items if item.status == BatchItemStatus.FAILED
             ],
+            "failure_groups": failure_groups,
         }
 
 
