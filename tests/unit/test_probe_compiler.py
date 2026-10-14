@@ -279,3 +279,23 @@ def test_duplicate_candidate_keys_are_collapsed() -> None:
 
     assert [field.key for field in template.target.fields] == ["order_no", "amount"]
     assert template.target.attachments[0].multiple is False
+
+
+def test_dom_ref_field_mapping_stores_pick_sample() -> None:
+    draft = _draft(
+        fields=[
+            {
+                "key": "customer",
+                "name": "客户",
+                "sample": "ACME",
+                "source": "dom",
+                "dom_ref": "@e9",
+            }
+        ],
+        driver_prompt="订单号",
+    )
+    template = ProbeDraftCompiler().compile(draft, version=1)
+    mapping = template.learned.field_mappings["customer"]
+    assert mapping.strategy == "dom_hint"
+    assert mapping.hints == ["@e9"]
+    assert mapping.pick_sample == "ACME"
