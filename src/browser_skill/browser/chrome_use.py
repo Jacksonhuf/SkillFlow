@@ -215,6 +215,20 @@ class ChromeUseAdapter:
             safe_stderr="expand click recording requires Playwright engine",
         )
 
+    async def start_field_pick_recording(self) -> CommandResult:
+        return CommandResult(
+            ok=False,
+            operation="probe.pick_start",
+            safe_stderr="field pick requires Playwright engine",
+        )
+
+    async def stop_field_pick_recording(self) -> CommandResult:
+        return CommandResult(
+            ok=False,
+            operation="probe.pick_stop",
+            safe_stderr="field pick requires Playwright engine",
+        )
+
     async def screenshot(self) -> CommandResult:
         return await self._run(["screenshot", "--json"])
 
@@ -367,6 +381,20 @@ class ChromeUseToolAdapter:
             ok=False,
             operation="probe.record_stop",
             safe_stderr="expand click recording requires Playwright engine",
+        )
+
+    async def start_field_pick_recording(self) -> CommandResult:
+        return CommandResult(
+            ok=False,
+            operation="probe.pick_start",
+            safe_stderr="field pick requires Playwright engine",
+        )
+
+    async def stop_field_pick_recording(self) -> CommandResult:
+        return CommandResult(
+            ok=False,
+            operation="probe.pick_stop",
+            safe_stderr="field pick requires Playwright engine",
         )
 
     async def screenshot(self) -> CommandResult:

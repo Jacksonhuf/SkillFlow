@@ -683,6 +683,8 @@ class ProbeFieldCandidate(StrictModel):
     recommended: bool = False
     # Table columns only: position inside the table at teach time
     column: int | None = Field(default=None, ge=0)
+    # Playwright pick mode: snapshot ref (e.g. @e12) for dom_hint extraction
+    dom_ref: str | None = Field(default=None, max_length=32)
 
 
 class ProbeAttachmentCandidate(StrictModel):
@@ -821,10 +823,12 @@ class SkillRequest(StrictModel):
         "probe",
         "probe_url",
         "probe_expand_clicks",
+        "probe_field_pick",
         "create_from_probe",
         "validate_acceptance",
     ] = "start"
     expand_click_recording: Literal["start", "stop"] | None = None
+    field_pick_recording: Literal["start", "stop"] | None = None
     selector: str | int | None = None
     template_id: str | None = None
     run_id: str | None = None

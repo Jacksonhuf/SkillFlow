@@ -285,7 +285,7 @@ run(template, variables={order_no: [v1, v2, ...]})
 2. **信封键黑名单**：`code/msg/message/success/total/page*/size/current/timestamp/traceId/requestId/token/sign/version…`（camelCase 折叠成 snake_case 后比对）永不进入候选。
 3. **`recommended` 标记**：URL 变量、页面「标签：值」（冒号/Tab 配对，置信度 ≥0.8）、表格列、与页面同值的接口字段为 `true`；仅存在于接口返回、或「上下行猜测」的配对为 `false`。向导默认只勾选 `recommended`，其余折叠到「更多候选」（默认不勾）；CLI `probe` 用 ✓ 标出推荐项。
 
-后续方向（未做）：在目标页上鼠标点选字段（Pick Mode，依赖 Playwright 引擎的页内注入）。
+**Pick Mode（0.3.32+）**：向导步骤 2「开始点选字段」→ 在 Chrome 点击页面上的值 → 编译为 `dom_hint`（`@eN` 引用）。仅 Playwright。
 
 ### 5.5 记录行：把详情页里的表格每行输出为一条记录（v0.3.14）
 

@@ -184,6 +184,21 @@ class FakeBrowserAdapter:
 
         return await self._with_batch_lock(action)
 
+    async def start_field_pick_recording(self) -> CommandResult:
+        self.calls.append(("start_field_pick_recording", (), {}))
+        return CommandResult(ok=True, operation="probe.pick_start", data={"started": True})
+
+    async def stop_field_pick_recording(self) -> CommandResult:
+        self.calls.append(("stop_field_pick_recording", (), {}))
+        return self._take(
+            "field_pick",
+            CommandResult(
+                ok=True,
+                operation="probe.pick_stop",
+                data={"picks": [{"ref": "@e9", "text": "ACME", "label": "客户"}]},
+            ),
+        )
+
     @asynccontextmanager
     async def batch_page(self) -> AsyncIterator[None]:
         depth = _fake_batch_depth.get()

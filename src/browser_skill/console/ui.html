@@ -117,7 +117,14 @@
       <table><thead><tr><th></th><th>变量名（可改）</th><th>示例值</th><th>位置</th><th>置信度</th></tr></thead><tbody id="wzVarRows"></tbody></table>
       <label>URL 模板：运行时把 {变量} 换成每个编号；不勾选变量时需直接提供完整地址</label><input id="wzUrlTemplate">
       <h5 style="margin-top:14px">页面字段 <span class="muted">（表头信息：订单号、客户等，每条记录都会带上；主键用于命名附件和去重）</span></h5>
-      <div class="row" style="margin:4px 0 8px"><span id="wzFieldSummary" class="muted"></span><button class="btn secondary" id="wzOnlyRec" type="button" style="padding:2px 10px">只留推荐</button><button class="btn secondary" id="wzNone" type="button" style="padding:2px 10px">全不选</button></div>
+      <div class="row" style="margin:4px 0 8px;flex-wrap:wrap;gap:8px;align-items:center">
+        <span id="wzFieldSummary" class="muted"></span>
+        <button class="btn secondary" id="wzOnlyRec" type="button" style="padding:2px 10px">只留推荐</button>
+        <button class="btn secondary" id="wzNone" type="button" style="padding:2px 10px">全不选</button>
+        <button class="btn secondary" id="wzPickStart" type="button" style="padding:2px 10px">开始点选字段</button>
+        <button class="btn secondary hidden" id="wzPickStop" type="button" style="padding:2px 10px">结束点选</button>
+        <span id="wzPickHint" class="muted"></span>
+      </div>
       <table><thead><tr><th></th><th>名称（可改）</th><th>示例值</th><th>来源</th><th>类型</th><th>主键</th></tr></thead><tbody id="wzFieldRows"></tbody></table>
       <details id="wzMore" class="hidden" style="margin-top:8px"><summary class="muted" id="wzMoreSummary"></summary>
         <p class="muted" style="margin:6px 0">这些值只出现在接口返回里、或只是根据上下行猜测的配对，多数是系统字段或噪音；确认业务上确实需要时再勾选。</p>
@@ -781,6 +788,33 @@
     const columns = t.columns.filter(c => c.selected).map(c => ({ key: c.key, name: c.name, sample: c.sample, source: c.source, strategy: c.strategy, type: c.type, confidence: c.confidence, aliases: c.aliases || [], column: c.column }));
     return { index: t.index, title: t.title || '', headers: t.headers, columns };
   }
+  $('wzPickStart').onclick = async () => {
+    const url = $('wzUrl').value.trim();
+    if (!/^https?:\/\//i.test(url)) { alert('请先填写上方的示例地址'); return; }
+    const r = await post('/api/action', { action: 'probe_field_pick', field_pick_recording: 'start', url });
+    if (!r || !r.ok) { alert((r && r.message) || '无法开始点选'); return; }
+    $('wzPickStart').classList.add('hidden');
+    $('wzPickStop').classList.remove('hidden');
+    $('wzPickHint').textContent = '在 Chrome 里点击要采集的字段值（可多次），然后点「结束点选」。';
+  };
+  $('wzPickStop').onclick = async () => {
+    const r = await post('/api/action', { action: 'probe_field_pick', field_pick_recording: 'stop' });
+    $('wzPickStart').classList.remove('hidden');
+    $('wzPickStop').classList.add('hidden');
+    $('wzPickHint').textContent = '';
+    if (!r || !r.ok) { alert((r && r.message) || '点选失败'); return; }
+    const fields = (r.data && r.data.fields) || [];
+    for (const f of fields) {
+      const dup = wz.fields.find(x => x.dom_ref && x.dom_ref === f.dom_ref);
+      if (dup) { dup.selected = true; continue; }
+      const keyClash = wz.fields.some(x => x.key === f.key);
+      const field = { ...f, selected: true, isKey: false, recommended: true };
+      if (keyClash) field.key = slug(field.name || f.key) + '_' + Date.now().toString(36).slice(-4);
+      wz.fields.push(field);
+    }
+    wzRender();
+    if (fields.length) $('wzPickHint').textContent = `已加入 ${fields.length} 个点选字段。`;
+  };
   $('wzExpandRecStart').onclick = async () => {
     const url = $('wzUrl').value.trim();
     if (!/^https?:\/\//i.test(url)) { alert('请先填写上方的示例地址'); return; }
@@ -837,7 +871,7 @@
     const selVars = wz.vars.filter(v => v.selected);
     const driver = selVars.length ? selVars[0].name : 'detail_url';
     const keyField = wz.fields.find(f => f.isKey && f.selected);
-    const fields = wz.fields.filter(f => f.selected).map(f => ({ key: f.key, name: f.name, sample: f.sample, source: f.source, strategy: f.strategy, type: f.type, confidence: f.confidence, endpoint_hint: f.endpoint_hint, json_path: f.json_path, aliases: f.aliases || [] }));
+    const fields = wz.fields.filter(f => f.selected).map(f => ({ key: f.key, name: f.name, sample: f.sample, source: f.source, strategy: f.strategy, type: f.type, confidence: f.confidence, endpoint_hint: f.endpoint_hint, json_path: f.json_path, aliases: f.aliases || [], dom_ref: f.dom_ref || null }));
     const attachments = wz.atts.filter(a => a.selected).map(a => ({
       key: a.key, name: a.name, count: a.count, types: a.types, sample_href: a.sample_href,
       confidence: a.confidence, source: a.source, endpoint_hint: a.endpoint_hint,
