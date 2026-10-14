@@ -350,6 +350,7 @@ def test_batch_stats_groups_list_navigation_failures() -> None:
     )
     groups = batch.stats()["failure_groups"]
     assert groups["list_navigation"] == ["ORD-1", "ORD-2"]
+    assert batch.stats()["list_navigation_failure_values"] == ["ORD-1", "ORD-2"]
 
 
 def test_batch_stats_failure_groups(template_data: dict[str, Any]) -> None:
