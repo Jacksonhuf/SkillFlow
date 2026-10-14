@@ -533,6 +533,60 @@ def repair_candidate(
     )
 
 
+@app.command("retry-batch")
+def retry_batch(
+    run_id: str,
+    bucket: Annotated[
+        str | None,
+        typer.Option(
+            "--bucket",
+            help="failure_groups key: failed, pick_field_empty, list_navigation, …",
+        ),
+    ] = None,
+    root: Annotated[Path, typer.Option("--root")] = Path("templates"),
+    runs_root: Annotated[Path, typer.Option("--runs-root")] = Path("runs"),
+    executable: Annotated[str, typer.Option(help="chrome-use executable")] = "chrome-use",
+) -> None:
+    """Re-run a batch template using driver values from a prior run's batch.json."""
+    from browser_skill.app import BrowserSkillApp
+    from browser_skill.models import SkillRequest
+
+    try:
+        skill_app = BrowserSkillApp(root, runs_root, _adapter(executable))
+        with console.status("[bold #818cf8]正在按分类重跑批量项…[/bold #818cf8]"):
+            response = asyncio.run(
+                skill_app.handle(
+                    SkillRequest(
+                        action="retry_batch",
+                        run_id=run_id,
+                        failure_bucket=bucket,
+                    )
+                )
+            )
+        color = "green" if response.ok else "red"
+        console.print(
+            Panel(
+                f"[bold {color}]{response.message}[/bold {color}]\n"
+                f"[dim]Run ID: {response.run_id or '—'} · 状态: {response.state or '—'}[/dim]",
+                title="重跑结果",
+                border_style=color,
+            )
+        )
+        _print_batch_summary(response.data)
+        retry_meta = response.data.get("retry_batch")
+        if retry_meta:
+            console.print(
+                f"  [dim]来源 run {retry_meta.get('prior_run_id')} · "
+                f"分类 {retry_meta.get('failure_bucket')} · "
+                f"{len(retry_meta.get('values') or [])} 条[/dim]"
+            )
+        if not response.ok:
+            raise typer.Exit(2)
+    except SkillError as exc:
+        console.print(Panel(str(exc), title="[red]无法重跑[/red]", border_style="red"))
+        raise typer.Exit(2) from exc
+
+
 @app.command()
 def resume(
     run_id: str,
