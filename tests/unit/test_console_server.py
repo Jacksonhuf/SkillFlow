@@ -111,6 +111,29 @@ def test_templates_and_detail(console: ConsoleServer) -> None:
     assert status == 404
 
 
+def test_run_detail_batch_retry_suggestions(console: ConsoleServer) -> None:
+    run_id = "run-batch-retry-hints"
+    workspace = console.app.run_store.workspace(run_id)
+    workspace.mkdir(parents=True, exist_ok=True)
+    batch = {
+        "driver_variable": "order_no",
+        "items": [
+            {
+                "index": 0,
+                "value": "ORD-1",
+                "url": "https://example.internal/list",
+                "status": "failed",
+                "reason": "list_navigation:element_not_found",
+            },
+        ],
+    }
+    (workspace / "batch.json").write_text(json.dumps(batch), encoding="utf-8")
+    detail = console.run_detail(run_id)
+    suggestions = detail["batch"]["retry_suggestions"]
+    assert suggestions[0]["action"] == "retry_batch"
+    assert suggestions[0]["failure_bucket"] == "list_navigation"
+
+
 def test_run_job_and_run_history_and_artifact_download(console: ConsoleServer) -> None:
     status, payload, _ = _call(
         console,
