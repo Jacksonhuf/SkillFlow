@@ -43,6 +43,7 @@ from browser_skill.platform.acceptance import validate_acceptance_bundle
 from browser_skill.platform.probe import probe_adapter
 from browser_skill.runtime.auto_repair import AutoRepairService
 from browser_skill.runtime.lifecycle import TemplateLifecycleService
+from browser_skill.runtime.list_navigation import reconcile_list_nav_steps_with_snapshot
 from browser_skill.runtime.pick_reconcile import reconcile_picks_with_snapshot
 from browser_skill.runtime.probe_compiler import ProbeDraftCompiler
 from browser_skill.runtime.recovery import RunRecoveryService
@@ -265,11 +266,29 @@ class BrowserSkillApp:
             steps: list[dict[str, Any]] = []
             if isinstance(result.data, dict) and isinstance(result.data.get("steps"), list):
                 steps = [item for item in result.data["steps"] if isinstance(item, dict)]
+            realigned = 0
+            snapshot_refreshed = False
+            try:
+                snapshot = await self.adapter.snapshot(interactive=True)
+                snapshot_refreshed = True
+                steps, realigned = reconcile_list_nav_steps_with_snapshot(steps, snapshot)
+            except Exception:
+                pass
             semantics = _list_nav_semantics_from_steps(steps)
+            message = f"录制结束：{len(steps)} 步"
+            if snapshot_refreshed and realigned:
+                message += f"（已刷新快照并对齐 {realigned} 个 ref）"
+            elif snapshot_refreshed:
+                message += "（已刷新快照）"
             return SkillResponse(
                 ok=result.ok,
-                message=f"录制结束：{len(steps)} 步",
-                data={"steps": steps, **semantics},
+                message=message,
+                data={
+                    "steps": steps,
+                    **semantics,
+                    "snapshot_refreshed": snapshot_refreshed,
+                    "refs_realigned": realigned,
+                },
             )
         if request.action == "probe_field_pick":
             mode = request.field_pick_recording

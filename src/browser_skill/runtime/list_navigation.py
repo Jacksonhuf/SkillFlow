@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 from browser_skill.browser.base import BrowserAdapter
 from browser_skill.errors import ErrorCode, SkillError
 from browser_skill.models import BrowserSnapshot, BrowserTemplate
@@ -30,6 +32,26 @@ def _label_matches(display: str, sample: str) -> bool:
     if left == right:
         return True
     return len(right) >= 4 and (left.startswith(right) or right.startswith(left))
+
+
+def reconcile_list_nav_steps_with_snapshot(
+    steps: list[dict[str, Any]],
+    snapshot: BrowserSnapshot,
+) -> tuple[list[dict[str, Any]], int]:
+    """Update step ``ref`` when a fresh snapshot maps the same label to a new @eN."""
+    realigned = 0
+    out: list[dict[str, Any]] = []
+    for step in steps:
+        updated = dict(step)
+        label = str(updated.get("label") or "").strip()
+        old_ref = str(updated.get("ref") or "").strip()
+        if label:
+            new_ref = ref_for_label_on_snapshot(snapshot, label)
+            if new_ref and new_ref != old_ref:
+                updated["ref"] = new_ref
+                realigned += 1
+        out.append(updated)
+    return out, realigned
 
 
 def ref_for_label_on_snapshot(snapshot: BrowserSnapshot, label: str) -> str | None:

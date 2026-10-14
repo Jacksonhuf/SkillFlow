@@ -7,6 +7,7 @@ from browser_skill.models import BrowserSnapshot, BrowserTemplate, RunMode
 from browser_skill.runtime.list_navigation import (
     detail_link_target,
     list_navigation_active,
+    reconcile_list_nav_steps_with_snapshot,
     ref_for_label_on_snapshot,
     snapshot_has_ref,
 )
@@ -63,6 +64,23 @@ def test_snapshot_has_ref() -> None:
     snapshot = BrowserSnapshot(elements=[{"ref": "@e3", "text": "x"}])
     assert snapshot_has_ref(snapshot, "@e3") is True
     assert snapshot_has_ref(snapshot, "@e9") is False
+
+
+def test_reconcile_list_nav_steps_updates_refs() -> None:
+    steps = [
+        {"kind": "input", "label": "订单号", "ref": "@e3"},
+        {"kind": "action", "label": "查询", "ref": "@e4"},
+    ]
+    snapshot = BrowserSnapshot(
+        elements=[
+            {"ref": "@e10", "placeholder": "订单号"},
+            {"ref": "@e11", "text": "查询"},
+        ],
+    )
+    updated, count = reconcile_list_nav_steps_with_snapshot(steps, snapshot)
+    assert count == 2
+    assert updated[0]["ref"] == "@e10"
+    assert updated[1]["ref"] == "@e11"
 
 
 def test_ref_for_label_when_ref_number_changed() -> None:
