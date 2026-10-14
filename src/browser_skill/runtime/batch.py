@@ -161,6 +161,50 @@ def batch_retry_values(batch_payload: dict[str, Any], *, bucket: str | None = No
     return ordered
 
 
+def batch_webhook_retry_suggestions(run_id: str, stats: dict[str, Any]) -> list[dict[str, Any]]:
+    """Structured ``retry_batch`` hints for webhook consumers (pairs with 0.3.53 action)."""
+    groups = stats.get("failure_groups") or {}
+    failed_values = list(stats.get("failed_values") or [])
+    bucket_order: list[str] = []
+    for key in ("list_navigation", "pick_field_empty"):
+        if groups.get(key):
+            bucket_order.append(key)
+    if failed_values and "failed" not in bucket_order:
+        bucket_order.append("failed")
+    for key in sorted(groups):
+        if key not in bucket_order:
+            bucket_order.append(key)
+
+    suggestions: list[dict[str, Any]] = []
+    for bucket in bucket_order:
+        if bucket == "failed":
+            values = failed_values
+        elif bucket == "pick_field_empty":
+            values = list(
+                stats.get("pick_field_empty_values") or groups.get("pick_field_empty") or []
+            )
+        elif bucket == "list_navigation":
+            values = list(
+                stats.get("list_navigation_failure_values")
+                or groups.get("list_navigation")
+                or []
+            )
+        else:
+            values = list(groups.get(bucket) or [])
+        if not values:
+            continue
+        suggestions.append(
+            {
+                "action": "retry_batch",
+                "run_id": run_id,
+                "failure_bucket": bucket,
+                "value_count": len(values),
+                "values_sample": values[:10],
+            }
+        )
+    return suggestions
+
+
 def batch_stats_from_payload(payload: dict[str, Any]) -> dict[str, Any]:
     """Recompute durable batch counters and failure_groups from ``batch.json`` body."""
     driver = str(payload.get("driver_variable") or "value")

@@ -41,6 +41,23 @@ def test_webhook_payload_includes_batch_stats(template_data: dict) -> None:
     stats = payload["batch"]["stats"]
     assert stats["list_navigation_failure_values"] == ["ORD-1"]
     assert "list_navigation" in stats["failure_groups"]
+    retry = payload["batch"]["retry_suggestions"]
+    assert retry == [
+        {
+            "action": "retry_batch",
+            "run_id": "run-batch-1",
+            "failure_bucket": "list_navigation",
+            "value_count": 1,
+            "values_sample": ["ORD-1"],
+        },
+        {
+            "action": "retry_batch",
+            "run_id": "run-batch-1",
+            "failure_bucket": "failed",
+            "value_count": 1,
+            "values_sample": ["ORD-1"],
+        },
+    ]
 
 
 def test_webhook_payload_omits_batch_when_not_batch_run(template_data: dict) -> None:
