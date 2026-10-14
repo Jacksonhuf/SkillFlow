@@ -229,6 +229,20 @@ class ChromeUseAdapter:
             safe_stderr="field pick requires Playwright engine",
         )
 
+    async def start_list_nav_recording(self) -> CommandResult:
+        return CommandResult(
+            ok=False,
+            operation="probe.list_nav_start",
+            safe_stderr="list navigation recording requires Playwright engine",
+        )
+
+    async def stop_list_nav_recording(self) -> CommandResult:
+        return CommandResult(
+            ok=False,
+            operation="probe.list_nav_stop",
+            safe_stderr="list navigation recording requires Playwright engine",
+        )
+
     async def screenshot(self) -> CommandResult:
         return await self._run(["screenshot", "--json"])
 
@@ -395,6 +409,20 @@ class ChromeUseToolAdapter:
             ok=False,
             operation="probe.pick_stop",
             safe_stderr="field pick requires Playwright engine",
+        )
+
+    async def start_list_nav_recording(self) -> CommandResult:
+        return CommandResult(
+            ok=False,
+            operation="probe.list_nav_start",
+            safe_stderr="list navigation recording requires Playwright engine",
+        )
+
+    async def stop_list_nav_recording(self) -> CommandResult:
+        return CommandResult(
+            ok=False,
+            operation="probe.list_nav_stop",
+            safe_stderr="list navigation recording requires Playwright engine",
         )
 
     async def screenshot(self) -> CommandResult:

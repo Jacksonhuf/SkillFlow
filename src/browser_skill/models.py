@@ -803,6 +803,9 @@ class ProbeDraftInput(StrictModel):
     # Driver value is not in URL: open list page, search, click detail (sample_url = list page).
     navigate_from_list: bool = False
     list_page_url: HttpUrl | None = None
+    list_nav_input_semantic: list[str] = Field(default_factory=list, max_length=8)
+    list_nav_action_semantic: list[str] = Field(default_factory=list, max_length=8)
+    list_nav_row_semantic: list[str] = Field(default_factory=list, max_length=8)
 
     @model_validator(mode="after")
     def _needs_something_to_collect(self) -> ProbeDraftInput:
@@ -865,11 +868,13 @@ class SkillRequest(StrictModel):
         "probe_url",
         "probe_expand_clicks",
         "probe_field_pick",
+        "probe_list_navigation",
         "create_from_probe",
         "validate_acceptance",
     ] = "start"
     expand_click_recording: Literal["start", "stop"] | None = None
     field_pick_recording: Literal["start", "stop"] | None = None
+    list_nav_recording: Literal["start", "stop"] | None = None
     selector: str | int | None = None
     template_id: str | None = None
     run_id: str | None = None
