@@ -116,7 +116,8 @@ def test_batch_run_visits_every_value_and_downloads_named_attachments(
         "failed": 0,
         "skipped": 0,
         "failed_values": [],
-    }
+        "failure_groups": {},
+        }
     assert _opened_urls(adapter) == [
         "https://example.internal/orders/ORD-0001",
         "https://example.internal/orders/ORD-0002",
@@ -376,7 +377,8 @@ def test_session_expiry_pauses_and_resume_skips_completed_items(
         "failed": 0,
         "skipped": 0,
         "failed_values": [],
-    }
+        "failure_groups": {},
+        }
     workspace = tmp_path / str(paused.run_id)
     batch = json.loads((workspace / "batch.json").read_text("utf-8"))
     assert [item["status"] for item in batch["items"]] == ["ok", "pending", "pending"]
@@ -475,7 +477,8 @@ def test_skip_if_exists_only_visits_values_not_completed_before(
         "failed": 0,
         "skipped": 2,
         "failed_values": [],
-    }
+        "failure_groups": {},
+        }
     assert _opened_urls(second) == [
         "https://example.internal/orders/ORD-0002",
         "https://example.internal/orders/ORD-0004",

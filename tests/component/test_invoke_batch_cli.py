@@ -152,6 +152,7 @@ def test_var_file_column_feeds_the_driver_variable(
         "failed": 0,
         "skipped": 0,
         "failed_values": [],
+        "failure_groups": {},
     }
 
 
