@@ -311,6 +311,9 @@ def _list_navigation_spec(draft: ProbeDraftInput) -> ListNavigationSpec:
         search_input_semantic=_unique([*draft.list_nav_input_semantic, *default_input]),
         search_action_semantic=_unique([*draft.list_nav_action_semantic, *default_action]),
         row_link_semantic=_unique([*draft.list_nav_row_semantic, *default_row]),
+        search_input_ref=draft.list_nav_input_ref,
+        search_action_ref=draft.list_nav_action_ref,
+        row_link_ref=draft.list_nav_row_ref,
     )
 
 

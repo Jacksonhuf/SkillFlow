@@ -60,6 +60,8 @@ def test_probe_list_navigation_stop_returns_semantics(tmp_path: Path) -> None:
     assert response.ok is True
     assert response.data["list_nav_input_semantic"] == ["订单号"]
     assert response.data["list_nav_action_semantic"] == ["查询"]
+    assert response.data["list_nav_input_ref"] == "@e3"
+    assert response.data["list_nav_action_ref"] == "@e4"
 
 
 def test_compiler_merges_recorded_list_nav_semantics() -> None:
@@ -68,6 +70,8 @@ def test_compiler_merges_recorded_list_nav_semantics() -> None:
             navigate_from_list=True,
             list_nav_input_semantic=["我的单号"],
             list_nav_action_semantic=["Go"],
+            list_nav_input_ref="@e3",
+            list_nav_action_ref="@e4",
         ),
         version=1,
     )
@@ -75,3 +79,5 @@ def test_compiler_merges_recorded_list_nav_semantics() -> None:
     assert nav.search_input_semantic[0] == "我的单号"
     assert nav.search_action_semantic[0] == "Go"
     assert "订单号" in nav.search_input_semantic
+    assert nav.search_input_ref == "@e3"
+    assert nav.search_action_ref == "@e4"

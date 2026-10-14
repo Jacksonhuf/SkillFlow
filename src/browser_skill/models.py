@@ -139,6 +139,9 @@ class ListNavigationSpec(StrictModel):
     row_link_semantic: list[str] = Field(
         default_factory=lambda: ["详情", "查看", "明细", "进入"]
     )
+    search_input_ref: str | None = Field(default=None, max_length=32)
+    search_action_ref: str | None = Field(default=None, max_length=32)
+    row_link_ref: str | None = Field(default=None, max_length=32)
 
 
 class RunSpec(StrictModel):
@@ -806,6 +809,9 @@ class ProbeDraftInput(StrictModel):
     list_nav_input_semantic: list[str] = Field(default_factory=list, max_length=8)
     list_nav_action_semantic: list[str] = Field(default_factory=list, max_length=8)
     list_nav_row_semantic: list[str] = Field(default_factory=list, max_length=8)
+    list_nav_input_ref: str | None = Field(default=None, max_length=32)
+    list_nav_action_ref: str | None = Field(default=None, max_length=32)
+    list_nav_row_ref: str | None = Field(default=None, max_length=32)
 
     @model_validator(mode="after")
     def _needs_something_to_collect(self) -> ProbeDraftInput:

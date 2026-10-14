@@ -682,25 +682,45 @@ class BrowserSkillApp:
             response.message = f"{response.message}；样例比对发现 {len(report.issues)} 个差异"
 
 
-def _list_nav_semantics_from_steps(steps: list[dict[str, Any]]) -> dict[str, list[str]]:
+def _list_nav_step_ref(step: dict[str, Any]) -> str | None:
+    ref = str(step.get("ref") or "").strip()
+    if ref.startswith("@e"):
+        return ref
+    return None
+
+
+def _list_nav_semantics_from_steps(steps: list[dict[str, Any]]) -> dict[str, Any]:
     inputs: list[str] = []
     actions: list[str] = []
     rows: list[str] = []
+    input_ref: str | None = None
+    action_ref: str | None = None
+    row_ref: str | None = None
     for step in steps:
         label = str(step.get("label") or "").strip()
         if not label:
             continue
         kind = str(step.get("kind") or "action")
+        ref = _list_nav_step_ref(step)
         if kind == "input":
             inputs.append(label)
+            if input_ref is None and ref:
+                input_ref = ref
         elif kind == "row":
             rows.append(label)
+            if row_ref is None and ref:
+                row_ref = ref
         else:
             actions.append(label)
+            if action_ref is None and ref:
+                action_ref = ref
     return {
         "list_nav_input_semantic": inputs,
         "list_nav_action_semantic": actions,
         "list_nav_row_semantic": rows,
+        "list_nav_input_ref": input_ref,
+        "list_nav_action_ref": action_ref,
+        "list_nav_row_ref": row_ref,
     }
 
 

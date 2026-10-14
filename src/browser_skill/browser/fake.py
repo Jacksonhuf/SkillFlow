@@ -212,8 +212,8 @@ class FakeBrowserAdapter:
                 operation="probe.list_nav_stop",
                 data={
                     "steps": [
-                        {"kind": "input", "label": "订单号"},
-                        {"kind": "action", "label": "查询"},
+                        {"kind": "input", "label": "订单号", "ref": "@e3"},
+                        {"kind": "action", "label": "查询", "ref": "@e4"},
                     ]
                 },
             ),
