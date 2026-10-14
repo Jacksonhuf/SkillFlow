@@ -233,6 +233,44 @@ class BrowserSkillApp:
                 message=f"录制结束，共 {len(clicks)} 个步骤",
                 data={"clicks": clicks},
             )
+        if request.action == "probe_list_navigation":
+            mode = request.list_nav_recording
+            if mode not in {"start", "stop"}:
+                return SkillResponse(ok=False, message="需要 list_nav_recording: start 或 stop")
+            await self.runner.ensure_browser_ready()
+            if mode == "start":
+                if request.url:
+                    opened = await self.adapter.open(request.url.strip())
+                    if not opened.ok:
+                        return SkillResponse(
+                            ok=False,
+                            message="无法打开列表页，请检查地址或先在 Chrome 登录",
+                        )
+                start = getattr(self.adapter, "start_list_nav_recording", None)
+                if not callable(start):
+                    return SkillResponse(
+                        ok=False,
+                        message="当前浏览器引擎不支持列表导航录制，请使用 Playwright 引擎",
+                    )
+                result = await start()
+                return SkillResponse(
+                    ok=result.ok,
+                    message="请依次点击：① 搜索输入框 ② 搜索/查询按钮（可选 ③ 结果行「详情」链接）",
+                    data=result.data or {},
+                )
+            stop = getattr(self.adapter, "stop_list_nav_recording", None)
+            if not callable(stop):
+                return SkillResponse(ok=False, message="当前浏览器引擎不支持列表导航录制")
+            result = await stop()
+            steps: list[dict[str, Any]] = []
+            if isinstance(result.data, dict) and isinstance(result.data.get("steps"), list):
+                steps = [item for item in result.data["steps"] if isinstance(item, dict)]
+            semantics = _list_nav_semantics_from_steps(steps)
+            return SkillResponse(
+                ok=result.ok,
+                message=f"录制结束：{len(steps)} 步",
+                data={"steps": steps, **semantics},
+            )
         if request.action == "probe_field_pick":
             mode = request.field_pick_recording
             if mode not in {"start", "stop"}:
@@ -642,6 +680,28 @@ class BrowserSkillApp:
         response.data["sample_alignment"] = data
         if not report.aligned and response.ok:
             response.message = f"{response.message}；样例比对发现 {len(report.issues)} 个差异"
+
+
+def _list_nav_semantics_from_steps(steps: list[dict[str, Any]]) -> dict[str, list[str]]:
+    inputs: list[str] = []
+    actions: list[str] = []
+    rows: list[str] = []
+    for step in steps:
+        label = str(step.get("label") or "").strip()
+        if not label:
+            continue
+        kind = str(step.get("kind") or "action")
+        if kind == "input":
+            inputs.append(label)
+        elif kind == "row":
+            rows.append(label)
+        else:
+            actions.append(label)
+    return {
+        "list_nav_input_semantic": inputs,
+        "list_nav_action_semantic": actions,
+        "list_nav_row_semantic": rows,
+    }
 
 
 def _field_candidates_from_picks(picks: list[dict[str, Any]]) -> list[dict[str, Any]]:

@@ -391,5 +391,68 @@
   const picks = Array.isArray(window.__ubsFieldPicks) ? window.__ubsFieldPicks.slice() : [];
   window.__ubsFieldPicks = [];
   return { picks };
+},
+  startListNavRecording: (args) => {
+  const REF = args.refAttr;
+  let counter = Number(document.documentElement.getAttribute(REF + "-counter") || 0);
+  const refOf = (el) => {
+    let ref = el.getAttribute(REF);
+    if (!ref) {
+      counter += 1;
+      ref = "e" + counter;
+      el.setAttribute(REF, ref);
+      document.documentElement.setAttribute(REF + "-counter", String(counter));
+    }
+    return ref;
+  };
+  const labelOf = (el) => {
+    const aria = el.getAttribute("aria-label");
+    if (aria) return aria.trim().slice(0, 60);
+    const ph = el.getAttribute("placeholder");
+    if (ph) return ph.trim().slice(0, 60);
+    const name = el.getAttribute("name");
+    if (name) return name.trim().slice(0, 60);
+    return (el.innerText || "").trim().replace(/\s+/g, " ").slice(0, 60);
+  };
+  const kindOf = (el) => {
+    const tag = el.tagName ? el.tagName.toLowerCase() : "";
+    if (tag === "input" || tag === "textarea" || tag === "select") return "input";
+    if (el.getAttribute("contenteditable") === "true") return "input";
+    if (el.getAttribute("role") === "textbox" || el.getAttribute("role") === "combobox") return "input";
+    const text = labelOf(el).toLowerCase();
+    if (/详情|查看|明细|进入/.test(text)) return "row";
+    return "action";
+  };
+  window.__ubsListNavSteps = [];
+  const handler = (e) => {
+    const el = e.target && e.target.closest
+      ? e.target.closest("input,textarea,select,button,a,[role='button'],[role='link'],[contenteditable='true'],[role='textbox']")
+      : null;
+    if (!el) return;
+    e.preventDefault();
+    e.stopPropagation();
+    const label = labelOf(el);
+    if (!label) return;
+    const step = { kind: kindOf(el), label, ref: "@" + refOf(el) };
+    const list = window.__ubsListNavSteps;
+    const last = list[list.length - 1];
+    if (last && last.label === step.label && last.kind === step.kind) return;
+    list.push(step);
+  };
+  window.__ubsListNavHandler = handler;
+  document.addEventListener("click", handler, true);
+  try { document.body.style.cursor = "crosshair"; } catch (_e) { /* ignore */ }
+  return { started: true };
+},
+  stopListNavRecording: () => {
+  const handler = window.__ubsListNavHandler;
+  if (handler) {
+    try { document.removeEventListener("click", handler, true); } catch (_e) { /* ignore */ }
+  }
+  window.__ubsListNavHandler = null;
+  try { document.body.style.cursor = ""; } catch (_e) { /* ignore */ }
+  const steps = Array.isArray(window.__ubsListNavSteps) ? window.__ubsListNavSteps.slice() : [];
+  window.__ubsListNavSteps = [];
+  return { steps };
 }
 })

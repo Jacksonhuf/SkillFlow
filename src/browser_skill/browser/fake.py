@@ -199,6 +199,26 @@ class FakeBrowserAdapter:
             ),
         )
 
+    async def start_list_nav_recording(self) -> CommandResult:
+        self.calls.append(("start_list_nav_recording", (), {}))
+        return CommandResult(ok=True, operation="probe.list_nav_start", data={"started": True})
+
+    async def stop_list_nav_recording(self) -> CommandResult:
+        self.calls.append(("stop_list_nav_recording", (), {}))
+        return self._take(
+            "list_nav_recording",
+            CommandResult(
+                ok=True,
+                operation="probe.list_nav_stop",
+                data={
+                    "steps": [
+                        {"kind": "input", "label": "订单号"},
+                        {"kind": "action", "label": "查询"},
+                    ]
+                },
+            ),
+        )
+
     @asynccontextmanager
     async def batch_page(self) -> AsyncIterator[None]:
         depth = _fake_batch_depth.get()

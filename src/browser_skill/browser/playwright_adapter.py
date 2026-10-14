@@ -818,6 +818,23 @@ class PlaywrightAdapter:
 
         return await self._guarded("probe.pick_stop", action)
 
+    async def start_list_nav_recording(self) -> CommandResult:
+        async def action() -> Any:
+            page = await self._ensure()
+            return await page.evaluate(
+                _page_script("startListNavRecording"),
+                {"refAttr": _REF_ATTR},
+            )
+
+        return await self._guarded("probe.list_nav_start", action)
+
+    async def stop_list_nav_recording(self) -> CommandResult:
+        async def action() -> Any:
+            page = await self._ensure()
+            return await page.evaluate(_page_script("stopListNavRecording"))
+
+        return await self._guarded("probe.list_nav_stop", action)
+
     def _page_network_entries(self, page: Any) -> list[dict[str, Any]]:
         page_id = id(page)
         return [dict(entry) for entry in self._network if entry.get("page_id", 0) == page_id]

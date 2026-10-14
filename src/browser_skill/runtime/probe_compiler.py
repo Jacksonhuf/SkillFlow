@@ -230,10 +230,7 @@ class ProbeDraftCompiler:
         run_overrides = {k: v for k, v in draft.run.items() if k in _ALLOWED_RUN_KEYS}
         if draft.table is not None:
             run_overrides["capture_tables"] = True
-        list_page = draft.list_page_url
-        if draft.navigate_from_list and list_page is None:
-            list_page = draft.sample_url
-        list_nav = ListNavigationSpec(enabled=draft.navigate_from_list, list_url=list_page)
+        list_nav = _list_navigation_spec(draft)
         run = RunSpec(
             mode=RunMode.DETAIL_BATCH,
             driver_variable=driver,
@@ -299,6 +296,22 @@ class ProbeDraftCompiler:
                 filename_pattern=draft.template_id,
             ),
         )
+
+
+def _list_navigation_spec(draft: ProbeDraftInput) -> ListNavigationSpec:
+    default_input = ["订单号", "编号", "关键字", "单号", "搜索"]
+    default_action = ["搜索", "查询", "搜 索", "Search"]
+    default_row = ["详情", "查看", "明细", "进入"]
+    list_page = draft.list_page_url
+    if draft.navigate_from_list and list_page is None:
+        list_page = draft.sample_url
+    return ListNavigationSpec(
+        enabled=draft.navigate_from_list,
+        list_url=list_page,
+        search_input_semantic=_unique([*draft.list_nav_input_semantic, *default_input]),
+        search_action_semantic=_unique([*draft.list_nav_action_semantic, *default_action]),
+        row_link_semantic=_unique([*draft.list_nav_row_semantic, *default_row]),
+    )
 
 
 def _unique(values: list[str]) -> list[str]:
