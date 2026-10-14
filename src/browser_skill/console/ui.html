@@ -307,10 +307,30 @@
   function batchReasonLabel(code) {
     return BATCH_REASON_LABELS[code] || code;
   }
-  function launchBatchRetry(ctx, values, el) {
-    if (!ctx || !ctx.driver || !ctx.template_id || !values.length) return;
-    const variables = { ...(ctx.variables || {}), [ctx.driver]: values };
-    Object.keys(variables).forEach(k => { if (variables[k] === '***') delete variables[k]; });
+  function scrubJobVariables(variables) {
+    const v = { ...(variables || {}) };
+    Object.keys(v).forEach(k => { if (v[k] === '***') delete v[k]; });
+    return v;
+  }
+  function launchBatchRetry(ctx, el, opts = {}) {
+    const bucket = opts.bucket;
+    const values = opts.values;
+    const sourceRunId = ctx && (ctx.source_run_id || ctx.run_id);
+    if (sourceRunId && bucket) {
+      submitJob(
+        {
+          action: 'retry_batch',
+          run_id: sourceRunId,
+          failure_bucket: bucket,
+          variables: scrubJobVariables(ctx.variables),
+        },
+        el,
+        { ...ctx, source_run_id: sourceRunId },
+      );
+      return;
+    }
+    if (!ctx || !ctx.driver || !ctx.template_id || !values || !values.length) return;
+    const variables = scrubJobVariables({ ...(ctx.variables || {}), [ctx.driver]: values });
     submitJob({ action: ctx.action || 'run', template_id: ctx.template_id, variables }, el, { ...ctx, variables });
   }
 
@@ -406,14 +426,15 @@
     if (resp.data && resp.data.error) html += `<pre>${esc(JSON.stringify(resp.data.error, null, 2))}</pre>`;
     html += '</div>';
     el.innerHTML = html;
+    const retryCtx = { ...(ctx || {}), source_run_id: resp.run_id || (ctx && ctx.source_run_id) };
     const rb = $('resumeBtn');
     if (rb) rb.onclick = () => submitJob({ action: 'resume', run_id: resp.run_id, variables: ctx && ctx.variables || {} }, el, ctx);
     const rf = $('retryFailedBtn');
-    if (rf) rf.onclick = () => launchBatchRetry(ctx, items.failed_values, el);
+    if (rf) rf.onclick = () => launchBatchRetry(retryCtx, el, { bucket: 'failed' });
     const rp = $('retryPickEmptyBtn');
-    if (rp) rp.onclick = () => launchBatchRetry(ctx, pickEmpty, el);
+    if (rp) rp.onclick = () => launchBatchRetry(retryCtx, el, { bucket: 'pick_field_empty' });
     const rln = $('retryListNavBtn');
-    if (rln) rln.onclick = () => launchBatchRetry(ctx, listNavFail, el);
+    if (rln) rln.onclick = () => launchBatchRetry(retryCtx, el, { bucket: 'list_navigation' });
   }
   function progressText(action, p) {
     const phaseLabel = {
@@ -426,6 +447,8 @@
       const running = p.current ? 1 : 0;
       const n = Math.min((p.done || 0) + running, p.total);
       tail = `第 ${n}/${p.total} 条` + (p.current ? `（${String(p.current).slice(0, 80)}${String(p.current).length > 80 ? '…' : ''}）` : '') + (p.failed ? ` · 已失败 ${p.failed}` : '');
+    } else if (action === 'retry_batch') {
+      tail = '按分类重跑批量';
     } else {
       tail = action;
     }
@@ -637,30 +660,27 @@
       template_id: d.template_id,
       driver: d.batch && d.batch.driver_variable,
       variables: d.variables || {},
+      source_run_id: id,
     };
     const retry = $('runRetryBtn');
     if (retry) retry.onclick = () => {
       const holder = document.createElement('div'); $('runDetail').prepend(holder);
-      launchBatchRetry(runCtx, batchValuesForBucket(d.batch.items, 'failed'), holder);
+      launchBatchRetry(runCtx, holder, { bucket: 'failed' });
     };
     const retryPick = $('runRetryPickBtn');
     if (retryPick) retryPick.onclick = () => {
       const holder = document.createElement('div'); $('runDetail').prepend(holder);
-      const pickVals = (d.batch.stats && d.batch.stats.pick_field_empty_values)
-        || batchValuesForBucket(d.batch.items, 'pick_field_empty');
-      launchBatchRetry(runCtx, pickVals, holder);
+      launchBatchRetry(runCtx, holder, { bucket: 'pick_field_empty' });
     };
     const retryListNav = $('runRetryListNavBtn');
     if (retryListNav) retryListNav.onclick = () => {
       const holder = document.createElement('div'); $('runDetail').prepend(holder);
-      const navVals = (d.batch.stats && d.batch.stats.list_navigation_failure_values)
-        || batchValuesForBucket(d.batch.items, 'list_navigation');
-      launchBatchRetry(runCtx, navVals, holder);
+      launchBatchRetry(runCtx, holder, { bucket: 'list_navigation' });
     };
     document.querySelectorAll('.batch-retry-group').forEach(btn => {
       btn.onclick = () => {
         const holder = document.createElement('div'); $('runDetail').prepend(holder);
-        launchBatchRetry(runCtx, batchValuesForBucket(d.batch.items, btn.dataset.bucket), holder);
+        launchBatchRetry(runCtx, holder, { bucket: btn.dataset.bucket });
       };
     });
     const filter = $('batchReasonFilter');

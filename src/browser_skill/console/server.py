@@ -474,7 +474,11 @@ class ConsoleServer:
                     detail[name] = None
         batch_payload = detail.get("batch")
         if isinstance(batch_payload, dict):
-            batch_payload["stats"] = batch_stats_from_payload(batch_payload)
+            stats = batch_stats_from_payload(batch_payload)
+            batch_payload["stats"] = stats
+            from browser_skill.runtime.batch import batch_webhook_retry_suggestions
+
+            batch_payload["retry_suggestions"] = batch_webhook_retry_suggestions(run_id, stats)
         run_path = workspace / "run.json"
         if run_path.is_file():
             try:
