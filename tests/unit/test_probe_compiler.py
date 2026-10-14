@@ -252,6 +252,19 @@ def test_missing_url_template_means_full_urls_only() -> None:
     assert template.run.accept_full_urls is True
 
 
+def test_navigate_from_list_enables_list_navigation() -> None:
+    template = ProbeDraftCompiler().compile(
+        _draft(
+            url_template="https://portal.example.com/orders/{order_no}",
+            navigate_from_list=True,
+        ),
+        version=1,
+    )
+    assert template.system.url_template is None
+    assert template.run.list_navigation.enabled is True
+    assert str(template.run.list_navigation.list_url).startswith("https://")
+
+
 def test_url_template_without_driver_placeholder_is_rejected() -> None:
     with pytest.raises(SkillError) as raised:
         ProbeDraftCompiler().compile(

@@ -52,6 +52,7 @@ from browser_skill.runtime.capability_requirements import ensure_template_runtim
 from browser_skill.runtime.detail import DetailCollector
 from browser_skill.runtime.downloader import AttachmentDownloader
 from browser_skill.runtime.extractor import RecordExtractor
+from browser_skill.runtime.list_navigation import list_navigation_active, navigate_list_to_detail
 from browser_skill.runtime.locator import LocatorService
 from browser_skill.runtime.policy import ActionPolicy
 from browser_skill.runtime.run_store import RunStore
@@ -826,6 +827,15 @@ class Runner:
             self.policy.require_url_allowed(snapshot.url, template)
         if self.auth.classify(template.auth, snapshot) == AuthState.UNAUTHENTICATED:
             raise _SessionExpired
+        if list_navigation_active(template, item.value):
+            snapshot = await navigate_list_to_detail(
+                self.adapter,
+                self.locator,
+                template,
+                snapshot,
+                item.value,
+                policy=self.policy,
+            )
         snapshot = await self._apply_workflow(
             template, values, snapshot, dialogs_supported=capabilities.dialogs
         )

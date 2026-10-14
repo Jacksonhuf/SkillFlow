@@ -72,6 +72,12 @@ def plan_batch_items(
     guard = policy or ActionPolicy()
     driver = template.run.driver_variable
     items: list[BatchItem] = []
+    list_nav = template.run.list_navigation.enabled
+    list_url = (
+        str(template.run.list_navigation.list_url or template.system.entry_url)
+        if list_nav
+        else None
+    )
     for index, value in enumerate(driver_values):
         if is_full_url(value):
             if not template.run.accept_full_urls:
@@ -81,6 +87,8 @@ def plan_batch_items(
                     details={"variable": driver, "value": value},
                 )
             url = value.strip()
+        elif list_nav and list_url:
+            url = list_url
         else:
             scoped = dict(resolved)
             scoped[driver] = value
