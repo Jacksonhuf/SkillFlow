@@ -42,6 +42,7 @@ from browser_skill.outputs.writer import RunWorkspace
 from browser_skill.platform.acceptance import validate_acceptance_bundle
 from browser_skill.platform.probe import probe_adapter
 from browser_skill.runtime.auto_repair import AutoRepairService
+from browser_skill.runtime.batch import batch_retry_values
 from browser_skill.runtime.lifecycle import TemplateLifecycleService
 from browser_skill.runtime.list_navigation import reconcile_list_nav_steps_with_snapshot
 from browser_skill.runtime.pick_reconcile import reconcile_picks_with_snapshot
@@ -168,6 +169,8 @@ class BrowserSkillApp:
                 return response
             response.data["interaction"] = interaction.model_dump(mode="json")
             return response
+        if request.action == "retry_batch":
+            return await self._retry_batch(request)
         if request.action in {"status", "cancel"}:
             if not request.run_id:
                 return SkillResponse(ok=False, message="操作需要 run_id")
@@ -698,6 +701,47 @@ class BrowserSkillApp:
             response.data["interaction"] = interaction.model_dump(mode="json")
             return response
         return SkillResponse(ok=False, message=f"动作尚需交互流程：{request.action}")
+
+    async def _retry_batch(self, request: SkillRequest) -> SkillResponse:
+        if not request.run_id:
+            return SkillResponse(ok=False, message="retry_batch 需要 run_id（先前批量运行）")
+        prior = self.run_store.load(request.run_id)
+        batch_path = self.run_store.workspace(request.run_id) / "batch.json"
+        if not batch_path.is_file():
+            return SkillResponse(ok=False, message="该运行没有 batch.json，无法按原因重跑")
+        try:
+            batch_payload = json.loads(batch_path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return SkillResponse(ok=False, message="batch.json 无法读取")
+        if not isinstance(batch_payload, dict):
+            return SkillResponse(ok=False, message="batch.json 格式无效")
+        bucket = request.failure_bucket or "failed"
+        values = batch_retry_values(batch_payload, bucket=request.failure_bucket)
+        if not values:
+            return SkillResponse(ok=False, message=f"分类「{bucket}」下没有可重跑的编号")
+        template = self.store.load(prior.template_id, require_published=True)
+        driver = str(batch_payload.get("driver_variable") or template.run.driver_variable or "")
+        if not driver:
+            return SkillResponse(ok=False, message="无法确定驱动变量")
+        variables = dict(prior.variables)
+        variables.update(request.variables)
+        variables[driver] = values
+        response = await self.runner.run(template, variables)
+        response.data["retry_batch"] = {
+            "prior_run_id": request.run_id,
+            "failure_bucket": bucket,
+            "driver": driver,
+            "values": values,
+        }
+        if response.run_id and response.state:
+            interaction = run_result_interaction(
+                run_id=response.run_id,
+                state=response.state,
+                message=response.message,
+                data=response.data,
+            )
+            response.data["interaction"] = interaction.model_dump(mode="json")
+        return response
 
     def _attach_sample_alignment(
         self, response: SkillResponse, template: BrowserTemplate, sample_path: Path

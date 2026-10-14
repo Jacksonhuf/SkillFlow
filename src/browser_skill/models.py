@@ -890,6 +890,7 @@ class SkillRequest(StrictModel):
         "probe_list_navigation",
         "create_from_probe",
         "validate_acceptance",
+        "retry_batch",
     ] = "start"
     expand_click_recording: Literal["start", "stop"] | None = None
     field_pick_recording: Literal["start", "stop"] | None = None
@@ -912,6 +913,7 @@ class SkillRequest(StrictModel):
     confirmed: bool = False
     acceptance_bundle_path: Path | None = None
     probe_mode: Literal["platform_tool", "local_cli"] = "platform_tool"
+    failure_bucket: str | None = Field(default=None, max_length=64)
 
 
 class SkillResponse(StrictModel):

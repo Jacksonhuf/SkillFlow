@@ -105,6 +105,62 @@ def batch_summary_extra_lines(items: dict[str, Any]) -> list[str]:
     return lines
 
 
+def batch_reason_buckets(reason: str | None) -> list[str]:
+    if not reason:
+        return ["unknown"]
+    return [
+        part.split(":", 1)[0].strip()
+        for part in str(reason).split(";")
+        if part.strip()
+    ]
+
+
+def batch_values_for_bucket(items: list[dict[str, Any]], bucket: str) -> list[str]:
+    if bucket == "failed":
+        return [str(item["value"]) for item in items if item.get("status") == "failed"]
+    values: list[str] = []
+    for item in items:
+        if item.get("status") not in {BatchItemStatus.FAILED, BatchItemStatus.PARTIAL}:
+            continue
+        if bucket in batch_reason_buckets(str(item.get("reason") or "")):
+            values.append(str(item["value"]))
+    return values
+
+
+def batch_retry_values(batch_payload: dict[str, Any], *, bucket: str | None = None) -> list[str]:
+    """Driver values to re-run from a persisted ``batch.json`` body."""
+    stats = batch_stats_from_payload(batch_payload)
+    items_raw = batch_payload.get("items") or []
+    items = [item for item in items_raw if isinstance(item, dict)]
+    key = (bucket or "failed").strip() or "failed"
+    if key == "failed":
+        raw = list(stats.get("failed_values") or [])
+    elif key == "pick_field_empty":
+        raw = list(
+            stats.get("pick_field_empty_values")
+            or (stats.get("failure_groups") or {}).get("pick_field_empty")
+            or []
+        )
+    elif key == "list_navigation":
+        raw = list(
+            stats.get("list_navigation_failure_values")
+            or (stats.get("failure_groups") or {}).get("list_navigation")
+            or []
+        )
+    else:
+        groups = stats.get("failure_groups") or {}
+        raw = list(groups.get(key) or batch_values_for_bucket(items, key))
+    seen: set[str] = set()
+    ordered: list[str] = []
+    for value in raw:
+        text = str(value).strip()
+        if not text or text in seen:
+            continue
+        seen.add(text)
+        ordered.append(text)
+    return ordered
+
+
 def batch_stats_from_payload(payload: dict[str, Any]) -> dict[str, Any]:
     """Recompute durable batch counters and failure_groups from ``batch.json`` body."""
     driver = str(payload.get("driver_variable") or "value")

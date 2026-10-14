@@ -1,6 +1,24 @@
 from __future__ import annotations
 
-from browser_skill.runtime.batch import batch_summary_extra_lines
+from browser_skill.runtime.batch import batch_retry_values, batch_summary_extra_lines
+
+
+def test_batch_retry_values_resolves_list_navigation_bucket() -> None:
+    payload = {
+        "driver_variable": "order_no",
+        "items": [
+            {
+                "index": 0,
+                "value": "ORD-1",
+                "url": "u",
+                "status": "failed",
+                "reason": "list_navigation:element_not_found",
+            },
+            {"index": 1, "value": "ORD-2", "url": "u", "status": "ok"},
+        ],
+    }
+    assert batch_retry_values(payload, bucket="list_navigation") == ["ORD-1"]
+    assert batch_retry_values(payload, bucket="failed") == ["ORD-1"]
 
 
 def test_batch_summary_lists_failure_groups_and_list_nav_retry() -> None:
