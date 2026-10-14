@@ -15,6 +15,7 @@ class PlatformProbeReport(StrictModel):
     missing_capability_flags: list[str]
     missing_operations: list[str]
     missing_recommended_flags: list[str]
+    missing_recommended_operations: list[str]
     platform_version: str | None = None
     plugin_version: str | None = None
     text: str
@@ -50,6 +51,7 @@ async def probe_adapter(
     contract = load_minimum_contract(contract_path)
     required_flags = list(contract.get("required_capability_flags", []))
     recommended_flags = list(contract.get("recommended_capability_flags", []))
+    recommended_operations = list(contract.get("recommended_operations", []))
     required_operations = list(contract.get("required_operations", []))
 
     status = await adapter.status()
@@ -75,6 +77,16 @@ async def probe_adapter(
     else:
         missing_operations = []
 
+    if mode == "platform_tool":
+        if operations is None:
+            missing_recommended_operations = list(recommended_operations)
+        else:
+            missing_recommended_operations = [
+                name for name in recommended_operations if not bool(operations.get(name))
+            ]
+    else:
+        missing_recommended_operations = []
+
     platform_version = payload.get("platform_version")
     plugin_version = payload.get("plugin_version")
     if not isinstance(platform_version, str):
@@ -93,6 +105,10 @@ async def probe_adapter(
         lines.append(f"missing operations: {', '.join(missing_operations)}")
     if missing_recommended:
         lines.append(f"recommended flags absent: {', '.join(missing_recommended)}")
+    if missing_recommended_operations:
+        lines.append(
+            "recommended teach operations absent: " + ", ".join(missing_recommended_operations)
+        )
     if ready:
         lines.append("result: ready for internal acceptance scenarios.")
     else:
@@ -105,6 +121,7 @@ async def probe_adapter(
         missing_capability_flags=missing_flags,
         missing_operations=missing_operations,
         missing_recommended_flags=missing_recommended,
+        missing_recommended_operations=missing_recommended_operations,
         platform_version=platform_version,
         plugin_version=plugin_version,
         text="\n".join(lines),

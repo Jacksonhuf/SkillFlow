@@ -44,6 +44,43 @@ def test_probe_passes_with_reference_platform_payload() -> None:
     assert report.text
 
 
+def test_probe_reports_missing_recommended_teach_operations() -> None:
+    async def invoke(_tool: str, arguments: dict[str, Any]) -> dict[str, Any]:
+        if arguments["operation"] == "status":
+            return {"ok": True}
+        if arguments["operation"] == "capabilities":
+            return {
+                "ok": True,
+                "data": {
+                    "snapshot": True,
+                    "find": True,
+                    "download": True,
+                    "downloads": True,
+                    "tabs": True,
+                    "dialogs": True,
+                    "operations": {
+                        "status": True,
+                        "capabilities": True,
+                        "open": True,
+                        "snapshot": True,
+                        "find": True,
+                        "click": True,
+                        "fill": True,
+                        "download": True,
+                        "downloads": True,
+                        "tab.list": True,
+                        "dialog.status": True,
+                    },
+                },
+            }
+        return {"ok": True}
+
+    report = asyncio.run(probe_adapter(ChromeUseToolAdapter(invoke), mode="platform_tool"))
+    assert report.ready is True
+    assert "probe.pick_start" in report.missing_recommended_operations
+    assert "network.list" in report.missing_recommended_operations
+
+
 def test_probe_fails_when_operations_missing() -> None:
     async def invoke(_tool: str, arguments: dict[str, Any]) -> dict[str, Any]:
         if arguments["operation"] == "status":

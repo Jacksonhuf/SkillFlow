@@ -12,6 +12,7 @@
     "missing_capability_flags": [],
     "missing_operations": [],
     "missing_recommended_flags": [],
+    "missing_recommended_operations": [],
     "platform_version": "internal-agent-platform-example",
     "plugin_version": "chrome-use-plugin-example",
     "text": "Platform chrome-use contract probe passed."

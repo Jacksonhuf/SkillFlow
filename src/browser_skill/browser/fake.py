@@ -66,6 +66,13 @@ class FakeBrowserAdapter:
             "downloads": True,
             "tab.list": True,
             "dialog.status": True,
+            "network.list": True,
+            "probe.pick_start": True,
+            "probe.pick_stop": True,
+            "probe.list_nav_start": True,
+            "probe.list_nav_stop": True,
+            "probe.record_start": True,
+            "probe.record_stop": True,
         }
         return payload
 

@@ -8,7 +8,16 @@
     "tabs",
     "dialogs"
   ],
-  "recommended_capability_flags": ["snapshot_diff"],
+  "recommended_capability_flags": ["snapshot_diff", "network"],
+  "recommended_operations": [
+    "network.list",
+    "probe.pick_start",
+    "probe.pick_stop",
+    "probe.list_nav_start",
+    "probe.list_nav_stop",
+    "probe.record_start",
+    "probe.record_stop"
+  ],
   "required_operations": [
     "status",
     "capabilities",

@@ -9,6 +9,7 @@
     "tabs": true,
     "sessions": false,
     "dialogs": true,
+    "network": true,
     "platform_version": "internal-agent-platform-example",
     "plugin_version": "chrome-use-plugin-example",
     "operations": {
@@ -22,7 +23,14 @@
       "download": true,
       "downloads": true,
       "tab.list": true,
-      "dialog.status": true
+      "dialog.status": true,
+      "network.list": true,
+      "probe.pick_start": true,
+      "probe.pick_stop": true,
+      "probe.list_nav_start": true,
+      "probe.list_nav_stop": true,
+      "probe.record_start": true,
+      "probe.record_stop": true
     }
   }
 }
