@@ -723,6 +723,7 @@
       const cols = Object.keys(rows[0]);
       const tbl = `<h4 style="margin-top:10px">数据预览（前 ${rows.length} 条）</h4><div style="overflow:auto;max-height:280px"><table><thead><tr>${cols.map(c => `<th>${esc(c)}</th>`).join('')}</tr></thead><tbody>${rows.map(rw => `<tr>${cols.map(c => `<td>${esc(rw[c])}</td>`).join('')}</tr>`).join('')}</tbody></table></div>`;
       el.insertAdjacentHTML('beforeend', tbl);
+      wzAuditPickedFields(rows, el);
     } catch (e) {
       el.insertAdjacentHTML('beforeend', `<p class="muted" style="margin-top:8px">无法加载预览：${esc(e.message)}</p>`);
     }
@@ -788,14 +789,17 @@
     const columns = t.columns.filter(c => c.selected).map(c => ({ key: c.key, name: c.name, sample: c.sample, source: c.source, strategy: c.strategy, type: c.type, confidence: c.confidence, aliases: c.aliases || [], column: c.column }));
     return { index: t.index, title: t.title || '', headers: t.headers, columns };
   }
-  $('wzPickStart').onclick = async () => {
+    $('wzPickStart').onclick = async () => {
     const url = $('wzUrl').value.trim();
     if (!/^https?:\/\//i.test(url)) { alert('请先填写上方的示例地址'); return; }
     const r = await post('/api/action', { action: 'probe_field_pick', field_pick_recording: 'start', url });
     if (!r || !r.ok) { alert((r && r.message) || '无法开始点选'); return; }
     $('wzPickStart').classList.add('hidden');
     $('wzPickStop').classList.remove('hidden');
-    $('wzPickHint').textContent = '在 Chrome 里点击要采集的字段值（可多次），然后点「结束点选」。';
+    let hint = '在 Chrome 里点击要采集的字段值（可多次），然后点「结束点选」。';
+    const cross = r.data && Number(r.data.cross_origin_iframes);
+    if (cross > 0) hint += ` 注意：有 ${cross} 个跨域 iframe，其内部无法点选。`;
+    $('wzPickHint').textContent = hint;
   };
   $('wzPickStop').onclick = async () => {
     const r = await post('/api/action', { action: 'probe_field_pick', field_pick_recording: 'stop' });
@@ -813,8 +817,19 @@
       wz.fields.push(field);
     }
     wzRender();
-    if (fields.length) $('wzPickHint').textContent = `已加入 ${fields.length} 个点选字段。`;
+    if (fields.length) {
+      $('wzPickHint').textContent = `已加入 ${fields.length} 个点选字段；请保存草稿并试跑，确认预览表中出现这些列。`;
+    }
   };
+  function wzAuditPickedFields(rows, el) {
+    if (!rows || !rows.length) return;
+    const picked = wz.fields.filter(f => f.selected && f.dom_ref);
+    if (!picked.length) return;
+    const missing = picked.filter(f => rows.every(rw => rw[f.key] == null || String(rw[f.key]).trim() === ''));
+    if (!missing.length) return;
+    const names = missing.map(f => f.name || f.key).join('、');
+    el.insertAdjacentHTML('beforeend', `<div class="notice bad" style="margin-top:8px">点选字段未出现在试跑结果中：${esc(names)}。请确认仍在同一详情页、元素未被 SPA 重绘，或改用页面文字/接口字段。</div>`);
+  }
   $('wzExpandRecStart').onclick = async () => {
     const url = $('wzUrl').value.trim();
     if (!/^https?:\/\//i.test(url)) { alert('请先填写上方的示例地址'); return; }

@@ -20,6 +20,33 @@ def test_field_candidates_from_picks_assigns_dom_ref() -> None:
     assert fields[0]["recommended"] is True
 
 
+def test_probe_field_pick_start_includes_cross_origin_count(tmp_path: Path) -> None:
+    from browser_skill.models import BrowserSnapshot
+
+    adapter = FakeBrowserAdapter(
+        {
+            "snapshot": [
+                BrowserSnapshot(
+                    url="https://example.internal/detail",
+                    meta={"cross_origin_iframes": 2},
+                )
+            ]
+        }
+    )
+    app = BrowserSkillApp(tmp_path / "templates", tmp_path / "runs", adapter)
+    response = asyncio.run(
+        app.handle(
+            SkillRequest(
+                action="probe_field_pick",
+                field_pick_recording="start",
+                url="https://example.internal/detail",
+            )
+        )
+    )
+    assert response.ok is True
+    assert response.data.get("cross_origin_iframes") == 2
+
+
 def test_probe_field_pick_stop_returns_fields(tmp_path: Path) -> None:
     app = BrowserSkillApp(tmp_path / "templates", tmp_path / "runs", FakeBrowserAdapter())
     response = asyncio.run(
