@@ -80,6 +80,7 @@ def test_compile_optional_webhook_delivery() -> None:
     assert channel.type == "webhook"
     assert channel.target == "http://127.0.0.1:9876/hook"
     assert channel.options.get("webhook_secret") == "notify-key"
+    assert template.report.enabled is True
 
 
 def test_compile_produces_valid_detail_batch_draft() -> None:

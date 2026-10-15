@@ -24,6 +24,7 @@ from browser_skill.models import (
     LoginCheckSpec,
     OutputSpec,
     ProbeDraftInput,
+    ReportSpec,
     RunMode,
     RunSpec,
     SignalSpec,
@@ -257,6 +258,11 @@ class ProbeDraftCompiler:
             validation=VariableValidation(regex=draft.driver_regex) if draft.driver_regex else None,
         )
         delivery = _delivery_from_draft(draft)
+        report = ReportSpec(
+            enabled=delivery.enabled,
+            title_pattern=f"{draft.name} 报告",
+            include_summary=True,
+        )
         workflow_hints: list[WorkflowHint] = []
         for label in draft.attachment_expands:
             text = label.strip()
@@ -298,6 +304,7 @@ class ProbeDraftCompiler:
                 columns=[field.key for field in fields],
                 filename_pattern=draft.template_id,
             ),
+            report=report,
             delivery=delivery,
         )
 

@@ -554,6 +554,12 @@
     $('runMeta').innerHTML = `<span class="badge">${esc(t.entry_url)}</span>` +
       `<span class="badge">字段 ${t.fields.length}</span><span class="badge">附件 ${t.attachments.length}</span>` +
       (t.pipeline.report ? '<span class="badge ok">报告</span>' : '') + (t.pipeline.delivery ? '<span class="badge ok">分发</span>' : '');
+    if (t.delivery_channels && t.delivery_channels.length) {
+      $('runMeta').innerHTML += '<div class="muted" style="margin-top:6px">分发：' + t.delivery_channels.map(ch =>
+        `<code>${esc(ch.type)}</code> ${esc(ch.target || '')}`
+        + (ch.shared_secret_configured ? ' · 已配置密钥' : '')
+      ).join(' · ') + '</div>';
+    }
     const batch = t.run && t.run.mode === 'detail_batch';
     if (batch) $('runMeta').innerHTML += `<span class="badge">按编号批量</span>` + (t.run.url_template ? `<div class="muted" style="margin-top:6px">地址模板：<code>${esc(t.run.url_template)}</code></div>` : '');
     $('varForm').innerHTML = t.variables.length ? t.variables.map(v => {
