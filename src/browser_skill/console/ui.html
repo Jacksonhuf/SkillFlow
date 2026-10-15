@@ -229,6 +229,15 @@
       <pre id="doctorOut" class="hidden"></pre>
       <pre id="metaOut" class="hidden"></pre>
     </div>
+    <div class="card">
+      <strong>Webhook 批量重试（可选）</strong>
+      <p class="muted" style="margin-top:8px">批量运行完成后，模板 <code>delivery.webhook</code> 的 JSON 含 <code>batch.retry_suggestions</code>，可对接自动重跑。</p>
+      <ol class="muted" style="margin:8px 0 0 18px;line-height:1.6">
+        <li>在技能根目录启动示例监听器：<br><code id="webhookListenerCmd">py scripts/examples/webhook_retry_listener.py --port 9876</code></li>
+        <li>模板 webhook 目标填 <code>http://127.0.0.1:9876/</code>；<code>options.webhook_secret</code> 与监听器环境变量 <code>UNIVERSAL_BROWSER_WEBHOOK_SECRET</code> 保持一致。</li>
+        <li>自动重跑：设置 <code>UNIVERSAL_BROWSER_WEBHOOK_AUTO_RETRY=1</code>（详见包内 <code>docs/product/WEBHOOK-AUTO-RETRY.zh.md</code>）。</li>
+      </ol>
+    </div>
   </section>
 </main>
 
@@ -668,7 +677,23 @@
       if (d.batch.items.length > 200) html += `<p class="muted">仅显示前 200 条。</p>`;
     }
     if (d.report_markdown) html += `<h4>报告</h4><pre class="report">${esc(d.report_markdown)}</pre>`;
-    if (d.pipeline) html += `<h4>管线</h4><pre>${esc(JSON.stringify(d.pipeline.stages, null, 2))}</pre>`;
+    if (d.pipeline) {
+      const deliver = d.pipeline.stages && d.pipeline.stages.deliver;
+      const webhookChannels = deliver && Array.isArray(deliver.channels)
+        ? deliver.channels.filter(c => c && c.type === 'webhook') : [];
+      if (webhookChannels.length) {
+        html += '<h4>Webhook 投递</h4><ul style="margin:4px 0 0 18px">';
+        webhookChannels.forEach(c => {
+          html += `<li><span class="badge ${c.ok ? 'ok' : 'bad'}">${c.ok ? '成功' : '失败'}</span> `
+            + `<code class="muted">${esc(c.target || '')}</code>`
+            + (c.status != null ? ` · HTTP ${c.status}` : '')
+            + (c.shared_secret_configured ? ' · 已配置共享密钥' : '')
+            + (c.error ? ` · ${esc(c.error)}` : '') + '</li>';
+        });
+        html += '</ul>';
+      }
+      html += `<h4>管线</h4><pre>${esc(JSON.stringify(d.pipeline.stages, null, 2))}</pre>`;
+    }
     if (d.manifest) html += `<h4>Manifest（${d.manifest.record_count} 条）</h4><pre>${esc(JSON.stringify(d.manifest.bundles.slice(0, 5), null, 2))}</pre>`;
     if (d.records_preview && d.records_preview.length) {
       const cols = Object.keys(d.records_preview[0]);

@@ -197,12 +197,19 @@ def _deliver_webhook(
             extra_headers=webhook_auth_headers(secret),
         )
     except (urllib.error.URLError, OSError, ValueError) as exc:
-        return {"type": "webhook", "ok": False, "target": channel.target, "error": str(exc)}
+        return {
+            "type": "webhook",
+            "ok": False,
+            "target": channel.target,
+            "error": str(exc),
+            "shared_secret_configured": bool(secret),
+        }
     return {
         "type": "webhook",
         "ok": 200 <= status < 300,
         "target": channel.target,
         "status": status,
+        "shared_secret_configured": bool(secret),
     }
 
 
