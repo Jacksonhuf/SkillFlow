@@ -5,7 +5,7 @@ import shutil
 import zipfile
 from pathlib import Path
 
-_PACKAGE_VERSION = "0.3.63"
+_PACKAGE_VERSION = "0.3.64"
 _SKILL_ID = "universal-browser"
 
 
@@ -131,6 +131,15 @@ def sync_full_skill_tree(
     quickstart = base / "docs" / "QUICKSTART.zh.md"
     if quickstart.exists():
         shutil.copy2(quickstart, skill_dir / "QUICKSTART.zh.md")
+
+    product_docs = base / "docs" / "product"
+    if product_docs.is_dir():
+        dest_docs = skill_dir / "docs" / "product"
+        dest_docs.mkdir(parents=True, exist_ok=True)
+        for name in ("WEBHOOK-AUTO-RETRY.zh.md",):
+            src = product_docs / name
+            if src.is_file():
+                shutil.copy2(src, dest_docs / name)
 
     vendor_src = base / "vendor" / "chrome-use"
     if bundle_chrome_use and vendor_src.is_dir():

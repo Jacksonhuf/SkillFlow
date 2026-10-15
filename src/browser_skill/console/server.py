@@ -49,6 +49,7 @@ from browser_skill.console.instance import (
 from browser_skill.errors import ErrorCode, SkillError
 from browser_skill.models import SkillRequest, SkillResponse
 from browser_skill.outputs.paths import contained_path, safe_filename
+from browser_skill.pipeline.deliver import delivery_channel_summaries
 from browser_skill.platform.probe import PlatformProbeReport, probe_adapter
 from browser_skill.runtime.batch import batch_stats_from_payload
 
@@ -413,6 +414,7 @@ class ConsoleServer:
                 "delivery": template.delivery.enabled,
                 "analysis": template.analysis.enabled,
             },
+            "delivery_channels": delivery_channel_summaries(template.delivery),
         }
 
     def runs(self, limit: int = 50) -> list[dict[str, Any]]:

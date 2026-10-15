@@ -25,7 +25,13 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qs, urlsplit, urlunsplit
 
-from browser_skill.models import BrowserTemplate, DeliveryChannelSpec, DownloadStatus, RunContext
+from browser_skill.models import (
+    BrowserTemplate,
+    DeliveryChannelSpec,
+    DeliverySpec,
+    DownloadStatus,
+    RunContext,
+)
 from browser_skill.pipeline.webhook_auth import webhook_auth_headers, webhook_secret_from_options
 
 _WEBHOOK_TIMEOUT_SECONDS = 10
@@ -117,6 +123,19 @@ def _post_json(
 
 
 # --------------------------------------------------------------------------- local / webhook
+
+
+def delivery_channel_summaries(spec: DeliverySpec) -> list[dict[str, Any]]:
+    """Safe delivery channel metadata for APIs (never includes webhook secrets)."""
+    summaries: list[dict[str, Any]] = []
+    for channel in spec.channels:
+        if not channel.enabled:
+            continue
+        entry: dict[str, Any] = {"type": channel.type, "target": channel.target}
+        if channel.type == "webhook":
+            entry["shared_secret_configured"] = bool(webhook_secret_from_options(channel.options))
+        summaries.append(entry)
+    return summaries
 
 
 def _deliver_local(
