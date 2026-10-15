@@ -371,11 +371,18 @@ class ConsoleServer:
             for index, item in enumerate(items, 1)
         ]
 
-    def template_detail(self, template_id: str) -> dict[str, Any]:
+    def template_detail(self, template_id: str, *, version: int | None = None) -> dict[str, Any]:
         from browser_skill.templates.detail import template_detail_dict
 
-        template = self.app.store.load(template_id, require_published=False)
+        template = self.app.store.load(template_id, version, require_published=False)
         return template_detail_dict(template)
+
+    def template_versions(self, template_id: str) -> list[dict[str, Any]]:
+        rows = self.app.store.version_history(template_id)
+        return [
+            {"version": row.version, "status": row.status.value, "name": row.name}
+            for row in rows
+        ]
 
     def runs(self, limit: int = 50) -> list[dict[str, Any]]:
         root = self.app.runs_root
@@ -671,8 +678,25 @@ class _Handler(BaseHTTPRequestHandler):
             include_all = query.get("all", ["0"])[0] in {"1", "true"}
             templates = console.templates(include_unpublished=include_all)
             self._send_json({"ok": True, "templates": templates})
+        elif len(segments) == 3 and segments[0] == "templates" and segments[2] == "versions":
+            self._send_json(
+                {"ok": True, "versions": console.template_versions(segments[1])}
+            )
         elif len(segments) == 2 and segments[0] == "templates":
-            self._send_json({"ok": True, "template": console.template_detail(segments[1])})
+            version_raw = query.get("version", [None])[0]
+            version: int | None = None
+            if version_raw not in {None, ""}:
+                try:
+                    version = int(str(version_raw))
+                except ValueError:
+                    self._error("Invalid version query", HTTPStatus.BAD_REQUEST)
+                    return
+            self._send_json(
+                {
+                    "ok": True,
+                    "template": console.template_detail(segments[1], version=version),
+                }
+            )
         elif segments == ["runs"]:
             self._send_json({"ok": True, "runs": console.runs()})
         elif len(segments) == 2 and segments[0] == "runs":

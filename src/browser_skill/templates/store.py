@@ -4,6 +4,7 @@ import json
 import os
 import tempfile
 from dataclasses import dataclass
+from collections.abc import Sequence
 from pathlib import Path
 from typing import Any, cast
 
@@ -28,6 +29,13 @@ class TemplateSummary:
     name: str
     description: str
     status: TemplateStatus
+
+
+@dataclass(frozen=True, slots=True)
+class TemplateVersionSummary:
+    version: int
+    status: TemplateStatus
+    name: str
 
 
 class TemplateStore:
@@ -146,6 +154,29 @@ class TemplateStore:
             except SkillError:
                 continue
         return sorted(results, key=lambda item: (item.name.casefold(), item.template_id))
+
+    def version_history(self, template_id: str) -> Sequence[TemplateVersionSummary]:
+        directory = self._template_dir(template_id)
+        if not directory.is_dir():
+            raise SkillError(ErrorCode.TEMPLATE_NOT_FOUND, f"Template not found: {template_id}")
+        stems = sorted(
+            int(path.stem)
+            for path in directory.glob("[0-9]*.yaml")
+            if path.is_file() and not path.is_symlink() and path.stem.isdigit()
+        )
+        if not stems:
+            raise SkillError(ErrorCode.TEMPLATE_NOT_FOUND, f"Template not found: {template_id}")
+        summaries = []
+        for version in stems:
+            template = self.load(template_id, version, require_published=False)
+            summaries.append(
+                TemplateVersionSummary(
+                    version=template.version,
+                    status=template.status,
+                    name=template.name,
+                )
+            )
+        return summaries
 
     def load(
         self,

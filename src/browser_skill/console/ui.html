@@ -561,12 +561,24 @@
       document.querySelectorAll('.tpl').forEach(c => c.onclick = () => openTemplate(c.dataset.id));
     } catch (e) { $('templateGrid').innerHTML = `<p class="muted">${esc(e.message)}</p>`; }
   }
-  async function openTemplate(id) {
-    const r = await api('/api/templates/' + encodeURIComponent(id));
+  async function openTemplate(id, version) {
+    const verQ = version != null ? ('?version=' + encodeURIComponent(version)) : '';
+    const r = await api('/api/templates/' + encodeURIComponent(id) + verQ);
     const t = r.template; currentTpl = t;
+    let versionPicker = '';
+    try {
+      const vr = await api('/api/templates/' + encodeURIComponent(id) + '/versions');
+      const rows = vr.versions || [];
+      if (rows.length > 1) {
+        versionPicker = '<label style="margin-top:8px;display:block">版本 <select id="tplVersionPick" style="width:auto">'
+          + rows.map(v => `<option value="${v.version}"${v.version === t.version ? ' selected' : ''}>v${v.version} · ${esc(v.status)}</option>`).join('')
+          + '</select></label>';
+      }
+    } catch (e) { /* single version or missing */ }
     $('runTitle').textContent = `${t.name}（${t.template_id} v${t.version}）`;
     $('runDesc').textContent = t.description || '';
-    $('runMeta').innerHTML = `<span class="badge">${esc(t.entry_url)}</span>` +
+    $('runMeta').innerHTML = versionPicker +
+      `<span class="badge">${esc(t.entry_url)}</span>` +
       `<span class="badge">字段 ${t.fields.length}</span><span class="badge">附件 ${t.attachments.length}</span>` +
       (t.pipeline.report ? '<span class="badge ok">报告</span>' : '') + (t.pipeline.delivery ? '<span class="badge ok">分发</span>' : '');
     if (t.delivery_channels && t.delivery_channels.length) {
@@ -608,6 +620,8 @@
     } else {
       deliveryPanel.classList.add('hidden');
     }
+    const pick = $('tplVersionPick');
+    if (pick) pick.onchange = () => openTemplate(id, Number(pick.value));
     $('runPanel').classList.remove('hidden'); $('jobStatus').innerHTML = '';
     $('runPanel').scrollIntoView({ behavior: 'smooth' });
   }
