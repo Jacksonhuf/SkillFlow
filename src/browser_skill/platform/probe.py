@@ -21,8 +21,19 @@ class PlatformProbeReport(StrictModel):
     text: str
 
 
-def default_contract_path() -> Path:
+_BUNDLED_CONTRACT = Path(__file__).with_name("minimum-contract.json")
+
+
+def repo_contract_path() -> Path:
+    """Repository copy of the contract (kept in sync with the bundled one by a unit test)."""
     return Path(__file__).resolve().parents[3] / "fixtures" / "platform" / "minimum-contract.json"
+
+
+def default_contract_path() -> Path:
+    """Contract shipped inside the package so standalone zips never depend on fixtures/."""
+    if _BUNDLED_CONTRACT.is_file():
+        return _BUNDLED_CONTRACT
+    return repo_contract_path()
 
 
 def load_minimum_contract(path: Path | None = None) -> dict[str, Any]:

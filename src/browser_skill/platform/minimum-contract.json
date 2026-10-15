@@ -1,0 +1,44 @@
+{
+  "schema_version": "1.0",
+  "required_capability_flags": [
+    "snapshot",
+    "find",
+    "download",
+    "downloads",
+    "tabs",
+    "dialogs"
+  ],
+  "recommended_capability_flags": ["snapshot_diff", "network"],
+  "recommended_operations": [
+    "network.list",
+    "probe.pick_start",
+    "probe.pick_stop",
+    "probe.list_nav_start",
+    "probe.list_nav_stop",
+    "probe.record_start",
+    "probe.record_stop"
+  ],
+  "required_operations": [
+    "status",
+    "capabilities",
+    "open",
+    "snapshot",
+    "find",
+    "click",
+    "fill",
+    "download",
+    "downloads",
+    "tab.list",
+    "dialog.status"
+  ],
+  "required_acceptance_scenarios": [
+    "menu_and_variables",
+    "authenticated_extraction",
+    "attachment",
+    "human_authentication",
+    "pagination",
+    "repair",
+    "cancellation_and_recovery",
+    "security_review"
+  ]
+}

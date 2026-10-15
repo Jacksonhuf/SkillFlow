@@ -8,7 +8,12 @@ from browser_skill.browser.chrome_use import ChromeUseToolAdapter
 from browser_skill.browser.fake import FakeBrowserAdapter
 from browser_skill.models import BrowserCapabilities, CommandResult, SkillRequest
 from browser_skill.platform.acceptance import validate_acceptance_bundle
-from browser_skill.platform.probe import default_contract_path, load_minimum_contract, probe_adapter
+from browser_skill.platform.probe import (
+    default_contract_path,
+    load_minimum_contract,
+    probe_adapter,
+    repo_contract_path,
+)
 
 
 def test_minimum_contract_fixture_is_loadable() -> None:
@@ -16,6 +21,17 @@ def test_minimum_contract_fixture_is_loadable() -> None:
     assert contract["schema_version"] == "1.0"
     assert "snapshot" in contract["required_capability_flags"]
     assert default_contract_path().exists()
+
+
+def test_bundled_contract_lives_inside_package_and_matches_repo_fixture() -> None:
+    # Standalone zips ship runtime/src/browser_skill only, so the contract must be package data.
+    bundled = default_contract_path()
+    assert bundled.parent.name == "platform"
+    assert bundled.parent.parent.name == "browser_skill"
+    repo_copy = repo_contract_path()
+    assert json.loads(bundled.read_text(encoding="utf-8")) == json.loads(
+        repo_copy.read_text(encoding="utf-8")
+    )
 
 
 def test_probe_passes_with_reference_platform_payload() -> None:
