@@ -307,6 +307,18 @@
   function batchReasonLabel(code) {
     return BATCH_REASON_LABELS[code] || code;
   }
+  function renderRetrySuggestionsBlock(suggestions) {
+    if (!suggestions || !suggestions.length) return '';
+    return '<div class="notice" style="margin-top:8px"><div>命令行 / Webhook 重试（<code>retry-batch</code>）：</div><ul style="margin:4px 0 0 18px">'
+      + suggestions.map(s => {
+        const bucket = s.failure_bucket || 'failed';
+        const cli = s.cli || (`browser-skill retry-batch ${s.run_id} --bucket ${bucket}`);
+        const label = batchReasonLabel(bucket);
+        const n = s.value_count != null ? ` · ${s.value_count} 条` : '';
+        return `<li><strong>${esc(label)}</strong>${esc(n)}<br><code style="word-break:break-all">${esc(cli)}</code></li>`;
+      }).join('')
+      + '</ul></div>';
+  }
   function scrubJobVariables(variables) {
     const v = { ...(variables || {}) };
     Object.keys(v).forEach(k => { if (v[k] === '***') delete v[k]; });
@@ -389,6 +401,8 @@
         + failedAtt.slice(0, 6).map(a => `<li><code>${esc(a.attachment_key)}</code> ${esc(a.status)}${a.failure_detail ? ' · ' + esc(a.failure_detail) : ''}</li>`).join('')
         + '</ul></div>';
     }
+    const retryCtxEarly = { ...(ctx || {}), source_run_id: resp.run_id || (ctx && ctx.source_run_id) };
+    const canBatchRetry = !!(retryCtxEarly.source_run_id);
     const items = (resp.data && resp.data.items) || (resp.data && resp.data.error && resp.data.error.details && resp.data.error.details.items);
     if (items) {
       html += `<div class="muted" style="margin-top:6px">批量：共 ${items.total} 条 · 成功 ${items.ok} · 部分 ${items.partial} · 失败 ${items.failed}${items.skipped ? ' · 已跳过 ' + items.skipped : ''}${items.pending ? ' · 未跑 ' + items.pending : ''}</div>`;
@@ -401,18 +415,21 @@
       }
       const pickEmpty = items.pick_field_empty_values || failGroups.pick_field_empty || [];
       const listNavFail = items.list_navigation_failure_values || failGroups.list_navigation || [];
-      if (ctx && ctx.driver && ctx.template_id && pickEmpty.length) {
+      if (canBatchRetry && pickEmpty.length) {
         html += `<div class="row" style="margin-top:4px"><button class="btn secondary" id="retryPickEmptyBtn">重跑点选空列 ${pickEmpty.length} 条</button>`
           + `<span class="muted">（含 partial，建议先 0.3.37+ 重新点选或试跑）</span></div>`;
       }
-      if (ctx && ctx.driver && ctx.template_id && listNavFail.length) {
+      if (canBatchRetry && listNavFail.length) {
         html += `<div class="row" style="margin-top:4px"><button class="btn secondary" id="retryListNavBtn">重跑列表进详情失败 ${listNavFail.length} 条</button>`
           + `<span class="muted">（检查列表页录制/搜索文案或重新录制列表导航）</span></div>`;
       }
       if (items.failed_values && items.failed_values.length) {
         html += `<div class="row"><span class="muted">失败的编号：${esc(items.failed_values.slice(0, 20).join('、'))}${items.failed_values.length > 20 ? ' …' : ''}</span>`
-          + (ctx && ctx.driver && ctx.template_id ? `<button class="btn secondary" id="retryFailedBtn">只重跑失败的 ${items.failed_values.length} 条</button>` : '') + '</div>';
+          + (canBatchRetry ? `<button class="btn secondary" id="retryFailedBtn">只重跑失败的 ${items.failed_values.length} 条</button>` : '') + '</div>';
       }
+    }
+    if (resp.data && resp.data.retry_suggestions) {
+      html += renderRetrySuggestionsBlock(resp.data.retry_suggestions);
     }
     const al = resp.data && resp.data.sample_alignment;
     if (al) {
@@ -619,21 +636,24 @@
         html += '<div class="notice warn" style="margin-top:6px"><div>按原因汇总（可分类重跑）：</div><ul style="margin:4px 0 0 18px">'
           + Object.entries(groups).map(([k, vals]) =>
             `<li><strong>${esc(batchReasonLabel(k))}</strong> <code class="muted">${esc(k)}</code> · ${vals.length} 条`
-            + (d.template_id ? ` <button type="button" class="btn secondary batch-retry-group" data-bucket="${esc(k)}">重跑</button>` : '')
+            + ` <button type="button" class="btn secondary batch-retry-group" data-bucket="${esc(k)}">重跑</button>`
             + (vals.length <= 8 ? '：' + esc(vals.join('、')) : '（' + esc(vals.slice(0, 6).join('、')) + ' …）')
             + '</li>'
           ).join('') + '</ul></div>';
       }
-      if (failed.length && d.template_id) {
+      if (failed.length) {
         html += `<div class="row" style="margin-top:0"><button class="btn secondary" id="runRetryBtn">只重跑失败的 ${failed.length} 条</button>`;
         if (pickEmpty.length) html += `<button class="btn secondary" id="runRetryPickBtn">重跑点选空列 ${pickEmpty.length} 条</button>`;
         if (listNavFail.length) html += `<button class="btn secondary" id="runRetryListNavBtn">重跑列表进详情 ${listNavFail.length} 条</button>`;
         html += '</div>';
-      } else if ((pickEmpty.length || listNavFail.length) && d.template_id) {
+      } else if (pickEmpty.length || listNavFail.length) {
         html += `<div class="row" style="margin-top:0">`;
         if (pickEmpty.length) html += `<button class="btn secondary" id="runRetryPickBtn">重跑点选空列 ${pickEmpty.length} 条</button>`;
         if (listNavFail.length) html += `<button class="btn secondary" id="runRetryListNavBtn">重跑列表进详情 ${listNavFail.length} 条</button>`;
         html += '</div>';
+      }
+      if (d.batch.retry_suggestions && d.batch.retry_suggestions.length) {
+        html += renderRetrySuggestionsBlock(d.batch.retry_suggestions);
       }
       const bucketKeys = Object.keys(groups);
       if (bucketKeys.length) {
