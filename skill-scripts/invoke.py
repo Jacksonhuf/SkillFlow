@@ -131,6 +131,8 @@ def main(argv: list[str] | None = None) -> int:
     inspect_p = sub.add_parser("inspect", help="Template contract + delivery metadata JSON")
     inspect_p.add_argument("selector", help="Template id, menu index, or name")
     inspect_p.add_argument("--version", type=int, default=None, help="Specific version")
+    versions_p = sub.add_parser("versions", help="List all versions of one template")
+    versions_p.add_argument("selector", help="Template id, menu index, or name")
     sub.add_parser("start", help="Show template menu JSON")
     sub.add_parser("capabilities", help="JSON browser capabilities (operator / agent preflight)")
     sub.add_parser("doctor", help="Check chrome-use CLI and extension readiness (operator only)")
@@ -277,6 +279,27 @@ def main(argv: list[str] | None = None) -> int:
             items = app.store.list()
             for index, item in enumerate(items, 1):
                 print(f"{index}. {item.name} ({item.template_id} v{item.version})")
+            return 0
+        if args.command == "versions":
+            from browser_skill.interaction.template_menu import TemplateMenu
+
+            template_id = TemplateMenu(app.store.list(include_unpublished=True)).resolve(
+                args.selector
+            )
+            if template_id is None:
+                print("Unknown template selector", file=sys.stderr)
+                return 2
+            rows = app.store.version_history(template_id)
+            print(
+                json.dumps(
+                    [
+                        {"version": row.version, "status": row.status.value, "name": row.name}
+                        for row in rows
+                    ],
+                    ensure_ascii=False,
+                    indent=2,
+                )
+            )
             return 0
         if args.command == "inspect":
             from browser_skill.interaction.template_menu import TemplateMenu

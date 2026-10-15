@@ -54,9 +54,28 @@ def list_templates(
     all_versions: Annotated[
         bool, typer.Option("--all", help="Include unpublished templates")
     ] = False,
+    as_json: Annotated[bool, typer.Option("--json", help="Machine-readable menu")] = False,
 ) -> None:
     """Show a calm, stable template menu."""
     items = _store(root).list(include_unpublished=all_versions)
+    if as_json:
+        console.print(
+            json.dumps(
+                [
+                    {
+                        "template_id": item.template_id,
+                        "version": item.version,
+                        "name": item.name,
+                        "description": item.description,
+                        "status": item.status.value,
+                    }
+                    for item in items
+                ],
+                ensure_ascii=False,
+                indent=2,
+            )
+        )
+        return
     title = Text(" Universal Browser ", style="bold white on #4f46e5")
     console.print(
         Panel(title, subtitle="目标驱动 · 真实 Chrome · 结果校验", border_style="#6366f1")
@@ -75,6 +94,34 @@ def list_templates(
     console.print(table)
     if not items:
         console.print("[dim]还没有可用模板。选择 1 开始创建。[/dim]")
+
+
+@app.command("template-versions")
+def template_versions(
+    selector: str,
+    root: Annotated[Path, typer.Option("--root")] = Path("templates"),
+    as_json: Annotated[bool, typer.Option("--json", help="JSON output")] = False,
+) -> None:
+    """List every immutable version of one template."""
+    store = _store(root)
+    template_id = TemplateMenu(store.list(include_unpublished=True)).resolve(selector)
+    if template_id is None:
+        raise typer.BadParameter("The create item is not a template")
+    rows = store.version_history(template_id)
+    payload = [
+        {"version": row.version, "status": row.status.value, "name": row.name}
+        for row in rows
+    ]
+    if as_json:
+        console.print(json.dumps(payload, ensure_ascii=False, indent=2))
+        return
+    table = Table(box=box.SIMPLE, show_header=True, header_style="bold #a5b4fc")
+    table.add_column("版本", justify="right")
+    table.add_column("状态")
+    table.add_column("名称")
+    for row in rows:
+        table.add_row(str(row.version), row.status.value, row.name)
+    console.print(Panel(table, title=f"[bold]{template_id}[/bold]", border_style="#6366f1"))
 
 
 @app.command()

@@ -111,6 +111,13 @@ def test_templates_and_detail(console: ConsoleServer) -> None:
     assert status == 404
 
 
+def test_template_versions_endpoint(console: ConsoleServer) -> None:
+    status, payload, _ = _call(console, "/api/templates/inventory_feedback/versions")
+    assert status == 200
+    assert payload["versions"][0]["version"] == 1
+    assert payload["versions"][0]["status"] == "published"
+
+
 def test_run_detail_batch_retry_suggestions(console: ConsoleServer) -> None:
     run_id = "run-batch-retry-hints"
     workspace = console.app.run_store.workspace(run_id)
