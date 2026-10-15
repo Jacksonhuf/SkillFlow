@@ -1,6 +1,27 @@
 from __future__ import annotations
 
-from browser_skill.runtime.batch import batch_retry_values, batch_summary_extra_lines
+from browser_skill.runtime.batch import (
+    batch_retry_summary_lines,
+    batch_retry_values,
+    batch_summary_extra_lines,
+)
+
+
+def test_batch_retry_summary_lines_from_suggestions() -> None:
+    data = {
+        "retry_suggestions": [
+            {
+                "action": "retry_batch",
+                "run_id": "run-1",
+                "failure_bucket": "list_navigation",
+                "cli": "browser-skill retry-batch run-1 --bucket list_navigation",
+            },
+        ],
+    }
+    lines = batch_retry_summary_lines(data)
+    assert len(lines) == 1
+    assert "list_navigation" in lines[0]
+    assert "browser-skill retry-batch run-1" in lines[0]
 
 
 def test_batch_retry_values_resolves_list_navigation_bucket() -> None:
