@@ -268,6 +268,9 @@ def test_failed_item_yields_partial_run_with_failed_values(
     assert failed["status"] == "failed"
     assert failed["reason"] == "E_PAGE_NOT_FOUND"
     assert failed["error"]["code"] == "E_PAGE_NOT_FOUND"
+    retry = response.data["retry_suggestions"]
+    assert retry[0]["failure_bucket"] == "failed"
+    assert "retry-batch" in retry[0]["cli"]
 
 
 def test_missing_required_field_fails_item_but_keeps_others(
