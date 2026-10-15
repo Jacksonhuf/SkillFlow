@@ -105,6 +105,29 @@ def batch_summary_extra_lines(items: dict[str, Any]) -> list[str]:
     return lines
 
 
+def batch_retry_summary_lines(data: dict[str, Any]) -> list[str]:
+    """CLI / log lines for ``data.retry_suggestions`` (0.3.56+)."""
+    raw = data.get("retry_suggestions")
+    if not isinstance(raw, list):
+        return []
+    lines: list[str] = []
+    for item in raw:
+        if not isinstance(item, dict):
+            continue
+        cli = str(item.get("cli") or "").strip()
+        if not cli:
+            run_id = str(item.get("run_id") or "").strip()
+            bucket = str(item.get("failure_bucket") or "failed").strip() or "failed"
+            if run_id:
+                cli = f"browser-skill retry-batch {run_id} --bucket {bucket}"
+        if cli:
+            label = _BATCH_FAILURE_LABELS.get(
+                str(item.get("failure_bucket") or ""), str(item.get("failure_bucket") or "failed")
+            )
+            lines.append(f"  重试·{label}：{cli}")
+    return lines
+
+
 def batch_reason_buckets(reason: str | None) -> list[str]:
     if not reason:
         return ["unknown"]

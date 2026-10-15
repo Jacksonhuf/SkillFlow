@@ -23,7 +23,7 @@ from browser_skill.interaction.variables import VariableResolver
 from browser_skill.models import BrowserTemplate, RunState
 from browser_skill.platform.acceptance import validate_acceptance_bundle
 from browser_skill.platform.probe import probe_adapter
-from browser_skill.runtime.batch import batch_summary_extra_lines
+from browser_skill.runtime.batch import batch_retry_summary_lines, batch_summary_extra_lines
 from browser_skill.runtime.repair import RepairService
 from browser_skill.runtime.runner import Runner
 from browser_skill.runtime.teach import TeachCompiler
@@ -285,6 +285,8 @@ def _print_batch_summary(data: dict[str, Any]) -> None:
             console.print(f"  [dim]{line.strip()}[/dim]")
         else:
             console.print(f"  [cyan]↳[/cyan]{line[2:]}")
+    for line in batch_retry_summary_lines(data):
+        console.print(f"  [dim]{line.strip()}[/dim]")
 
 
 @app.command()
