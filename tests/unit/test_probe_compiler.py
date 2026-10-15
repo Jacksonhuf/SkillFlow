@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Any
 
 import pytest
+from pydantic import ValidationError
 
 from browser_skill.errors import SkillError
 from browser_skill.models import (
@@ -61,10 +62,31 @@ def _draft(**overrides: Any) -> ProbeDraftInput:
     return ProbeDraftInput.model_validate(data)
 
 
+def test_probe_draft_rejects_non_http_webhook_url() -> None:
+    with pytest.raises(ValidationError):
+        _draft(webhook_url="ftp://example.internal/hook")
+
+
+def test_compile_optional_webhook_delivery() -> None:
+    template = ProbeDraftCompiler().compile(
+        _draft(
+            webhook_url="http://127.0.0.1:9876/hook",
+            webhook_secret="notify-key",
+        ),
+        version=1,
+    )
+    assert template.delivery.enabled is True
+    channel = template.delivery.channels[0]
+    assert channel.type == "webhook"
+    assert channel.target == "http://127.0.0.1:9876/hook"
+    assert channel.options.get("webhook_secret") == "notify-key"
+
+
 def test_compile_produces_valid_detail_batch_draft() -> None:
     template = ProbeDraftCompiler().compile(_draft(), version=1)
 
     assert template.schema_version == "2.0"
+    assert template.delivery.enabled is False
     assert template.status == TemplateStatus.DRAFT
     assert template.run.mode == RunMode.DETAIL_BATCH
     assert template.run.driver_variable == "order_no"
