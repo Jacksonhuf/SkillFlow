@@ -551,6 +551,13 @@ def update_delivery(
         bool,
         typer.Option("--disable", help="Turn off delivery and report"),
     ] = False,
+    fork: Annotated[
+        bool,
+        typer.Option(
+            "--fork",
+            help="When version is published, create a new draft version with delivery",
+        ),
+    ] = False,
     root: Annotated[Path, typer.Option("--root")] = Path("templates"),
     runs_root: Annotated[Path, typer.Option("--runs-root")] = Path("runs"),
     executable: Annotated[str, typer.Option(help="chrome-use executable")] = "chrome-use",
@@ -571,6 +578,7 @@ def update_delivery(
                         webhook_url=webhook_url,
                         webhook_secret=webhook_secret,
                         disable_delivery=disable,
+                        fork_as_new_version=fork,
                     )
                 )
             )

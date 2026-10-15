@@ -189,6 +189,11 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="Disable delivery and report for this version",
     )
+    delivery_p.add_argument(
+        "--fork",
+        action="store_true",
+        help="Fork published version into a new draft before applying delivery",
+    )
 
     ui_p = sub.add_parser("ui", help="Open the local web console (127.0.0.1 only)")
     ui_p.add_argument(
@@ -324,6 +329,7 @@ def main(argv: list[str] | None = None) -> int:
                     webhook_url=args.webhook_url,
                     webhook_secret=args.webhook_secret,
                     disable_delivery=args.disable,
+                    fork_as_new_version=args.fork,
                 )
             )
             return _print_response(response)

@@ -80,7 +80,8 @@
       <div id="runMeta"></div>
       <div id="deliveryPanel" class="hidden" style="margin-top:12px;padding-top:12px;border-top:1px solid var(--border)">
         <strong>Webhook 分发</strong>
-        <p class="muted" style="margin:6px 0">仅未发布版本可改。运行结束会向该地址 POST JSON；密钥通过请求头 <code>X-Universal-Browser-Webhook-Secret</code> 发送。</p>
+        <p class="muted" style="margin:6px 0">运行结束会向该地址 POST JSON；密钥通过请求头 <code>X-Universal-Browser-Webhook-Secret</code> 发送。</p>
+        <p id="deliveryForkHint" class="muted hidden" style="margin:6px 0">当前为<strong>已发布</strong>版本：保存时会复制为新的<strong>草稿版本</strong>（原发布版不变），试跑通过后再发布。</p>
         <label>Webhook URL</label>
         <input type="url" id="deliveryUrl" placeholder="https://example.com/hooks/run-finished" autocomplete="off">
         <label>共享密钥 <span class="muted" id="deliverySecretHint"></span></label>
@@ -589,9 +590,10 @@
       return `<label>${esc(v.prompt || v.name)}${req}</label>${input}`;
     }).join('') : '<p class="muted">此模板无需变量。</p>';
     wireMultiInputs($('varForm'));
+    const published = t.status === 'published';
     const draftish = t.status === 'draft' || t.status === 'testing';
     const deliveryPanel = $('deliveryPanel');
-    if (draftish) {
+    if (published || draftish) {
       deliveryPanel.classList.remove('hidden');
       const ch = t.delivery_channels && t.delivery_channels.find(c => c.type === 'webhook');
       $('deliveryUrl').value = ch && ch.target ? ch.target : '';
@@ -599,6 +601,8 @@
       $('deliveryDisable').checked = !t.pipeline.delivery;
       $('deliverySecretHint').textContent = ch && ch.shared_secret_configured ? '（已配置；留空保留）' : '';
       $('deliveryStatus').textContent = '';
+      $('deliveryForkHint').classList.toggle('hidden', !published);
+      $('saveDeliveryBtn').textContent = published ? '复制为新版本并保存分发' : '保存分发配置';
     } else {
       deliveryPanel.classList.add('hidden');
     }
@@ -614,6 +618,7 @@
       template_id: currentTpl.template_id,
       version: currentTpl.version,
       disable_delivery: $('deliveryDisable').checked,
+      fork_as_new_version: currentTpl.status === 'published',
     };
     if (!body.disable_delivery) {
       body.webhook_url = $('deliveryUrl').value.trim();

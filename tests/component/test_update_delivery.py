@@ -38,7 +38,9 @@ def test_update_delivery_on_draft(tmp_path, template_data: dict[str, object]) ->
     assert reloaded.report.enabled is True
 
 
-def test_update_delivery_rejects_published(tmp_path, template_data: dict[str, object]) -> None:
+def test_update_delivery_rejects_published_without_fork(
+    tmp_path, template_data: dict[str, object]
+) -> None:
     store = TemplateStore(tmp_path / "templates")
     store.save(BrowserTemplate.model_validate(template_data))
     app = BrowserSkillApp(tmp_path / "templates", tmp_path / "runs", FakeBrowserAdapter())
@@ -53,4 +55,29 @@ def test_update_delivery_rejects_published(tmp_path, template_data: dict[str, ob
         )
     )
     assert response.ok is False
-    assert "发布" in response.message
+    assert "fork" in response.message.casefold()
+
+
+def test_update_delivery_fork_from_published(tmp_path, template_data: dict[str, object]) -> None:
+    store = TemplateStore(tmp_path / "templates")
+    store.save(BrowserTemplate.model_validate(template_data))
+    app = BrowserSkillApp(tmp_path / "templates", tmp_path / "runs", FakeBrowserAdapter())
+    response = asyncio.run(
+        app.handle(
+            SkillRequest(
+                action="update_delivery",
+                template_id=str(template_data["template_id"]),
+                version=1,
+                webhook_url="https://hooks.example/forked",
+                fork_as_new_version=True,
+            )
+        )
+    )
+    assert response.ok is True
+    assert response.data["version"] == 2
+    assert response.data["forked_from_version"] == 1
+    draft = store.load(str(template_data["template_id"]), 2, require_published=False)
+    assert draft.status == TemplateStatus.DRAFT
+    assert draft.delivery.channels[0].target == "https://hooks.example/forked"
+    published = store.load(str(template_data["template_id"]), 1, require_published=True)
+    assert published.delivery.enabled is False
