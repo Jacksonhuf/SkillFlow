@@ -77,7 +77,7 @@
 - Teach 阶段用户上传过样例时，`test` 请求带上 `sample_path`，返回的 `data.sample_alignment` 给出覆盖率与中文差异清单（`issues`）；`aligned: false` 时先把差异告诉用户再决定是否 publish。
 - `pipeline.json` 的 `stages.analyze` 含 `severity`（ok / info / warning / error）、`summary`、`findings`；向用户汇报时直接引用 `summary`（若有 `ai_summary` 优先）。校验失败的运行也有该字段（在错误 details 与 `pipeline.json` 中）。
 - `stages.deliver.channels` 逐渠道给出 `ok` 与 `error`（local / webhook / email / wecom）；分发失败不影响运行成功，只需如实告知哪个渠道未送达。
-- **Webhook 分发（0.3.65+）**：草稿/测试中版本可就地 `update_delivery`；**已发布**版本须 `--fork`（或 `fork_as_new_version: true`）复制为下一版草稿再改 URL/密钥，原发布版不变。控制台对已发布模板点「复制为新版本并保存分发」。CLI：`py scripts\invoke.py update-delivery <id> --version <published> --fork --webhook-url https://…`（`--disable` 关闭；密钥省略则保留）。响应含 `data.cli`、`forked_from_version`（fork 时）。Teach 创建时也可在 `probe_draft` 填 `webhook_url` / `webhook_secret`。
+- **Webhook 分发（0.3.65+）**：草稿/测试中版本可就地 `update_delivery`；**已发布**版本须 `--fork`（或 `fork_as_new_version: true`）复制为下一版草稿再改 URL/密钥，原发布版不变。控制台对已发布模板点「复制为新版本并保存分发」。CLI：`py scripts\invoke.py update-delivery <id> --version <published> --fork --webhook-url https://…`（`--disable` 关闭；`--clear-webhook-secret` 清除密钥；否则省略 `--webhook-secret` 则保留）。查看契约与分发：`browser-skill inspect <id> --json` / `invoke inspect`。响应含 `data.cli`、`forked_from_version`（fork 时）。Teach 创建时也可在 `probe_draft` 填 `webhook_url` / `webhook_secret`。
 
 ## 与附件相关
 

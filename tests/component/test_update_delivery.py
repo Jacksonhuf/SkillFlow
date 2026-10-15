@@ -38,6 +38,43 @@ def test_update_delivery_on_draft(tmp_path, template_data: dict[str, object]) ->
     assert reloaded.report.enabled is True
 
 
+def test_update_delivery_clear_webhook_secret(tmp_path, template_data: dict[str, object]) -> None:
+    from browser_skill.models import DeliveryChannelSpec, DeliverySpec
+
+    data = deepcopy(template_data)
+    data["status"] = TemplateStatus.DRAFT
+    data["version"] = 2
+    data["delivery"] = DeliverySpec(
+        enabled=True,
+        channels=[
+            DeliveryChannelSpec(
+                type="webhook",
+                target="https://hooks.example/old",
+                enabled=True,
+                options={"webhook_secret": "old-secret"},
+            )
+        ],
+    )
+    store = TemplateStore(tmp_path / "templates")
+    store.save(BrowserTemplate.model_validate(data))
+    app = BrowserSkillApp(tmp_path / "templates", tmp_path / "runs", FakeBrowserAdapter())
+    response = asyncio.run(
+        app.handle(
+            SkillRequest(
+                action="update_delivery",
+                template_id=str(data["template_id"]),
+                version=2,
+                webhook_url="https://hooks.example/old",
+                clear_webhook_secret=True,
+            )
+        )
+    )
+    assert response.ok is True
+    assert response.data["delivery_channels"][0]["shared_secret_configured"] is False
+    reloaded = store.load(str(data["template_id"]), 2, require_published=False)
+    assert reloaded.delivery.channels[0].options.get("webhook_secret") is None
+
+
 def test_update_delivery_rejects_published_without_fork(
     tmp_path, template_data: dict[str, object]
 ) -> None:

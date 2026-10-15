@@ -87,6 +87,7 @@
         <label>共享密钥 <span class="muted" id="deliverySecretHint"></span></label>
         <input type="password" id="deliverySecret" placeholder="留空则保留已保存的密钥" autocomplete="new-password">
         <label style="display:flex;gap:8px;align-items:center;margin-top:8px"><input type="checkbox" id="deliveryDisable" style="width:auto"> 关闭分发（并关闭报告）</label>
+        <label style="display:flex;gap:8px;align-items:center;margin-top:6px"><input type="checkbox" id="deliveryClearSecret" style="width:auto"> 清除已保存的 Webhook 密钥</label>
         <div class="row" style="margin-top:8px">
           <button type="button" class="btn secondary" id="saveDeliveryBtn">保存分发配置</button>
         </div>
@@ -599,6 +600,7 @@
       $('deliveryUrl').value = ch && ch.target ? ch.target : '';
       $('deliverySecret').value = '';
       $('deliveryDisable').checked = !t.pipeline.delivery;
+      $('deliveryClearSecret').checked = false;
       $('deliverySecretHint').textContent = ch && ch.shared_secret_configured ? '（已配置；留空保留）' : '';
       $('deliveryStatus').textContent = '';
       $('deliveryForkHint').classList.toggle('hidden', !published);
@@ -624,6 +626,7 @@
       body.webhook_url = $('deliveryUrl').value.trim();
       const sec = $('deliverySecret').value;
       if (sec) body.webhook_secret = sec;
+      if ($('deliveryClearSecret').checked) body.clear_webhook_secret = true;
     }
     try {
       const r = await post('/api/action', body);
