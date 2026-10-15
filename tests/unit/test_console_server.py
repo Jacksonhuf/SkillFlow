@@ -241,6 +241,36 @@ def test_setup_status_and_repair_validation(console: ConsoleServer) -> None:
     assert "未知" in payload["message"]
 
 
+def test_unexpected_handler_error_returns_json_500_and_logs(
+    console: ConsoleServer, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def boom(self: ConsoleServer) -> dict[str, Any]:
+        raise FileNotFoundError(2, "No such file or directory", "minimum-contract.json")
+
+    monkeypatch.setattr(ConsoleServer, "setup_status", boom)
+    status, payload, headers = _call(console, "/api/setup")
+    assert status == 500
+    assert headers["content-type"].startswith("application/json")
+    assert payload["ok"] is False
+    assert "FileNotFoundError" in payload["message"]
+    assert payload["error"]["code"] == "E_CONSOLE_INTERNAL"
+    assert payload["error"]["path"] == "/api/setup"
+    log = console.app.runs_root / "console-error.log"
+    assert log.is_file()
+    assert "minimum-contract.json" in log.read_text(encoding="utf-8")
+
+    def boom_repair(self: ConsoleServer, action: str) -> dict[str, Any]:
+        raise RuntimeError(f"repair exploded for {action}")
+
+    monkeypatch.setattr(ConsoleServer, "repair", boom_repair)
+    status, payload, _ = _call(
+        console, "/api/setup/repair", method="POST", body={"action": "install_playwright"}
+    )
+    assert status == 500
+    assert payload["ok"] is False
+    assert "RuntimeError" in payload["message"]
+
+
 def test_console_refuses_non_loopback_bind(tmp_path: Path) -> None:
     app = BrowserSkillApp(tmp_path / "t", tmp_path / "r", FakeBrowserAdapter())
     with pytest.raises(SkillError):

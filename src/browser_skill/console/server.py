@@ -12,8 +12,10 @@ import contextlib
 import json
 import mimetypes
 import secrets
+import sys
 import threading
 import time
+import traceback
 import webbrowser
 from collections.abc import Callable, Coroutine
 from dataclasses import asdict
@@ -355,6 +357,18 @@ class ConsoleServer:
         time.sleep(0.05)
         self.shutdown()
 
+    def record_internal_error(self, path: str, trace: str) -> None:
+        """Append an unexpected handler failure to runs/console-error.log and stderr."""
+        stamp = datetime.now(UTC).isoformat(timespec="seconds")
+        entry = f"[{stamp}] {path}\n{trace}\n"
+        with contextlib.suppress(UnicodeEncodeError, OSError):
+            print(entry, file=sys.stderr)
+        log_path = self.app.runs_root / "console-error.log"
+        with contextlib.suppress(OSError):
+            log_path.parent.mkdir(parents=True, exist_ok=True)
+            with log_path.open("a", encoding="utf-8") as handle:
+                handle.write(entry)
+
     # ----- API implementation -------------------------------------------------
 
     def templates(self, *, include_unpublished: bool) -> list[dict[str, Any]]:
@@ -670,6 +684,18 @@ class _Handler(BaseHTTPRequestHandler):
                 else HTTPStatus.BAD_REQUEST
             )
             self._error(exc.message, status, error=exc.as_dict())
+        except Exception as exc:  # keep the connection alive so the UI can show the cause
+            self._internal_error(path, exc)
+
+    def _internal_error(self, path: str, exc: Exception) -> None:
+        """Log an unexpected failure and answer JSON (else the UI only sees Failed to fetch)."""
+        detail = f"{type(exc).__name__}: {exc}"[:500]
+        self.console.record_internal_error(path, traceback.format_exc())
+        self._error(
+            f"控制台内部错误（{detail}）。详情见 runs/console-error.log",
+            HTTPStatus.INTERNAL_SERVER_ERROR,
+            error={"code": "E_CONSOLE_INTERNAL", "path": path, "detail": detail},
+        )
 
     def _route_get(self, path: str, query: dict[str, list[str]]) -> None:
         console = self.console
@@ -740,6 +766,8 @@ class _Handler(BaseHTTPRequestHandler):
             self._route_post(path, payload)
         except SkillError as exc:
             self._error(exc.message, HTTPStatus.BAD_REQUEST, error=exc.as_dict())
+        except Exception as exc:  # keep the connection alive so the UI can show the cause
+            self._internal_error(path, exc)
 
     def _route_post(self, path: str, payload: dict[str, Any]) -> None:
         console = self.console
