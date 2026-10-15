@@ -34,6 +34,7 @@
   - 仍可用旧方式：把 `failed_values` 作为新的 `--var` 再次 `run`（与 `retry_batch` 的 `failed` 桶等价）。
   - `on_item_error: stop` 的模板在第一条失败就结束；`error.details.items` 里同样有进度。
   - 模板配置了 `delivery.webhook` 时，POST 体 `batch.retry_suggestions` 与运行 JSON 同形，便于回调服务自动调用 `retry_batch`。
+  - 运维示例：`scripts/examples/webhook_retry_listener.py`（见 `docs/product/WEBHOOK-AUTO-RETRY.zh.md`）；独立包等价命令 `py scripts\invoke.py retry-batch <run_id> --bucket list_navigation`。
 - **登录过期**：批量中途 `WAIT_USER_AUTH` 时，用户在 Chrome 登录后 `resume <run_id>`，已完成的项不会重跑。
 - 不要为了「更快」自行并发或改写 URL；`per_item_delay_ms` / `concurrency`（1–4）由模板决定。自 **0.3.29** 起，Playwright 引擎会按 `concurrency` 并行处理多项（`execution.jsonl` 事件 `concurrency_parallel`）；chrome-use 仍串行（`concurrency_sequential`）。Agent 不要自行起多进程或多浏览器会话「加速」。
 

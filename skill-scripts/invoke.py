@@ -160,6 +160,18 @@ def main(argv: list[str] | None = None) -> int:
     resume_p.add_argument("run_id")
     resume_p.add_argument("--var", action="append", default=[])
 
+    retry_p = sub.add_parser(
+        "retry-batch",
+        help="Re-run batch items from a prior run by failure bucket",
+    )
+    retry_p.add_argument("run_id", help="Prior batch run_id")
+    retry_p.add_argument(
+        "--bucket",
+        default="failed",
+        help="failure_groups key: failed, pick_field_empty, list_navigation, …",
+    )
+    retry_p.add_argument("--var", action="append", default=[])
+
     ui_p = sub.add_parser("ui", help="Open the local web console (127.0.0.1 only)")
     ui_p.add_argument(
         "--port",
@@ -271,6 +283,16 @@ def main(argv: list[str] | None = None) -> int:
                 SkillRequest(
                     action="resume",
                     run_id=args.run_id,
+                    variables=parse_variables(args.var),
+                )
+            )
+            return _print_response(response)
+        if args.command == "retry-batch":
+            response = await app.handle(
+                SkillRequest(
+                    action="retry_batch",
+                    run_id=args.run_id,
+                    failure_bucket=args.bucket,
                     variables=parse_variables(args.var),
                 )
             )
