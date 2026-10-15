@@ -826,12 +826,39 @@ class ProbeDraftInput(StrictModel):
     list_nav_input_frame_index: int | None = Field(default=None, ge=0)
     list_nav_action_frame_index: int | None = Field(default=None, ge=0)
     list_nav_row_frame_index: int | None = Field(default=None, ge=0)
+    webhook_url: str | None = Field(default=None, max_length=2000)
+    webhook_secret: str | None = Field(default=None, max_length=256)
 
     @model_validator(mode="after")
     def _needs_something_to_collect(self) -> ProbeDraftInput:
         if not self.fields and self.table is None:
             raise ValueError("至少选择一个字段，或选择一个表格作为记录行")
         return self
+
+    @field_validator("webhook_url", mode="before")
+    @classmethod
+    def _normalize_webhook_url(cls, value: Any) -> Any:
+        if value is None:
+            return None
+        text = str(value).strip()
+        return text or None
+
+    @field_validator("webhook_url")
+    @classmethod
+    def _check_webhook_url(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        if not value.startswith(("http://", "https://")):
+            raise ValueError("webhook_url 必须是 http:// 或 https:// 地址")
+        return value
+
+    @field_validator("webhook_secret", mode="before")
+    @classmethod
+    def _normalize_webhook_secret(cls, value: Any) -> Any:
+        if value is None:
+            return None
+        text = str(value).strip()
+        return text or None
 
 
 class SampleInference(StrictModel):

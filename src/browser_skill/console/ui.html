@@ -166,6 +166,10 @@
           <span id="wzListNavRecHint" class="muted"></span>
         </div>
         <label style="display:flex;gap:6px;align-items:center;margin-top:10px"><input type="checkbox" id="wzSkipDone" style="width:auto">增量：以前已成功采集过的编号自动跳过（适合每日补数）</label>
+        <label style="margin-top:12px">Webhook 通知 URL（可选，批量完成后 POST <code>batch.retry_suggestions</code>）</label>
+        <input id="wzWebhookUrl" placeholder="http://127.0.0.1:9876/" autocomplete="off">
+        <label>Webhook 共享密钥（可选，写入模板 <code>options.webhook_secret</code>）</label>
+        <input id="wzWebhookSecret" type="password" placeholder="与监听器 UNIVERSAL_BROWSER_WEBHOOK_SECRET 一致" autocomplete="new-password">
       </div>
       <p class="muted" style="margin-bottom:10px">顺序：<strong>① 保存草稿</strong>（已写入本机）→ <strong>② 试跑</strong>（看下方结果与预览）→ <strong>③ 发布</strong>（出现在「运行任务」列表）。仅保存不发布：完成 ① 即可。</p>
       <div class="row"><button class="btn" id="wzCreateBtn">保存草稿</button><button class="btn secondary" id="wzSaveTestBtn">保存并试跑</button><button class="btn secondary" id="wzBackBtn2">上一步</button><span id="wzCreateInfo" class="muted"></span></div>
@@ -1198,6 +1202,8 @@
         item_timeout_ms: Number($('wzItemTimeout').value) || 180000,
         attachment_timeout_ms: Number($('wzAttachTimeout').value) || 45000,
       },
+      webhook_url: $('wzWebhookUrl').value.trim() || null,
+      webhook_secret: $('wzWebhookSecret').value.trim() || null,
     };
   }
   $('wzCreateBtn').onclick = async () => {

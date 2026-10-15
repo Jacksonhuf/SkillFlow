@@ -13,6 +13,8 @@ from browser_skill.models import (
     AttachmentSpec,
     AuthSpec,
     BrowserTemplate,
+    DeliveryChannelSpec,
+    DeliverySpec,
     FieldSpec,
     FieldType,
     LearnedMapping,
@@ -254,6 +256,7 @@ class ProbeDraftCompiler:
             prompt=prompt[:200],
             validation=VariableValidation(regex=draft.driver_regex) if draft.driver_regex else None,
         )
+        delivery = _delivery_from_draft(draft)
         workflow_hints: list[WorkflowHint] = []
         for label in draft.attachment_expands:
             text = label.strip()
@@ -295,7 +298,28 @@ class ProbeDraftCompiler:
                 columns=[field.key for field in fields],
                 filename_pattern=draft.template_id,
             ),
+            delivery=delivery,
         )
+
+
+def _delivery_from_draft(draft: ProbeDraftInput) -> DeliverySpec:
+    url = (draft.webhook_url or "").strip()
+    if not url:
+        return DeliverySpec()
+    options: dict[str, str] = {}
+    if draft.webhook_secret:
+        options["webhook_secret"] = draft.webhook_secret
+    return DeliverySpec(
+        enabled=True,
+        channels=[
+            DeliveryChannelSpec(
+                type="webhook",
+                target=url,
+                enabled=True,
+                options=options,
+            )
+        ],
+    )
 
 
 def _list_navigation_spec(draft: ProbeDraftInput) -> ListNavigationSpec:
