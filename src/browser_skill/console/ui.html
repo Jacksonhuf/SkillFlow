@@ -312,6 +312,27 @@
     if (!reason) return ['unknown'];
     return reason.split(';').map(part => part.split(':')[0].trim()).filter(Boolean);
   }
+  // Mirror of runtime.batch.describe_item_failure for batch.json rows loaded from run detail.
+  function describeBatchItem(item) {
+    const errMsg = item.error && item.error.message ? String(item.error.message) : '';
+    const reason = String(item.reason || '').trim();
+    if (!reason) return errMsg || '未知原因';
+    const parts = [];
+    let usedErr = false;
+    for (const seg of reason.split(';').map(s => s.trim()).filter(Boolean)) {
+      const idx = seg.indexOf(':');
+      const bucket = idx >= 0 ? seg.slice(0, idx) : seg;
+      const tail = idx >= 0 ? seg.slice(idx + 1) : '';
+      if (bucket.startsWith('E_') || bucket === 'item' || ['list_navigation', 'locator', 'attachments', 'pick', 'dialog'].includes(bucket)) {
+        parts.push(errMsg || BATCH_REASON_LABELS[bucket] || seg); usedErr = true; continue;
+      }
+      const label = BATCH_REASON_LABELS[bucket] || (bucket === 'no_record' ? '页面未解析出记录' : bucket);
+      parts.push(tail ? `${label} ${tail}` : label);
+    }
+    let text = parts.join('；') || errMsg;
+    if (errMsg && !usedErr) text += `（${errMsg}）`;
+    return text || '未知原因';
+  }
   function batchValuesForBucket(items, bucket) {
     if (!items || !items.length) return [];
     if (bucket === 'failed') return items.filter(i => i.status === 'failed').map(i => i.value);
@@ -334,6 +355,26 @@
   }
   function batchReasonLabel(code) {
     return BATCH_REASON_LABELS[code] || code;
+  }
+  // Per-item failure reasons + actionable hint; present on failed runs (error.details) and on
+  // successful runs with partial/failed items (data.item_failures).
+  function renderItemFailures(resp) {
+    const data = resp && resp.data;
+    if (!data) return '';
+    const details = data.error && data.error.details;
+    const source = (details && details.item_failures) ? details : data;
+    const failures = Array.isArray(source.item_failures) ? source.item_failures : [];
+    const hint = source.hint;
+    if (!failures.length && !hint) return '';
+    let html = '';
+    if (failures.length) {
+      html += '<div class="notice warn" style="margin-top:6px"><div>失败原因：</div><ul style="margin:4px 0 0 18px">'
+        + failures.slice(0, 5).map(f => `<li>第 ${Number(f.index) + 1} 条 <code>${esc(f.value)}</code>${f.status === 'partial' ? '（部分）' : ''}：${esc(f.message || f.reason || '未知原因')}</li>`).join('')
+        + (failures.length > 5 ? `<li class="muted">…另有 ${failures.length - 5} 条，见「历史结果」批量明细</li>` : '')
+        + '</ul></div>';
+    }
+    if (hint) html += `<div class="muted" style="margin-top:4px">建议：${esc(hint)}</div>`;
+    return html;
   }
   function renderRetrySuggestionsBlock(suggestions) {
     if (!suggestions || !suggestions.length) return '';
@@ -455,6 +496,7 @@
         html += `<div class="row"><span class="muted">失败的编号：${esc(items.failed_values.slice(0, 20).join('、'))}${items.failed_values.length > 20 ? ' …' : ''}</span>`
           + (canBatchRetry ? `<button class="btn secondary" id="retryFailedBtn">只重跑失败的 ${items.failed_values.length} 条</button>` : '') + '</div>';
       }
+      html += renderItemFailures(resp);
     }
     if (resp.data && resp.data.retry_suggestions) {
       html += renderRetrySuggestionsBlock(resp.data.retry_suggestions);
@@ -752,7 +794,7 @@
           + `</select></label></div>`;
       }
       html += `<table id="batchItemsTable"><thead><tr><th>#</th><th>编号 / 地址</th><th>状态</th><th>记录</th><th>附件</th><th>原因</th></tr></thead><tbody>`
-        + d.batch.items.slice(0, 200).map(i => `<tr data-reason-buckets="${esc(batchReasonBuckets(i.reason || (i.error && i.error.message) || '').join(','))}"><td>${i.index + 1}</td><td><code>${esc(i.value)}</code></td><td><span class="badge ${i.status === 'ok' ? 'ok' : i.status === 'failed' ? 'bad' : i.status === 'partial' ? 'warn' : ''}">${esc(i.status)}</span></td><td>${i.record_count}</td><td>${i.file_count}</td><td class="muted">${esc(i.reason || (i.error && i.error.message) || '')}</td></tr>`).join('')
+        + d.batch.items.slice(0, 200).map(i => `<tr data-reason-buckets="${esc(batchReasonBuckets(i.reason || (i.error && i.error.message) || '').join(','))}"><td>${i.index + 1}</td><td><code>${esc(i.value)}</code></td><td><span class="badge ${i.status === 'ok' ? 'ok' : i.status === 'failed' ? 'bad' : i.status === 'partial' ? 'warn' : ''}">${esc(i.status)}</span></td><td>${i.record_count}</td><td>${i.file_count}</td><td class="muted">${esc(describeBatchItem(i))}</td></tr>`).join('')
         + '</tbody></table>';
       if (d.batch.items.length > 200) html += `<p class="muted">仅显示前 200 条。</p>`;
     }
@@ -1024,7 +1066,16 @@
       const r = await api('/api/runs/' + encodeURIComponent(runId));
       const rows = r.run && r.run.records_preview;
       if (!rows || !rows.length) {
-        el.insertAdjacentHTML('beforeend', '<p class="muted" style="margin-top:8px">试跑已完成，但未写出数据行（请检查登录、字段/表格勾选或到「历史结果」查看详情）。</p>');
+        const batchItems = (r.run && r.run.batch && Array.isArray(r.run.batch.items)) ? r.run.batch.items : [];
+        const bad = batchItems.filter(i => i.status === 'failed' || i.status === 'partial');
+        let why = '';
+        if (bad.length) {
+          why = '<ul style="margin:4px 0 0 18px">' + bad.slice(0, 5).map(i =>
+            `<li>第 ${i.index + 1} 条 <code>${esc(i.value)}</code>：${esc(describeBatchItem(i))}</li>`).join('') + '</ul>';
+        }
+        el.insertAdjacentHTML('beforeend', '<div class="notice warn" style="margin-top:8px">试跑已完成，但未写出数据行。'
+          + (why ? '每条失败原因：' + why : '请检查登录、字段/表格勾选，或到「历史结果」查看详情。')
+          + '<div class="muted" style="margin-top:4px">常见原因：必填/主键字段没取到值（重新点选或取消必填）、页面要求登录、示例地址不是详情页。</div></div>');
         return;
       }
       const cols = Object.keys(rows[0]);

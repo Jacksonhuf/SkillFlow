@@ -42,11 +42,14 @@ from browser_skill.pipeline.process import apply_processing
 from browser_skill.runtime.auth import AuthClassifier
 from browser_skill.runtime.batch import (
     ItemOutcome,
+    all_items_failed_error,
     apply_incremental_skip,
     batch_failure_reason,
     build_progress,
     classify_item,
+    describe_item_failure,
     extract_item_records,
+    item_failure_hint,
     previously_completed_values,
 )
 from browser_skill.runtime.capability_requirements import ensure_template_runtime_capabilities
@@ -374,6 +377,19 @@ class Runner:
 
             stats = context.batch.stats()
             data["items"] = stats
+            failures = [
+                {
+                    "index": item.index,
+                    "value": item.value,
+                    "status": item.status.value,
+                    "reason": item.reason,
+                    "message": describe_item_failure(item),
+                }
+                for item in context.batch.items
+                if item.status in {BatchItemStatus.FAILED, BatchItemStatus.PARTIAL}
+            ]
+            if failures:
+                data["item_failures"] = failures[:20]
             suggestions = batch_webhook_retry_suggestions(context.run_id, stats)
             if suggestions:
                 data["retry_suggestions"] = suggestions
@@ -561,13 +577,7 @@ class Runner:
         stats = batch.stats()
         self._event(workspace, context, "batch_finished", **stats)
         if stats["failed"] == stats["total"] and stats["total"]:
-            raise SkillError(
-                ErrorCode.VALIDATION_FAILED,
-                "所有批量项均失败，未产生任何记录",
-                stage="EXTRACTING",
-                repairable=True,
-                details={"items": stats},
-            )
+            raise all_items_failed_error(batch)
         return None
 
     async def _run_batch_parallel(
@@ -758,9 +768,22 @@ class Runner:
                     ErrorCode.FIELD_MAPPING_FAILED
                     if outcome.error is None
                     else ErrorCode(outcome.error["code"]),
-                    f"批量项 {item.value} 失败，模板配置为失败即停止",
+                    f"批量项 {item.value} 失败（{describe_item_failure(item)}），"
+                    "模板配置为失败即停止",
                     stage="EXTRACTING",
-                    details={"items": batch.stats(), "item": item.model_dump(mode="json")},
+                    details={
+                        "items": batch.stats(),
+                        "item": item.model_dump(mode="json"),
+                        "item_failures": [
+                            {
+                                "index": item.index,
+                                "value": item.value,
+                                "reason": item.reason,
+                                "message": describe_item_failure(item),
+                            }
+                        ],
+                        "hint": item_failure_hint([item]),
+                    },
                 )
             return None
 

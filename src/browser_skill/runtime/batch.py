@@ -12,7 +12,7 @@ from urllib.parse import urlsplit
 from browser_skill.acquire.label_value import find_label_value, parse_label_values
 from browser_skill.acquire.network import endpoint_matches, resolve_scalar
 from browser_skill.acquire.tables import column_index, select_table, tables_from_snapshot
-from browser_skill.errors import SkillError
+from browser_skill.errors import ErrorCode, SkillError
 from browser_skill.models import (
     AcquisitionSource,
     BatchItemState,
@@ -69,6 +69,118 @@ _BATCH_FAILURE_LABELS: dict[str, str] = {
     "required_attachment_missing": "缺必填附件",
     "attachment_missing": "附件未齐",
 }
+
+
+_EXTRA_REASON_LABELS: dict[str, str] = {
+    "no_record": "页面未解析出记录",
+    "rows_dropped": "丢弃行",
+}
+
+_REASON_HINTS: dict[str, str] = {
+    "required_field_missing": (
+        "必填字段（含记录主键）在页面上没取到值。请在向导里重新点选该字段，"
+        "或取消它的必填/主键勾选；若页面加载慢，可在高级设置调大单条超时。"
+    ),
+    "no_record": "页面没有解析出任何记录：确认示例地址能直接打开详情页，且已在 Chrome 登录。",
+    "required_attachment_missing": "必填附件未下载成功：可先取消附件必填再试跑。",
+    "list_navigation": "列表页搜索/进详情失败：检查列表页录制与搜索框文案。",
+    "pick_field_empty": "点选字段为空：重新点选或改用表格/标签字段。",
+    "auth_required": "页面要求登录：先在 Chrome 登录目标系统，再重新试跑。",
+    "item": "打开详情页失败或超时：检查地址模板和网络，必要时调大单条超时。",
+}
+
+
+def describe_item_failure(item: BatchItemState) -> str:
+    """One-line, business-readable explanation of why a batch item failed/partial."""
+    reason = (item.reason or "").strip()
+    error = item.error if isinstance(item.error, dict) else None
+    error_message = str(error.get("message") or "").strip() if error else ""
+    if not reason:
+        return error_message or "未知原因"
+    parts: list[str] = []
+    used_error = False
+    for segment in (part.strip() for part in reason.split(";")):
+        if not segment:
+            continue
+        bucket, _, tail = segment.partition(":")
+        # Stage/code reasons (list_navigation:..., E_PAGE_NOT_FOUND) carry the real text in error.
+        if bucket in _BATCH_FAILURE_STAGES or bucket == "item" or bucket.startswith("E_"):
+            parts.append(error_message or _BATCH_FAILURE_LABELS.get(bucket, segment))
+            used_error = True
+            continue
+        label = _BATCH_FAILURE_LABELS.get(bucket) or _EXTRA_REASON_LABELS.get(bucket, bucket)
+        parts.append(f"{label} {tail}" if tail else label)
+    text = "；".join(parts) or error_message
+    if error_message and not used_error:
+        text = f"{text}（{error_message}）"
+    return text or "未知原因"
+
+
+def item_failure_hint(items: Sequence[BatchItemState]) -> str | None:
+    """Actionable hint for the dominant failure bucket across failed items."""
+    counts: dict[str, int] = {}
+    for item in items:
+        if item.status != BatchItemStatus.FAILED:
+            continue
+        reason = (item.reason or "").strip()
+        bucket = reason.split(";", 1)[0].split(":", 1)[0] if reason else ""
+        if bucket.startswith("E_") or (not bucket and item.error):
+            bucket = "item"
+        counts[bucket] = counts.get(bucket, 0) + 1
+    if not counts:
+        return None
+    dominant = max(counts.items(), key=lambda pair: pair[1])[0]
+    return _REASON_HINTS.get(dominant)
+
+
+def all_items_failed_error(batch: BatchProgress, *, limit: int = 5) -> SkillError:
+    """Error for a batch where every item failed; names the reasons instead of just the count."""
+    stats = batch.stats()
+    failed = [item for item in batch.items if item.status == BatchItemStatus.FAILED]
+    failures = [
+        {
+            "index": item.index,
+            "value": item.value,
+            "reason": item.reason,
+            "message": describe_item_failure(item),
+        }
+        for item in failed[:limit]
+    ]
+    first = failures[0]["message"] if failures else ""
+    message = f"所有批量项均失败，未产生任何记录（共 {stats['total']} 条）"
+    if first:
+        message += f"。第 1 条「{failed[0].value}」：{first}"
+    hint = item_failure_hint(failed)
+    if hint:
+        message += f" 建议：{hint}"
+    return SkillError(
+        ErrorCode.VALIDATION_FAILED,
+        message,
+        stage="EXTRACTING",
+        repairable=True,
+        details={"items": stats, "item_failures": failures, "hint": hint},
+    )
+
+
+def batch_item_failure_lines(payload: dict[str, Any], *, limit: int = 5) -> list[str]:
+    """CLI lines naming why individual items failed (``item_failures`` + ``hint``)."""
+    raw = payload.get("item_failures")
+    lines: list[str] = []
+    if isinstance(raw, list):
+        shown = [entry for entry in raw if isinstance(entry, dict)][:limit]
+        for entry in shown:
+            index = entry.get("index")
+            position = f"第 {int(index) + 1} 条" if isinstance(index, int) else "某条"
+            lines.append(
+                f"  {position}「{entry.get('value', '')}」：{entry.get('message') or '未知原因'}"
+            )
+        remaining = len(raw) - len(shown)
+        if remaining > 0:
+            lines.append(f"  …另有 {remaining} 条失败/部分成功，详见 batch.json")
+    hint = payload.get("hint")
+    if isinstance(hint, str) and hint:
+        lines.append(f"  建议：{hint}")
+    return lines
 
 
 def batch_summary_extra_lines(items: dict[str, Any]) -> list[str]:
