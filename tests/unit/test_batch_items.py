@@ -5,6 +5,7 @@ from copy import deepcopy
 from pathlib import Path
 from typing import Any
 
+from browser_skill.errors import ErrorCode
 from browser_skill.models import (
     BatchItemState,
     BatchItemStatus,
@@ -16,8 +17,11 @@ from browser_skill.models import (
     TableData,
 )
 from browser_skill.runtime.batch import (
+    all_items_failed_error,
     apply_incremental_skip,
+    batch_item_failure_lines,
     classify_item,
+    describe_item_failure,
     extract_item_records,
     previously_completed_values,
 )
@@ -466,3 +470,65 @@ def test_apply_incremental_skip_marks_only_pending_items() -> None:
     assert batch.items[1].status == BatchItemStatus.PENDING
     assert batch.items[2].status == BatchItemStatus.OK
     assert batch.stats()["skipped"] == 1
+
+
+def test_describe_item_failure_required_fields_and_navigation() -> None:
+    missing = BatchItemState(
+        index=0,
+        value="ORD-1",
+        url="u",
+        status=BatchItemStatus.FAILED,
+        reason="required_field_missing:customer,order_no",
+    )
+    assert "缺必填字段" in describe_item_failure(missing)
+    assert "customer" in describe_item_failure(missing)
+
+    nav = BatchItemState(
+        index=1,
+        value="ORD-2",
+        url="u",
+        status=BatchItemStatus.FAILED,
+        reason="list_navigation:E_PAGE_NOT_FOUND",
+        error={"message": "列表中找不到该编号"},
+    )
+    assert "列表中找不到该编号" in describe_item_failure(nav)
+
+
+def test_all_items_failed_error_includes_first_item_and_hint() -> None:
+    batch = BatchProgress(
+        driver_variable="order_no",
+        items=[
+            BatchItemState(
+                index=0,
+                value="ORD-1",
+                url="u",
+                status=BatchItemStatus.FAILED,
+                reason="no_record",
+            ),
+            BatchItemState(
+                index=1,
+                value="ORD-2",
+                url="u",
+                status=BatchItemStatus.FAILED,
+                reason="no_record",
+            ),
+        ],
+    )
+    exc = all_items_failed_error(batch)
+    assert exc.code == ErrorCode.VALIDATION_FAILED
+    assert "共 2 条" in exc.message
+    assert "ORD-1" in exc.message
+    assert exc.details["item_failures"][0]["message"]
+    assert exc.details["hint"]
+
+
+def test_batch_item_failure_lines_for_cli() -> None:
+    payload = {
+        "item_failures": [
+            {"index": 0, "value": "A", "message": "缺必填字段 customer"},
+        ],
+        "hint": "重新点选字段",
+    }
+    lines = batch_item_failure_lines(payload)
+    assert any("第 1 条" in line and "A" in line for line in lines)
+    assert any("建议" in line for line in lines)

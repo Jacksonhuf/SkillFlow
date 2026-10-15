@@ -23,7 +23,11 @@ from browser_skill.interaction.variables import VariableResolver
 from browser_skill.models import BrowserTemplate, RunState
 from browser_skill.platform.acceptance import validate_acceptance_bundle
 from browser_skill.platform.probe import probe_adapter
-from browser_skill.runtime.batch import batch_retry_summary_lines, batch_summary_extra_lines
+from browser_skill.runtime.batch import (
+    batch_item_failure_lines,
+    batch_retry_summary_lines,
+    batch_summary_extra_lines,
+)
 from browser_skill.runtime.repair import RepairService
 from browser_skill.runtime.runner import Runner
 from browser_skill.runtime.teach import TeachCompiler
@@ -344,13 +348,19 @@ def _supplied_variables(
 
 
 def _print_batch_summary(data: dict[str, Any]) -> None:
-    items = data.get("items")
+    # Failed runs carry the batch stats inside error.details instead of top-level data.
+    error = data.get("error")
+    details = error.get("details") if isinstance(error, dict) else None
+    source = details if isinstance(details, dict) and "items" in details else data
+    items = source.get("items")
     if not isinstance(items, dict):
         return
     console.print(
         f"  [cyan]↳[/cyan] 批量：共 {items.get('total', 0)} 条 · 成功 {items.get('ok', 0)}"
         f" · 部分 {items.get('partial', 0)} · 失败 {items.get('failed', 0)}"
     )
+    for line in batch_item_failure_lines(source):
+        console.print(f"  [yellow]{line.strip()}[/yellow]")
     for line in batch_summary_extra_lines(items):
         if line.startswith("  失败的编号") or line.startswith("  其余失败"):
             console.print(f"  [yellow]{line.strip()}[/yellow]")
