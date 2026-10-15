@@ -49,6 +49,7 @@ def test_webhook_payload_includes_batch_stats(template_data: dict) -> None:
             "failure_bucket": "list_navigation",
             "value_count": 1,
             "values_sample": ["ORD-1"],
+            "cli": "browser-skill retry-batch run-batch-1 --bucket list_navigation",
         },
         {
             "action": "retry_batch",
@@ -56,6 +57,7 @@ def test_webhook_payload_includes_batch_stats(template_data: dict) -> None:
             "failure_bucket": "failed",
             "value_count": 1,
             "values_sample": ["ORD-1"],
+            "cli": "browser-skill retry-batch run-batch-1 --bucket failed",
         },
     ]
 

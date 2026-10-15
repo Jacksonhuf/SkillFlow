@@ -200,6 +200,7 @@ def batch_webhook_retry_suggestions(run_id: str, stats: dict[str, Any]) -> list[
                 "failure_bucket": bucket,
                 "value_count": len(values),
                 "values_sample": values[:10],
+                "cli": f"browser-skill retry-batch {run_id} --bucket {bucket}",
             }
         )
     return suggestions
