@@ -601,35 +601,58 @@ class BrowserSkillApp:
                 request.version,
                 require_published=False,
             )
-            if template.status == TemplateStatus.PUBLISHED:
-                return SkillResponse(ok=False, message="已发布模板不能修改分发配置")
+            if template.status == TemplateStatus.PUBLISHED and not request.fork_as_new_version:
+                return SkillResponse(
+                    ok=False,
+                    message=(
+                        "已发布版本不可就地修改；请加 fork_as_new_version 或 CLI --fork 创建草稿"
+                    ),
+                )
             try:
                 delivery, report_enabled = self._delivery_update_spec(template, request)
             except ValueError as exc:
                 return SkillResponse(ok=False, message=str(exc))
             report_spec = template.report.model_copy(update={"enabled": report_enabled})
-            updated = self.store.patch_delivery(
-                request.template_id,
-                request.version,
-                delivery=delivery,
-                report=report_spec,
-            )
-            cli = _update_delivery_cli(request, delivery)
-            return SkillResponse(
-                ok=True,
-                message="分发配置已保存",
-                data={
-                    "template_id": updated.template_id,
-                    "version": updated.version,
-                    "delivery_channels": delivery_channel_summaries(updated.delivery),
-                    "pipeline": {
-                        "report": updated.report.enabled,
-                        "delivery": updated.delivery.enabled,
+            forked_from: int | None = None
+            if template.status == TemplateStatus.PUBLISHED:
+                forked_from = template.version
+                new_version = self.store.next_version(request.template_id)
+                updated = template.model_copy(
+                    update={
+                        "version": new_version,
+                        "status": TemplateStatus.DRAFT,
+                        "delivery": delivery,
+                        "report": report_spec,
                     },
-                    "cli": cli,
-                    "invoke_cli": cli.replace("browser-skill", "py scripts/invoke.py", 1),
+                    deep=True,
+                )
+                self.store.save(updated)
+                message = (
+                    f"已基于 v{forked_from} 创建草稿 v{new_version}，分发配置已写入"
+                )
+            else:
+                updated = self.store.patch_delivery(
+                    request.template_id,
+                    request.version,
+                    delivery=delivery,
+                    report=report_spec,
+                )
+                message = "分发配置已保存"
+            cli = _update_delivery_cli(request, delivery)
+            data: dict[str, Any] = {
+                "template_id": updated.template_id,
+                "version": updated.version,
+                "delivery_channels": delivery_channel_summaries(updated.delivery),
+                "pipeline": {
+                    "report": updated.report.enabled,
+                    "delivery": updated.delivery.enabled,
                 },
-            )
+                "cli": cli,
+                "invoke_cli": cli.replace("browser-skill", "py scripts/invoke.py", 1),
+            }
+            if forked_from is not None:
+                data["forked_from_version"] = forked_from
+            return SkillResponse(ok=True, message=message, data=data)
         if request.action == "publish":
             if not request.template_id or request.version is None or not request.run_id:
                 return SkillResponse(
@@ -833,6 +856,8 @@ def _update_delivery_cli(request: SkillRequest, delivery: DeliverySpec) -> str:
     base = (
         f"browser-skill update-delivery {request.template_id} --version {request.version}"
     )
+    if request.fork_as_new_version:
+        base = f"{base} --fork"
     if request.disable_delivery:
         return f"{base} --disable"
     target = delivery.channels[0].target if delivery.channels else (request.webhook_url or "")

@@ -25,6 +25,17 @@ def test_update_delivery_cli_enable() -> None:
     assert cli == "browser-skill update-delivery demo_tpl --version 3 --webhook-url https://hooks.example/h"
 
 
+def test_update_delivery_cli_fork_flag() -> None:
+    request = SkillRequest(
+        action="update_delivery",
+        template_id="demo_tpl",
+        version=1,
+        fork_as_new_version=True,
+    )
+    cli = _update_delivery_cli(request, DeliverySpec())
+    assert "--fork" in cli
+
+
 def test_update_delivery_cli_disable() -> None:
     request = SkillRequest(
         action="update_delivery",
