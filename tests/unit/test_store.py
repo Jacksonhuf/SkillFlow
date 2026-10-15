@@ -5,7 +5,8 @@ from pathlib import Path
 import pytest
 
 from browser_skill.errors import SkillError
-from browser_skill.models import BrowserTemplate, TemplateStatus
+from browser_skill.models import BrowserTemplate, DeliverySpec, ReportSpec, TemplateStatus
+from browser_skill.pipeline.deliver import delivery_spec_from_webhook
 from browser_skill.templates.store import TemplateStore
 
 
@@ -25,6 +26,40 @@ def test_store_rejects_mutating_existing_version(tmp_path: Path, template_data) 
     changed = template.model_copy(update={"name": "Changed"})
     with pytest.raises(SkillError, match="immutable"):
         store.save(changed)
+
+
+def test_patch_delivery_updates_draft_yaml(tmp_path: Path, template_data) -> None:
+    data = deepcopy(template_data)
+    data["status"] = TemplateStatus.DRAFT
+    template = BrowserTemplate.model_validate(data)
+    store = TemplateStore(tmp_path)
+    store.save(template)
+    delivery = delivery_spec_from_webhook("https://hook.test/", "secret")
+    report = template.report.model_copy(update={"enabled": True})
+    patched = store.patch_delivery(
+        template.template_id,
+        template.version,
+        delivery=delivery,
+        report=report,
+    )
+    assert patched.delivery.channels[0].target == "https://hook.test/"
+    again = store.load(template.template_id, template.version, require_published=False)
+    assert again.delivery.enabled is True
+
+
+def test_patch_delivery_rejects_published(tmp_path: Path, template_data) -> None:
+    store = TemplateStore(tmp_path)
+    template = BrowserTemplate.model_validate(template_data)
+    store.save(template)
+    delivery = DeliverySpec()
+    report = ReportSpec()
+    with pytest.raises(SkillError, match="Published"):
+        store.patch_delivery(
+            template.template_id,
+            template.version,
+            delivery=delivery,
+            report=report,
+        )
 
 
 def test_publish_requires_passing_test(tmp_path: Path, template_data) -> None:

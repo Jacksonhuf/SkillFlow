@@ -13,7 +13,6 @@ from browser_skill.models import (
     AttachmentSpec,
     AuthSpec,
     BrowserTemplate,
-    DeliveryChannelSpec,
     DeliverySpec,
     FieldSpec,
     FieldType,
@@ -39,6 +38,7 @@ from browser_skill.models import (
     WorkflowHint,
     WorkflowSpec,
 )
+from browser_skill.pipeline.deliver import delivery_spec_from_webhook
 
 _PLACEHOLDER = re.compile(r"\{([a-z][a-z0-9_]*)\}")
 # Stamped on every table row so (driver, row_no) identifies a record even when rows repeat
@@ -310,23 +310,7 @@ class ProbeDraftCompiler:
 
 
 def _delivery_from_draft(draft: ProbeDraftInput) -> DeliverySpec:
-    url = (draft.webhook_url or "").strip()
-    if not url:
-        return DeliverySpec()
-    options: dict[str, str] = {}
-    if draft.webhook_secret:
-        options["webhook_secret"] = draft.webhook_secret
-    return DeliverySpec(
-        enabled=True,
-        channels=[
-            DeliveryChannelSpec(
-                type="webhook",
-                target=url,
-                enabled=True,
-                options=options,
-            )
-        ],
-    )
+    return delivery_spec_from_webhook(draft.webhook_url, draft.webhook_secret)
 
 
 def _list_navigation_spec(draft: ProbeDraftInput) -> ListNavigationSpec:

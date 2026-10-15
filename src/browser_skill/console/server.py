@@ -97,6 +97,7 @@ _SYNC_ACTIONS = {
     "probe_list_navigation",
     "publish",
     "validate_acceptance",
+    "update_delivery",
 }
 
 

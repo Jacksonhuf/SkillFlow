@@ -125,6 +125,36 @@ def _post_json(
 # --------------------------------------------------------------------------- local / webhook
 
 
+def delivery_spec_from_webhook(
+    webhook_url: str | None,
+    webhook_secret: str | None,
+    *,
+    disable: bool = False,
+) -> DeliverySpec:
+    if disable:
+        return DeliverySpec()
+    url = (webhook_url or "").strip()
+    if not url:
+        return DeliverySpec()
+    if not url.startswith(("http://", "https://")):
+        raise ValueError("webhook_url 必须是 http:// 或 https:// 地址")
+    options: dict[str, str] = {}
+    secret = (webhook_secret or "").strip()
+    if secret:
+        options["webhook_secret"] = secret
+    return DeliverySpec(
+        enabled=True,
+        channels=[
+            DeliveryChannelSpec(
+                type="webhook",
+                target=url,
+                enabled=True,
+                options=options,
+            )
+        ],
+    )
+
+
 def delivery_channel_summaries(spec: DeliverySpec) -> list[dict[str, Any]]:
     """Safe delivery channel metadata for APIs (never includes webhook secrets)."""
     summaries: list[dict[str, Any]] = []
