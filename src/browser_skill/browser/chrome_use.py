@@ -15,6 +15,29 @@ from browser_skill.errors import ErrorCode, SkillError
 from browser_skill.models import BrowserCapabilities, BrowserSnapshot, CommandResult
 
 
+def chrome_use_operations_payload(capabilities: BrowserCapabilities) -> dict[str, bool]:
+    """Teach ops map for ``probe_adapter`` (chrome-use CLI does not implement pick/list/record)."""
+    return {
+        "network.list": capabilities.network,
+        "probe.pick_start": False,
+        "probe.pick_stop": False,
+        "probe.list_nav_start": False,
+        "probe.list_nav_stop": False,
+        "probe.record_start": False,
+        "probe.record_stop": False,
+    }
+
+
+def enrich_chrome_use_capabilities_payload(
+    payload: dict[str, Any], capabilities: BrowserCapabilities
+) -> dict[str, Any]:
+    merged = dict(payload)
+    merged.setdefault("engine", "chrome-use")
+    if not isinstance(merged.get("operations"), dict):
+        merged["operations"] = chrome_use_operations_payload(capabilities)
+    return merged
+
+
 class ChromeUseAdapter:
     """The only subprocess boundary for the third-party chrome-use CLI.
 
@@ -110,7 +133,9 @@ class ChromeUseAdapter:
         )
 
     async def capabilities_payload(self) -> dict[str, Any]:
-        return (await self.capabilities()).model_dump(mode="json")
+        capabilities = await self.capabilities()
+        payload = capabilities.model_dump(mode="json")
+        return enrich_chrome_use_capabilities_payload(payload, capabilities)
 
     async def open(self, url: str) -> CommandResult:
         return await self._run(["open", url])
@@ -302,10 +327,11 @@ class ChromeUseToolAdapter:
         )
 
     async def capabilities_payload(self) -> dict[str, Any]:
+        capabilities = await self.capabilities()
         result = await self._call("capabilities")
         if isinstance(result.data, dict):
-            return result.data
-        return {}
+            return enrich_chrome_use_capabilities_payload(result.data, capabilities)
+        return enrich_chrome_use_capabilities_payload({}, capabilities)
 
     async def open(self, url: str) -> CommandResult:
         return await self._call("open", url=url)
