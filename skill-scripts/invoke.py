@@ -15,6 +15,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import contextlib
+import importlib.util
 import json
 import os
 import sys
@@ -24,7 +25,30 @@ from typing import Any
 
 
 def _skill_root() -> Path:
-    return Path(__file__).resolve().parent.parent
+    """Directory with SKILL.md + templates/ (full zip root, or repo root in dev)."""
+    here = Path(__file__).resolve().parent
+    candidates = [here.parent, here, *here.parents]
+    seen: set[Path] = set()
+    for candidate in candidates:
+        if candidate in seen:
+            continue
+        seen.add(candidate)
+        if not (candidate / "SKILL.md").is_file():
+            continue
+        if not (candidate / "templates").is_dir():
+            continue
+        return candidate
+    return here.parent
+
+
+def _runtime_src_root(skill_root: Path) -> Path:
+    bundled = skill_root / "runtime" / "src"
+    if bundled.is_dir():
+        return bundled
+    dev_src = skill_root / "src"
+    if (dev_src / "browser_skill").is_dir():
+        return dev_src
+    return bundled
 
 
 def _configure_stdio() -> None:
@@ -53,17 +77,23 @@ def _bootstrap() -> None:
         raise SystemExit(2)
     _configure_stdio()
     root = _skill_root()
-    runtime_src = root / "runtime" / "src"
-    if not runtime_src.is_dir():
+    runtime_src = _runtime_src_root(root)
+    if (runtime_src / "browser_skill").is_dir():
+        path = str(runtime_src)
+        if path not in sys.path:
+            sys.path.insert(0, path)
+    elif importlib.util.find_spec("browser_skill") is None:
         print(
-            "ERROR: missing bundled runtime/. "
-            "Use universal-browser-full-*.zip from SkillFlow releases.",
+            "ERROR: 找不到 Python 运行时代码。\n"
+            f"  技能根目录: {root}\n"
+            f"  期望其一存在:\n"
+            f"    {root / 'runtime' / 'src' / 'browser_skill'}"
+            "  （完整包 universal-browser-full-*.zip）\n"
+            f"    {root / 'src' / 'browser_skill'}  （开发仓库）\n"
+            "请从 GitHub Releases 重新解压完整 zip，并在解压后的文件夹里双击 open-console.bat。",
             file=sys.stderr,
         )
         raise SystemExit(2)
-    path = str(runtime_src)
-    if path not in sys.path:
-        sys.path.insert(0, path)
     os.environ.setdefault("UNIVERSAL_BROWSER_SKILL_ROOT", str(root))
 
 
@@ -215,9 +245,10 @@ def main(argv: list[str] | None = None) -> int:
     ui_p.add_argument("--no-browser", action="store_true", help="Do not open a browser tab")
 
     args = parser.parse_args(argv)
+    skill_root = _skill_root()
     try:
         app = make_standalone_app(
-            _skill_root(),
+            skill_root,
             chrome_use_executable=args.chrome_use,
             auto_install_chrome_use=not args.no_auto_install_chrome_use,
             engine=args.engine,
@@ -225,10 +256,17 @@ def main(argv: list[str] | None = None) -> int:
     except Exception as exc:
         from browser_skill.errors import SkillError
 
+        log_path = skill_root / "runs" / "console-start.log"
+        try:
+            log_path.parent.mkdir(parents=True, exist_ok=True)
+            log_path.write_text(traceback.format_exc(), encoding="utf-8")
+            print(f"启动失败，详情已写入: {log_path}", file=sys.stderr)
+        except OSError:
+            pass
         if isinstance(exc, SkillError):
             print(exc.message, file=sys.stderr)
         else:
-            print(str(exc), file=sys.stderr)
+            print(f"{type(exc).__name__}: {exc}", file=sys.stderr)
         return 1
 
     if args.command == "ui":

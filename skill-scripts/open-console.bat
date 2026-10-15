@@ -29,6 +29,24 @@ pause
 exit /b 2
 
 :ub_found
+set "SKILLROOT=%~dp0"
+if exist "%~dp0scripts\invoke.py" set "SKILLROOT=%~dp0"
+if not exist "%SKILLROOT%SKILL.md" (
+  echo.
+  echo Cannot find SKILL.md next to this launcher.
+  echo Please open open-console.bat from the folder you extracted universal-browser-full-*.zip into.
+  echo Expected layout: SKILL.md, templates\, runtime\, scripts\invoke.py in the same folder.
+  pause
+  exit /b 2
+)
+if not exist "%SKILLROOT%runtime\src\browser_skill" (
+  echo.
+  echo Missing runtime\src\browser_skill - this is not the FULL skill package.
+  echo Download universal-browser-full-*.zip from GitHub Releases and extract again.
+  pause
+  exit /b 2
+)
+
 echo Closing stale console on port 8765 if any...
 for /f "tokens=5" %%p in ('netstat -ano ^| findstr ":8765" ^| findstr "LISTENING"') do (
   if not "%%p"=="0" taskkill /F /T /PID %%p >nul 2>&1

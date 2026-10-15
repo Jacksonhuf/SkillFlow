@@ -39,10 +39,15 @@ def bootstrap_runtime_import(skill_root: Path) -> None:
     """Allow importing browser_skill from bundled runtime/ without a global pip install."""
     runtime_src = skill_root / "runtime" / "src"
     if not runtime_src.is_dir():
-        raise FileNotFoundError(
-            f"Bundled runtime missing at {runtime_src}. Use the full skill package "
-            "(universal-browser-full-*.zip), not the slim SKILL-only zip."
-        )
+        dev_src = skill_root / "src"
+        if (dev_src / "browser_skill").is_dir():
+            runtime_src = dev_src
+        else:
+            raise FileNotFoundError(
+                f"Bundled runtime missing at {skill_root / 'runtime' / 'src'}. "
+                "Use universal-browser-full-*.zip (not the slim SKILL-only zip), "
+                "or run from a git checkout with src/browser_skill present."
+            )
     src = str(runtime_src)
     if src not in sys.path:
         sys.path.insert(0, src)
