@@ -614,6 +614,7 @@ class BrowserSkillApp:
                 delivery=delivery,
                 report=report_spec,
             )
+            cli = _update_delivery_cli(request, delivery)
             return SkillResponse(
                 ok=True,
                 message="分发配置已保存",
@@ -625,6 +626,8 @@ class BrowserSkillApp:
                         "report": updated.report.enabled,
                         "delivery": updated.delivery.enabled,
                     },
+                    "cli": cli,
+                    "invoke_cli": cli.replace("browser-skill", "py scripts/invoke.py", 1),
                 },
             )
         if request.action == "publish":
@@ -824,6 +827,16 @@ class BrowserSkillApp:
         secret = existing_secret if secret_input is None else secret_input.strip() or None
         delivery = delivery_spec_from_webhook(url, secret)
         return delivery, delivery.enabled
+
+
+def _update_delivery_cli(request: SkillRequest, delivery: DeliverySpec) -> str:
+    base = (
+        f"browser-skill update-delivery {request.template_id} --version {request.version}"
+    )
+    if request.disable_delivery:
+        return f"{base} --disable"
+    target = delivery.channels[0].target if delivery.channels else (request.webhook_url or "")
+    return f"{base} --webhook-url {target}"
 
 
 def _list_nav_step_ref(step: dict[str, Any]) -> str | None:

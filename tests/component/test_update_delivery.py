@@ -28,6 +28,8 @@ def test_update_delivery_on_draft(tmp_path, template_data: dict[str, object]) ->
         )
     )
     assert response.ok is True
+    assert "update-delivery" in response.data.get("cli", "")
+    assert "invoke.py update-delivery" in response.data.get("invoke_cli", "")
     channels = response.data["delivery_channels"]
     assert channels[0]["target"] == "https://hooks.example/skillflow"
     assert channels[0]["shared_secret_configured"] is True
