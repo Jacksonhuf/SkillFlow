@@ -172,6 +172,24 @@ def main(argv: list[str] | None = None) -> int:
     )
     retry_p.add_argument("--var", action="append", default=[])
 
+    delivery_p = sub.add_parser(
+        "update-delivery",
+        help="Configure Webhook delivery on a draft/testing template version",
+    )
+    delivery_p.add_argument("template_id")
+    delivery_p.add_argument("--version", type=int, required=True, help="Draft/testing version")
+    delivery_p.add_argument("--webhook-url", default=None, help="Webhook POST target")
+    delivery_p.add_argument(
+        "--webhook-secret",
+        default=None,
+        help="Shared secret; omit to keep existing on the template",
+    )
+    delivery_p.add_argument(
+        "--disable",
+        action="store_true",
+        help="Disable delivery and report for this version",
+    )
+
     ui_p = sub.add_parser("ui", help="Open the local web console (127.0.0.1 only)")
     ui_p.add_argument(
         "--port",
@@ -294,6 +312,18 @@ def main(argv: list[str] | None = None) -> int:
                     run_id=args.run_id,
                     failure_bucket=args.bucket,
                     variables=parse_variables(args.var),
+                )
+            )
+            return _print_response(response)
+        if args.command == "update-delivery":
+            response = await app.handle(
+                SkillRequest(
+                    action="update_delivery",
+                    template_id=args.template_id,
+                    version=args.version,
+                    webhook_url=args.webhook_url,
+                    webhook_secret=args.webhook_secret,
+                    disable_delivery=args.disable,
                 )
             )
             return _print_response(response)

@@ -535,6 +535,66 @@ def repair_candidate(
     )
 
 
+@app.command("update-delivery")
+def update_delivery(
+    template_id: str,
+    version: Annotated[int, typer.Option("--version", min=1, help="Draft/testing version")],
+    webhook_url: Annotated[
+        str | None,
+        typer.Option("--webhook-url", help="Webhook POST target (http/https)"),
+    ] = None,
+    webhook_secret: Annotated[
+        str | None,
+        typer.Option("--webhook-secret", help="Shared secret header value; omit to keep existing"),
+    ] = None,
+    disable: Annotated[
+        bool,
+        typer.Option("--disable", help="Turn off delivery and report"),
+    ] = False,
+    root: Annotated[Path, typer.Option("--root")] = Path("templates"),
+    runs_root: Annotated[Path, typer.Option("--runs-root")] = Path("runs"),
+    executable: Annotated[str, typer.Option(help="chrome-use executable")] = "chrome-use",
+) -> None:
+    """Configure Webhook delivery on a draft or testing template version."""
+    from browser_skill.app import BrowserSkillApp
+    from browser_skill.models import SkillRequest
+
+    try:
+        skill_app = BrowserSkillApp(root, runs_root, _adapter(executable))
+        with console.status("[bold #818cf8]正在保存分发配置…[/bold #818cf8]"):
+            response = asyncio.run(
+                skill_app.handle(
+                    SkillRequest(
+                        action="update_delivery",
+                        template_id=template_id,
+                        version=version,
+                        webhook_url=webhook_url,
+                        webhook_secret=webhook_secret,
+                        disable_delivery=disable,
+                    )
+                )
+            )
+        color = "green" if response.ok else "red"
+        console.print(
+            Panel(
+                f"[bold {color}]{response.message}[/bold {color}]",
+                title="分发配置",
+                border_style=color,
+            )
+        )
+        channels = response.data.get("delivery_channels") or []
+        for row in channels:
+            secret = " · 已配置密钥" if row.get("shared_secret_configured") else ""
+            console.print(f"  [dim]{row.get('type')}: {row.get('target')}{secret}[/dim]")
+        if cli := response.data.get("cli"):
+            console.print(f"  [dim]CLI: {cli}[/dim]")
+        if not response.ok:
+            raise typer.Exit(2)
+    except SkillError as exc:
+        console.print(Panel(str(exc), title="[red]无法保存[/red]", border_style="red"))
+        raise typer.Exit(2) from exc
+
+
 @app.command("retry-batch")
 def retry_batch(
     run_id: str,
