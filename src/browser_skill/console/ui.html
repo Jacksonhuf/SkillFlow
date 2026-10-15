@@ -78,6 +78,19 @@
       <h3 id="runTitle"></h3>
       <p id="runDesc" class="muted"></p>
       <div id="runMeta"></div>
+      <div id="deliveryPanel" class="hidden" style="margin-top:12px;padding-top:12px;border-top:1px solid var(--border)">
+        <strong>Webhook 分发</strong>
+        <p class="muted" style="margin:6px 0">仅未发布版本可改。运行结束会向该地址 POST JSON；密钥通过请求头 <code>X-Universal-Browser-Webhook-Secret</code> 发送。</p>
+        <label>Webhook URL</label>
+        <input type="url" id="deliveryUrl" placeholder="https://example.com/hooks/run-finished" autocomplete="off">
+        <label>共享密钥 <span class="muted" id="deliverySecretHint"></span></label>
+        <input type="password" id="deliverySecret" placeholder="留空则保留已保存的密钥" autocomplete="new-password">
+        <label style="display:flex;gap:8px;align-items:center;margin-top:8px"><input type="checkbox" id="deliveryDisable" style="width:auto"> 关闭分发（并关闭报告）</label>
+        <div class="row" style="margin-top:8px">
+          <button type="button" class="btn secondary" id="saveDeliveryBtn">保存分发配置</button>
+        </div>
+        <div id="deliveryStatus" class="muted" style="margin-top:6px"></div>
+      </div>
       <form id="varForm"></form>
       <div class="row">
         <button class="btn" id="runBtn">开始运行</button>
@@ -576,9 +589,44 @@
       return `<label>${esc(v.prompt || v.name)}${req}</label>${input}`;
     }).join('') : '<p class="muted">此模板无需变量。</p>';
     wireMultiInputs($('varForm'));
+    const draftish = t.status === 'draft' || t.status === 'testing';
+    const deliveryPanel = $('deliveryPanel');
+    if (draftish) {
+      deliveryPanel.classList.remove('hidden');
+      const ch = t.delivery_channels && t.delivery_channels.find(c => c.type === 'webhook');
+      $('deliveryUrl').value = ch && ch.target ? ch.target : '';
+      $('deliverySecret').value = '';
+      $('deliveryDisable').checked = !t.pipeline.delivery;
+      $('deliverySecretHint').textContent = ch && ch.shared_secret_configured ? '（已配置；留空保留）' : '';
+      $('deliveryStatus').textContent = '';
+    } else {
+      deliveryPanel.classList.add('hidden');
+    }
     $('runPanel').classList.remove('hidden'); $('jobStatus').innerHTML = '';
     $('runPanel').scrollIntoView({ behavior: 'smooth' });
   }
+  $('saveDeliveryBtn').onclick = async (e) => {
+    e.preventDefault();
+    if (!currentTpl) return;
+    $('deliveryStatus').textContent = '保存中…';
+    const body = {
+      action: 'update_delivery',
+      template_id: currentTpl.template_id,
+      version: currentTpl.version,
+      disable_delivery: $('deliveryDisable').checked,
+    };
+    if (!body.disable_delivery) {
+      body.webhook_url = $('deliveryUrl').value.trim();
+      const sec = $('deliverySecret').value;
+      if (sec) body.webhook_secret = sec;
+    }
+    try {
+      const r = await post('/api/action', body);
+      if (!r.ok) { $('deliveryStatus').innerHTML = `<span class="bad">${esc(r.message)}</span>`; return; }
+      $('deliveryStatus').innerHTML = '<span class="ok">已保存</span>';
+      await openTemplate(currentTpl.template_id);
+    } catch (err) { $('deliveryStatus').innerHTML = `<span class="bad">${esc(err.message)}</span>`; }
+  };
   // ---- 多值输入：行计数 + CSV 列导入（纯前端解析，不上传文件）
   const splitValues = (text) => String(text || '').split(/[\r\n,;\t]+/).map(s => s.trim()).filter(Boolean);
   function wireMultiInputs(root) {

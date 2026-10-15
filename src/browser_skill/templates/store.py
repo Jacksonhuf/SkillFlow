@@ -11,7 +11,13 @@ import yaml
 from pydantic import ValidationError
 
 from browser_skill.errors import ErrorCode, SkillError
-from browser_skill.models import BrowserTemplate, LearnedSpec, TemplateStatus
+from browser_skill.models import (
+    BrowserTemplate,
+    DeliverySpec,
+    LearnedSpec,
+    ReportSpec,
+    TemplateStatus,
+)
 from browser_skill.templates.learned_store import LearnedProfileStore
 
 
@@ -225,6 +231,32 @@ class TemplateStore:
         self, template_id: str, version: int, learned: LearnedSpec
     ) -> Path:
         return self.learned.save(template_id, version, learned)
+
+    def patch_delivery(
+        self,
+        template_id: str,
+        version: int,
+        *,
+        delivery: DeliverySpec,
+        report: ReportSpec,
+    ) -> BrowserTemplate:
+        """Update webhook delivery on a draft or testing version (published versions are frozen)."""
+        current = self.load(template_id, version, require_published=False)
+        if current.status == TemplateStatus.PUBLISHED:
+            raise SkillError(
+                ErrorCode.TEMPLATE_INVALID,
+                f"Published templates cannot change delivery: {template_id}@{version}",
+            )
+        updated = current.model_copy(
+            update={"delivery": delivery, "report": report},
+            deep=True,
+        )
+        path = self._template_file(template_id, f"{version}.yaml")
+        content = yaml.safe_dump(
+            json.loads(updated.model_dump_json()), allow_unicode=True, sort_keys=False
+        )
+        self._atomic_write(path, content)
+        return updated
 
     def publish(self, template_id: str, version: int, *, test_passed: bool) -> BrowserTemplate:
         if not test_passed:

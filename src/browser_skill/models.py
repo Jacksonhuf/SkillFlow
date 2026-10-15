@@ -919,6 +919,7 @@ class SkillRequest(StrictModel):
         "create_from_probe",
         "validate_acceptance",
         "retry_batch",
+        "update_delivery",
     ] = "start"
     expand_click_recording: Literal["start", "stop"] | None = None
     field_pick_recording: Literal["start", "stop"] | None = None
@@ -942,6 +943,9 @@ class SkillRequest(StrictModel):
     acceptance_bundle_path: Path | None = None
     probe_mode: Literal["platform_tool", "local_cli"] = "platform_tool"
     failure_bucket: str | None = Field(default=None, max_length=64)
+    webhook_url: str | None = Field(default=None, max_length=2000)
+    webhook_secret: str | None = Field(default=None, max_length=256)
+    disable_delivery: bool = False
 
 
 class SkillResponse(StrictModel):

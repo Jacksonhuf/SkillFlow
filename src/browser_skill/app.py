@@ -31,6 +31,7 @@ from browser_skill.models import (
     AuthState,
     BrowserCapabilities,
     BrowserTemplate,
+    DeliverySpec,
     MappingDiscoveryReport,
     RunState,
     SkillRequest,
@@ -39,6 +40,8 @@ from browser_skill.models import (
 )
 from browser_skill.outputs.paths import contained_path
 from browser_skill.outputs.writer import RunWorkspace
+from browser_skill.pipeline.deliver import delivery_channel_summaries, delivery_spec_from_webhook
+from browser_skill.pipeline.webhook_auth import webhook_secret_from_options
 from browser_skill.platform.acceptance import validate_acceptance_bundle
 from browser_skill.platform.probe import probe_adapter
 from browser_skill.runtime.auto_repair import AutoRepairService
@@ -587,6 +590,43 @@ class BrowserSkillApp:
                     "interaction": interaction.model_dump(mode="json"),
                 },
             )
+        if request.action == "update_delivery":
+            if not request.template_id or request.version is None:
+                return SkillResponse(
+                    ok=False,
+                    message="update_delivery 需要 template_id 与 version",
+                )
+            template = self.store.load(
+                request.template_id,
+                request.version,
+                require_published=False,
+            )
+            if template.status == TemplateStatus.PUBLISHED:
+                return SkillResponse(ok=False, message="已发布模板不能修改分发配置")
+            try:
+                delivery, report_enabled = self._delivery_update_spec(template, request)
+            except ValueError as exc:
+                return SkillResponse(ok=False, message=str(exc))
+            report_spec = template.report.model_copy(update={"enabled": report_enabled})
+            updated = self.store.patch_delivery(
+                request.template_id,
+                request.version,
+                delivery=delivery,
+                report=report_spec,
+            )
+            return SkillResponse(
+                ok=True,
+                message="分发配置已保存",
+                data={
+                    "template_id": updated.template_id,
+                    "version": updated.version,
+                    "delivery_channels": delivery_channel_summaries(updated.delivery),
+                    "pipeline": {
+                        "report": updated.report.enabled,
+                        "delivery": updated.delivery.enabled,
+                    },
+                },
+            )
         if request.action == "publish":
             if not request.template_id or request.version is None or not request.run_id:
                 return SkillResponse(
@@ -763,6 +803,27 @@ class BrowserSkillApp:
         response.data["sample_alignment"] = data
         if not report.aligned and response.ok:
             response.message = f"{response.message}；样例比对发现 {len(report.issues)} 个差异"
+
+    @staticmethod
+    def _delivery_update_spec(
+        template: BrowserTemplate, request: SkillRequest
+    ) -> tuple[DeliverySpec, bool]:
+        if request.disable_delivery:
+            return delivery_spec_from_webhook(None, None, disable=True), False
+        existing_url = ""
+        existing_secret: str | None = None
+        for channel in template.delivery.channels:
+            if channel.type == "webhook" and channel.enabled:
+                existing_url = channel.target
+                existing_secret = webhook_secret_from_options(channel.options)
+                break
+        url = (request.webhook_url or "").strip() or existing_url
+        if not url:
+            raise ValueError("请填写 webhook_url，或先通过 Teach 配置分发")
+        secret_input = request.webhook_secret
+        secret = existing_secret if secret_input is None else secret_input.strip() or None
+        delivery = delivery_spec_from_webhook(url, secret)
+        return delivery, delivery.enabled
 
 
 def _list_nav_step_ref(step: dict[str, Any]) -> str | None:
