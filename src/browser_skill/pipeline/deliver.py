@@ -26,6 +26,7 @@ from typing import Any
 from urllib.parse import parse_qs, urlsplit, urlunsplit
 
 from browser_skill.models import BrowserTemplate, DeliveryChannelSpec, DownloadStatus, RunContext
+from browser_skill.pipeline.webhook_auth import webhook_auth_headers, webhook_secret_from_options
 
 _WEBHOOK_TIMEOUT_SECONDS = 10
 _UPLOAD_TIMEOUT_SECONDS = 60
@@ -87,11 +88,20 @@ def _render(pattern: str, context: RunContext) -> str:
     return text
 
 
-def _post_json(url: str, payload: dict[str, Any], *, timeout: float) -> tuple[int, Any]:
+def _post_json(
+    url: str,
+    payload: dict[str, Any],
+    *,
+    timeout: float,
+    extra_headers: dict[str, str] | None = None,
+) -> tuple[int, Any]:
+    headers = {"Content-Type": "application/json"}
+    if extra_headers:
+        headers.update(extra_headers)
     request = urllib.request.Request(
         url,
         data=json.dumps(payload, ensure_ascii=False).encode("utf-8"),
-        headers={"Content-Type": "application/json"},
+        headers=headers,
         method="POST",
     )
     with urllib.request.urlopen(request, timeout=timeout) as response:
@@ -178,8 +188,14 @@ def _deliver_webhook(
     if not channel.target.startswith(("http://", "https://")):
         return {"type": "webhook", "ok": False, "error": "target must be an http(s) URL"}
     payload = build_webhook_payload(context, artifacts, analysis)
+    secret = webhook_secret_from_options(channel.options)
     try:
-        status, _body = _post_json(channel.target, payload, timeout=_WEBHOOK_TIMEOUT_SECONDS)
+        status, _body = _post_json(
+            channel.target,
+            payload,
+            timeout=_WEBHOOK_TIMEOUT_SECONDS,
+            extra_headers=webhook_auth_headers(secret),
+        )
     except (urllib.error.URLError, OSError, ValueError) as exc:
         return {"type": "webhook", "ok": False, "target": channel.target, "error": str(exc)}
     return {

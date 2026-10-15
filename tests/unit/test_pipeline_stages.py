@@ -105,9 +105,11 @@ def test_run_writes_report_manifest_and_local_delivery(tmp_path: Path, template_
 
 class _Hook(BaseHTTPRequestHandler):
     received: ClassVar[list[dict[str, Any]]] = []
+    last_headers: ClassVar[list[dict[str, str]]] = []
 
     def do_POST(self) -> None:
         length = int(self.headers.get("Content-Length", "0"))
+        _Hook.last_headers.append({k: v for k, v in self.headers.items()})
         _Hook.received.append(json.loads(self.rfile.read(length)))
         self.send_response(204)
         self.end_headers()
@@ -143,3 +145,35 @@ def test_webhook_delivery_posts_summary_and_failure_does_not_break_run(
     assert channels[0]["ok"] is True
     assert channels[1]["ok"] is False and "error" in channels[1]
     assert _Hook.received and _Hook.received[0]["run_id"] == response.run_id
+
+
+def test_webhook_delivery_sends_secret_header(tmp_path: Path, template_data) -> None:
+    from browser_skill.pipeline.webhook_auth import WEBHOOK_SECRET_HEADER
+
+    _Hook.received.clear()
+    _Hook.last_headers.clear()
+    server = HTTPServer(("127.0.0.1", 0), _Hook)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        url = f"http://127.0.0.1:{server.server_port}/hook"
+        template = _template_with(
+            template_data,
+            delivery={
+                "enabled": True,
+                "channels": [
+                    {
+                        "type": "webhook",
+                        "target": url,
+                        "enabled": True,
+                        "options": {"webhook_secret": "batch-notify-key"},
+                    },
+                ],
+            },
+        )
+        response = asyncio.run(Runner(_adapter(), tmp_path).run(template, {}))
+    finally:
+        server.shutdown()
+        server.server_close()
+    assert response.ok
+    assert _Hook.last_headers[0][WEBHOOK_SECRET_HEADER] == "batch-notify-key"

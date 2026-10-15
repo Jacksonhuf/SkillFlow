@@ -421,7 +421,8 @@ class DeliveryChannelSpec(StrictModel):
     ``target`` is a directory (local), an http(s) URL (webhook / wecom robot) or a comma-separated
     recipient list (email). Credentials never live in templates: SMTP settings come from
     ``UNIVERSAL_BROWSER_SMTP_*`` environment variables. ``options`` holds channel-specific knobs
-    such as ``subject``, ``attach``, ``max_attachment_mb`` or ``mentioned_mobile_list``.
+    such as ``subject``, ``attach``, ``max_attachment_mb``, ``mentioned_mobile_list`` or
+    ``webhook_secret`` (sent as ``X-Universal-Browser-Webhook-Secret`` on webhook POST).
     """
 
     type: Literal["local", "webhook", "email", "wecom"] = "local"
