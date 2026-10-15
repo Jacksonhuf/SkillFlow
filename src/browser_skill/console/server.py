@@ -49,7 +49,6 @@ from browser_skill.console.instance import (
 from browser_skill.errors import ErrorCode, SkillError
 from browser_skill.models import SkillRequest, SkillResponse
 from browser_skill.outputs.paths import contained_path, safe_filename
-from browser_skill.pipeline.deliver import delivery_channel_summaries
 from browser_skill.platform.probe import PlatformProbeReport, probe_adapter
 from browser_skill.runtime.batch import batch_stats_from_payload
 
@@ -373,50 +372,10 @@ class ConsoleServer:
         ]
 
     def template_detail(self, template_id: str) -> dict[str, Any]:
+        from browser_skill.templates.detail import template_detail_dict
+
         template = self.app.store.load(template_id, require_published=False)
-        return {
-            "template_id": template.template_id,
-            "version": template.version,
-            "name": template.name,
-            "description": template.description,
-            "status": template.status.value,
-            "schema_version": template.schema_version,
-            "entry_url": str(template.system.entry_url),
-            "variables": [
-                {
-                    "name": name,
-                    "type": spec.type.value,
-                    "required": spec.required,
-                    "default": spec.default,
-                    "prompt": spec.prompt,
-                    "options": spec.options,
-                    "sensitive": spec.sensitive,
-                    "multiple": spec.multiple,
-                }
-                for name, spec in template.variables.items()
-            ],
-            "run": {
-                "mode": template.run.mode.value,
-                "driver_variable": template.run.driver_variable,
-                "url_template": template.system.url_template,
-                "accept_full_urls": template.run.accept_full_urls,
-            },
-            "fields": [
-                {"key": f.key, "name": f.name, "type": f.type.value, "required": f.required}
-                for f in template.target.fields
-            ],
-            "attachments": [
-                {"key": a.key, "name": a.name, "required": a.required, "multiple": a.multiple}
-                for a in template.target.attachments
-            ],
-            "pipeline": {
-                "processing": template.processing.enabled,
-                "report": template.report.enabled,
-                "delivery": template.delivery.enabled,
-                "analysis": template.analysis.enabled,
-            },
-            "delivery_channels": delivery_channel_summaries(template.delivery),
-        }
+        return template_detail_dict(template)
 
     def runs(self, limit: int = 50) -> list[dict[str, Any]]:
         root = self.app.runs_root

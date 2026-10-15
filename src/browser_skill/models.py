@@ -947,6 +947,7 @@ class SkillRequest(StrictModel):
     webhook_secret: str | None = Field(default=None, max_length=256)
     disable_delivery: bool = False
     fork_as_new_version: bool = False
+    clear_webhook_secret: bool = False
 
 
 class SkillResponse(StrictModel):

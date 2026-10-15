@@ -846,8 +846,11 @@ class BrowserSkillApp:
         url = (request.webhook_url or "").strip() or existing_url
         if not url:
             raise ValueError("请填写 webhook_url，或先通过 Teach 配置分发")
-        secret_input = request.webhook_secret
-        secret = existing_secret if secret_input is None else secret_input.strip() or None
+        if request.clear_webhook_secret:
+            secret = None
+        else:
+            secret_input = request.webhook_secret
+            secret = existing_secret if secret_input is None else secret_input.strip() or None
         delivery = delivery_spec_from_webhook(url, secret)
         return delivery, delivery.enabled
 

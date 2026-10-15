@@ -128,6 +128,9 @@ def main(argv: list[str] | None = None) -> int:
     sub = parser.add_subparsers(dest="command", required=True)
 
     sub.add_parser("templates", help="List published templates")
+    inspect_p = sub.add_parser("inspect", help="Template contract + delivery metadata JSON")
+    inspect_p.add_argument("selector", help="Template id, menu index, or name")
+    inspect_p.add_argument("--version", type=int, default=None, help="Specific version")
     sub.add_parser("start", help="Show template menu JSON")
     sub.add_parser("capabilities", help="JSON browser capabilities (operator / agent preflight)")
     sub.add_parser("doctor", help="Check chrome-use CLI and extension readiness (operator only)")
@@ -193,6 +196,11 @@ def main(argv: list[str] | None = None) -> int:
         "--fork",
         action="store_true",
         help="Fork published version into a new draft before applying delivery",
+    )
+    delivery_p.add_argument(
+        "--clear-webhook-secret",
+        action="store_true",
+        help="Remove saved webhook shared secret",
     )
 
     ui_p = sub.add_parser("ui", help="Open the local web console (127.0.0.1 only)")
@@ -270,6 +278,19 @@ def main(argv: list[str] | None = None) -> int:
             for index, item in enumerate(items, 1):
                 print(f"{index}. {item.name} ({item.template_id} v{item.version})")
             return 0
+        if args.command == "inspect":
+            from browser_skill.interaction.template_menu import TemplateMenu
+            from browser_skill.templates.detail import template_detail_dict
+
+            template_id = TemplateMenu(app.store.list(include_unpublished=True)).resolve(
+                args.selector
+            )
+            if template_id is None:
+                print("Unknown template selector", file=sys.stderr)
+                return 2
+            template = app.store.load(template_id, args.version, require_published=False)
+            print(json.dumps(template_detail_dict(template), ensure_ascii=False, indent=2))
+            return 0
         if args.command == "start":
             response = await app.handle(SkillRequest(action="start"))
             print(json.dumps(response.model_dump(mode="json"), ensure_ascii=False, indent=2))
@@ -330,6 +351,7 @@ def main(argv: list[str] | None = None) -> int:
                     webhook_secret=args.webhook_secret,
                     disable_delivery=args.disable,
                     fork_as_new_version=args.fork,
+                    clear_webhook_secret=args.clear_webhook_secret,
                 )
             )
             return _print_response(response)

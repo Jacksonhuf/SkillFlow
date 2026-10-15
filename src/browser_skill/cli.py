@@ -81,13 +81,27 @@ def list_templates(
 def inspect(
     selector: str,
     root: Annotated[Path, typer.Option("--root")] = Path("templates"),
+    version: Annotated[
+        int | None,
+        typer.Option("--version", min=1, help="Specific template version"),
+    ] = None,
+    as_json: Annotated[
+        bool,
+        typer.Option("--json", help="Machine-readable detail (matches console API shape)"),
+    ] = False,
 ) -> None:
     """Inspect a template's contract without exposing learned browser internals."""
+    from browser_skill.templates.detail import template_detail_dict
+
     store = _store(root)
     template_id = TemplateMenu(store.list(include_unpublished=True)).resolve(selector)
     if template_id is None:
         raise typer.BadParameter("The create item is not a template")
-    template = store.load(template_id, require_published=False)
+    template = store.load(template_id, version, require_published=False)
+    if as_json:
+        console.print(json.dumps(template_detail_dict(template), ensure_ascii=False, indent=2))
+        return
+    detail = template_detail_dict(template)
     table = Table(box=box.SIMPLE_HEAVY, show_header=False)
     table.add_column(style="bold #818cf8")
     table.add_column()
@@ -100,6 +114,18 @@ def inspect(
     table.add_row("字段", ", ".join(field.name for field in template.target.fields) or "无")
     table.add_row("附件", ", ".join(item.name for item in template.target.attachments) or "无")
     table.add_row("输出", template.output.format.value)
+    table.add_row("运行模式", detail["run"]["mode"])
+    if detail["run"].get("driver_variable"):
+        table.add_row("驱动变量", str(detail["run"]["driver_variable"]))
+    pipeline = detail["pipeline"]
+    table.add_row(
+        "流水线",
+        "报告 " + ("开" if pipeline["report"] else "关")
+        + " · 分发 " + ("开" if pipeline["delivery"] else "关"),
+    )
+    for channel in detail["delivery_channels"]:
+        extra = " · 已配置密钥" if channel.get("shared_secret_configured") else ""
+        table.add_row(f"  {channel['type']}", f"{channel.get('target', '')}{extra}")
     console.print(Panel(table, title="[bold]模板契约[/bold]", border_style="#6366f1"))
 
 
@@ -558,6 +584,10 @@ def update_delivery(
             help="When version is published, create a new draft version with delivery",
         ),
     ] = False,
+    clear_webhook_secret: Annotated[
+        bool,
+        typer.Option("--clear-webhook-secret", help="Remove saved webhook shared secret"),
+    ] = False,
     root: Annotated[Path, typer.Option("--root")] = Path("templates"),
     runs_root: Annotated[Path, typer.Option("--runs-root")] = Path("runs"),
     executable: Annotated[str, typer.Option(help="chrome-use executable")] = "chrome-use",
@@ -579,6 +609,7 @@ def update_delivery(
                         webhook_secret=webhook_secret,
                         disable_delivery=disable,
                         fork_as_new_version=fork,
+                        clear_webhook_secret=clear_webhook_secret,
                     )
                 )
             )
