@@ -143,6 +143,7 @@ def test_webhook_delivery_posts_summary_and_failure_does_not_break_run(
     assert response.ok
     channels = response.data["pipeline"]["stages"]["deliver"]["channels"]
     assert channels[0]["ok"] is True
+    assert channels[0]["shared_secret_configured"] is False
     assert channels[1]["ok"] is False and "error" in channels[1]
     assert _Hook.received and _Hook.received[0]["run_id"] == response.run_id
 
@@ -177,3 +178,5 @@ def test_webhook_delivery_sends_secret_header(tmp_path: Path, template_data) -> 
         server.server_close()
     assert response.ok
     assert _Hook.last_headers[0][WEBHOOK_SECRET_HEADER] == "batch-notify-key"
+    channel = response.data["pipeline"]["stages"]["deliver"]["channels"][0]
+    assert channel["shared_secret_configured"] is True
