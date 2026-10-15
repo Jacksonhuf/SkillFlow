@@ -7,6 +7,7 @@ On ``run_finished`` with ``batch.retry_suggestions``, optionally spawns retry jo
 Environment:
   UNIVERSAL_BROWSER_WEBHOOK_AUTO_RETRY=1   — run ``retry-batch`` per suggestion (default: log only)
   UNIVERSAL_BROWSER_WEBHOOK_RETRY_BUCKETS  — comma-separated buckets to allow (default: all)
+  UNIVERSAL_BROWSER_WEBHOOK_SECRET         — require header X-Universal-Browser-Webhook-Secret
 
 Example:
   py scripts/examples/webhook_retry_listener.py --port 9876
@@ -61,6 +62,20 @@ def _auto_retry_enabled() -> bool:
     }
 
 
+def _expected_secret() -> str:
+    return os.environ.get("UNIVERSAL_BROWSER_WEBHOOK_SECRET", "").strip()
+
+
+def _authorized(handler: BaseHTTPRequestHandler) -> bool:
+    secret = _expected_secret()
+    if not secret:
+        return True
+    _ensure_runtime_path()
+    from browser_skill.pipeline.webhook_auth import validate_webhook_secret
+
+    return validate_webhook_secret(handler.headers, secret)
+
+
 def _retry_suggestions(payload: dict[str, Any]) -> list[dict[str, Any]]:
     _ensure_runtime_path()
     from browser_skill.pipeline.webhook_retry import (
@@ -102,6 +117,9 @@ class _Handler(BaseHTTPRequestHandler):
         sys.stderr.write(f"{self.address_string()} - {format % args}\n")
 
     def do_POST(self) -> None:
+        if not _authorized(self):
+            self.send_error(HTTPStatus.UNAUTHORIZED, "invalid webhook secret")
+            return
         length = int(self.headers.get("Content-Length", "0") or "0")
         if length > 2 * 1024 * 1024:
             self.send_error(HTTPStatus.REQUEST_ENTITY_TOO_LARGE)

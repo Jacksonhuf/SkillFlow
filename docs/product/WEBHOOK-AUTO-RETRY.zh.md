@@ -4,6 +4,7 @@
 
 - 模板 `delivery.channels` 含 `type: webhook`，目标 URL 指向你的接收端。
 - 批量运行结束后，POST 体含 `event: run_finished` 与 `batch.retry_suggestions`（0.3.54+）。
+- 可选：在 channel `options.webhook_secret` 配置共享密钥；运行时会 POST 头 `X-Universal-Browser-Webhook-Secret`。示例监听器用环境变量 `UNIVERSAL_BROWSER_WEBHOOK_SECRET` 校验。
 
 ## 内置示例监听器
 
